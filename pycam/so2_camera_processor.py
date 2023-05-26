@@ -2076,6 +2076,8 @@ class PyplisWorker:
                     #                                                               stds=self.test_doas_stds)
                     # TODO ==========================================
 
+                    # TODO scipy.optimi\e.curve_fit doesn't seem to work for 2nd order polynomials
+                    # TODO need to thik about writing my own fit procedure, and updating pyplis objects with results.
                     self.doas_fov_search(stack, self.doas_worker.results, polyorder=self.polyorder_cal)
 
                     # Once we have a calibration we need to go back through buffer and get emission rates

@@ -1,0 +1,29 @@
+This file contains important notes on the Raspberry Pi side of the software. It lists changes made since the last
+version of the disk image was generated, so I can keep track of changes that may need to be pulled across to the pi.
+
+Latest disk image: 2023-02-20
+
+Changes since last disk image:
+> Edited check_run.py to mount SSD if it is not mounted, rather than raising an exception as this just makes
+check_run.py fail if pycam_masterpi.py hasn't been started (16/03/2023)
+> Edited controllers.py to have longer timeout on check_exposure_speed when running dark_capture. This means that the
+dark capture doesn't inadvertently skip over some exposure speeds because of the 1.5s default timeout (29/03/2023).
+> Edited int_idx in controllers.py so that spectrometer controller doesn't keep increasing int_idx infinitely
+once saturated (30/03/2023)
+> Changed pycam_camera.py and pycam_spectrometer.py to use host_ip from config.txt instead of from network_comm.txt
+as this should make it easy to change static IP address. host_ip only needs to be explicitly written in one place, it's
+silly to have it stored multiple places (04/04/2023). NOTE, this hasn't been checked on the pis yet!
+> check_disk_space.py now changed - created a new version but haven't implemented it yet as it hasn't been checked at
+all. So currently it's saved as check_disk_space_new.py.
+> Added a check_run.py check (controllers.py, setupclasses.py, check_run.py) that ensures the camera is in automated
+capture, otherwise it won't try to kill the program. This ensures that if we are interacting with the instrument with
+manual capture, etc, check_run.py won't randomly shut the system down. I haven't checked the functionality! But it
+should be quite straightforward so should work. (18/05/2023)
+
+>TODO I need to update check_disk_space.py on the disk image, it currently still uses the outdated version which checks
+TODO disk space and deletes once it exceeds 100GB. This may cause issues if I keep using this. The new version deletes
+TODO all data on specified days.
+
+> TODO can I write a program that will automatically change all of the IP addresses in the files needed, so the user
+> TODO doesn't need to manually change them all? The user just changes them in config.txt and the rest is done automatically
+> TODO Will presumably need admin (sudo) privileges to do this.

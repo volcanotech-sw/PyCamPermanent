@@ -198,3 +198,11 @@ pycam/scripts/clouduploaders/client_secrets.json
 pycam/tests/test_data/Lascar/
 
 pycam/scripts/clouduploaders/test/
+
+pycam/conf/cam_geom/reventador_camera.txt
+
+pycam/conf/witty_schedule.wpi
+
+pycam/scripts/check_disk_space_new.py
+
+pycam/conf/cron/script_schedule.txt

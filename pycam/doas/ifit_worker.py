@@ -1814,6 +1814,14 @@ class IFitWorker:
 
                 # Extract triangle index to find vertices
                 j, k = answer[0], answer[1]
+                # If answer is the maximum SO2 or LDF value we need to decrease it by one so don't exceed array length
+                if j == len(self.so2_grid)-1:
+                    print('IFitWorker: Warning, light dilution correction may be beyond the grid size of lookup tables')
+                    j-=1
+                if k == len(self.ldf_grid)-1:
+                    print('IFitWorker: Warning, light dilution correction may be beyond the grid size of lookup tables')
+                    k-=1
+
                 if answer[2] == 0:
                     # Create polygon corners for triangle type a
                     vertices_model = np.array([[self.so2_grid[j], self.ldf_grid[k]],
