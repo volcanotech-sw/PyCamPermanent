@@ -404,9 +404,14 @@ class FTPClient:
     def retrieve_schedule_files(self):
         """Retrieves witty pi and crontab schedule files"""
         # TODO THIS HASN'T BEEN TESTED!!!!! (18/04/2023)
-        self.get_file(FileLocator.SCRIPT_SCHEDULE_PI, FileLocator.SCRIPT_SCHEDULE, rm=False)
-        self.get_file(FileLocator.SCHEDULE_FILE_PI, FileLocator.SCHEDULE_FILE, rm=False)
-        print('Retrieved instrument schedule files')
+        # TODO updated to use get_file() return values but still not tested (21/06/2023)
+        logs = [None, None]
+        logs[0] = self.get_file(FileLocator.SCRIPT_SCHEDULE_PI, FileLocator.SCRIPT_SCHEDULE, rm=False)
+        logs[1] = self.get_file(FileLocator.SCHEDULE_FILE_PI, FileLocator.SCHEDULE_FILE, rm=False)
+        if logs == [True, True]:
+            print('Retrieved instrument schedule files')
+        else:
+            print('Error retrieving instrument schedule files: {}'.format(logs))
 
     def move_file_to_instrument(self, local_file, remote_file):
         """Move specific file from local_file location to remote_file location"""
@@ -431,12 +436,12 @@ class FTPClient:
         :param remote:  str     Path to remote file
         :param local:   str     Path to local location
         :param rm:      bool    If true the file is deleted from the remote computer
-        :return:
+        :return:    bool        Boolean associated with if the file has been downloaded or not
         """
         # Test FTP connection
         if not self.test_connection():
             print('Cannot establish FTP connection. File cannot be transferred')
-            return
+            return False
 
         filename = os.path.split(remote)[-1]
 
@@ -454,6 +459,8 @@ class FTPClient:
                 print('Deleted file {} from instrument'.format(filename))
             except ftplib.error_perm as e:
                 print(e)
+
+        return True
 
     def get_data(self, data_name, rm=True):
         """Downloads image/spectrum
@@ -586,6 +593,15 @@ class FTPClient:
                     print('FTP connection lost - stopping instrument directory watcher')
                     self.watching_dir = False
                     return
+
+            # Try to get file noting the run status of the pi - if in manual capture we don't download data.
+            try:
+                if self.get_file(FileLocator.RUN_STATUS_PI, FileLocator.RUN_STATUS_WINDOWS, rm=False):
+                    mode = self.cam_specs.check_acq_mode(FileLocator.RUN_STATUS_WINDOWS)
+                    if mode == 'manual':
+                        continue
+            except Exception:
+                pass
 
             # Get file list from host machine
             try:

@@ -251,6 +251,25 @@ class CameraSpecs:
         self._ss_idx = value
         self._shutter_speed = self.ss_list[self.ss_idx]
 
+    @staticmethod
+    def check_acq_mode(filename):
+        """
+        Checks acquisition mode from file. If it is in manual, this function closes the program
+        :param filename str     Should be one of FileLocator.RUN_STATUS_PI or FileLocator.RUN_STATUS_WINDOWS
+        :returns        str     Status - either auto or manual
+        """
+        # Check if instrument is in manual or automated mode (if in manual, we don't want to check data acquisition as the user
+        # may not want to be acquiring data)
+        with open(filename, 'r') as f:
+            info = f.readlines()
+            if len(info) != 1:
+                print('Unexpected format in {}. Continuing without using this file.'.format(filename))
+            else:
+                if 'automated' in info[0]:
+                    return 'auto'
+                elif 'manual' in info[0]:
+                    return 'manual'
+
     def estimate_focal_length(self):
         """
         Calculates focal length from FOV and detector dimensions

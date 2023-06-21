@@ -116,15 +116,27 @@ class DropboxIO:
             dbx = None
         return dbx
 
-    def upload_file(self, file_path, filename, folder=None, delete=False):
+    def upload_file(self, file_path, filename, folder=None, delete=False, check_mode=True):
         """
         Uploads file to folder. If no folder is provided we use the current folder_id
         :param file_path:        Full path to file to be uploaded
         :param filename:        Filename to be uploaded
         :param folder:
         :param delete:  bool    If True, the file is deleted on the local machine after being uploaded
+        :param check_mode bool  If True, the method checks if the camera is in automated or manual acquisition mode. If
+                                it's in manual mode the uploader doesn't upload data as a user may be trying to extract
+                                it
         :return:
         """
+        if check_mode:
+            try:
+                mode = self.cam_specs.check_acq_mode(FileLocator.RUN_STATUS_PI)
+                if mode == 'manual':
+                    print('DropboxIO: In manual capture - uploading of files paused')
+                    return
+            except FileNotFoundError:
+                print('DropboxIO: No log file {} for acquisition mode found on pi. May be working with older version of pycam/controllers.py'.format(FileLocator.RUN_STATUS_PI))
+
         full_path = os.path.join(file_path, filename)
         if not os.path.exists(full_path):
             print('DropboxIO: File does not exist: {}'.format(full_path))

@@ -20,22 +20,6 @@ from pycam.io_py import read_script_crontab, write_script_crontab, reboot_remote
 from pycam.utils import read_file, StorageMount
 
 
-def check_acq_mode():
-    """Checks acquisition mode. If it is in manual, this function closes the program"""
-    # Check if instrument is in manual or automated mode (if in manual, we don't want to check data acquisition as the user
-    # may not want to be acquiring data)
-    with open(FileLocator.RUN_STATUS_PI, 'r') as f:
-        info = f.readlines()
-        if len(info) != 1:
-            print('Unexpected format in {}. Continuing without using this file.'.format(FileLocator.RUN_STATUS_PI))
-        else:
-            if 'automated' in info[0]:
-                pass
-            elif 'manual' in info[0]:
-                print('Instrument is not in automated capture mode, check_run.py is not required.')
-                sys.exit()
-
-
 def check_data(sleep=150, storage_mount=StorageMount(), date_fmt="%Y-%m-%d"):
     """Check if data exists"""
     time.sleep(10)
@@ -115,7 +99,15 @@ if count > 1:
     sys.exit()
 # ------------------------------------------------------
 # Check acquisition mode
-check_acq_mode()
+cam = CameraSpecs()
+try:
+    mode = cam.check_acq_mode(FileLocator.RUN_STATUS_PI)
+    if mode == 'manual':
+        print('Instrument is not in automated capture mode, check_run.py is not required.')
+        sys.exit()
+except FileNotFoundError:
+    print('No log file {} for acquisition mode found on pi. May be working with older version of pycam/controllers.py'.format(FileLocator.RUN_STATUS_PI))
+
 
 # Setups storage mount to know where to look for data
 storage_mount = StorageMount()

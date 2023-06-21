@@ -71,10 +71,13 @@ class LogTemperature:
     def get_log(self):
         """Gets temperature data and unpacks it into arrays for plotting"""
         # Get file from pi
-        self.ftp.get_file(FileLocator.TEMP_LOG_PI, FileLocator.TEMP_LOG_WINDOWS, rm=False)
+        got_file = self.ftp.get_file(FileLocator.TEMP_LOG_PI, FileLocator.TEMP_LOG_WINDOWS, rm=False)
 
         # Unpack log data
-        self.dates, self.temps = read_temp_log(FileLocator.TEMP_LOG_WINDOWS)
+        if got_file:
+            self.dates, self.temps = read_temp_log(FileLocator.TEMP_LOG_WINDOWS)
+        else:
+            print('Error retrieving log file from instrument')
 
     def plot_temp(self):
         """Plots temperature data in matplotlib figure"""
