@@ -2879,7 +2879,8 @@ class PyplisWorker:
                     self.cross_corr_last = self.img_A.meta['start_acq']
                     time_gap = self.img_A.meta['start_acq'] - self.cross_corr_last
                 time_gap = time_gap.total_seconds() / 60
-                if cross_corr or time_gap >= self.cross_corr_recal:
+
+                if cross_corr or time_gap >= self.cross_corr_recal or self.got_cross_corr:
                     self.generate_cross_corr(self.cross_corr_series['time'],
                                              self.cross_corr_series['young'],
                                              self.cross_corr_series['old'])
