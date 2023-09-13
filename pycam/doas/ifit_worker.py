@@ -560,9 +560,9 @@ class IFitWorker:
         """Loads dark spectrum"""
         filename, ext = os.path.splitext(dark_spec_path)
         if ext == '.npy':
-            wavelengths, spectrum = np.load(dark_spec_path)
+            wavelengths, spectrum = load_spectrum(dark_spec_path)
         elif ext == '.txt':
-            wavelengths, spectrum = np.load(dark_spec_path)
+            wavelengths, spectrum = load_spectrum(dark_spec_path)
         else:
             print('Unrecognised file type for loading clear spectrum')
             return
@@ -587,9 +587,9 @@ class IFitWorker:
         """Loads clear spectrum"""
         filename, ext = os.path.splitext(clear_spec_path)
         if ext == '.npy':
-            wavelengths, spectrum = np.load(clear_spec_path)
+            wavelengths, spectrum = load_spectrum(clear_spec_path)
         elif ext == '.txt':
-            wavelengths, spectrum = np.load(clear_spec_path)
+            wavelengths, spectrum = load_spectrum(clear_spec_path)
         else:
             print('Unrecognised file type for loading clear spectrum')
             return
@@ -653,21 +653,28 @@ class IFitWorker:
         Assumes all .npy files in the directory are spectra...
         :returns: sd    dict    Dictionary containing all filenames
         """
+        # Make it so that .txt filetypes are accepted too
+        plume_str_list = [self.spec_specs.file_type['meas'] + self.spec_specs.file_ext,
+                          self.spec_specs.file_type['meas'] + '.txt']
+        clear_str_list = [self.spec_specs.file_type['clear'] + self.spec_specs.file_ext,
+                          self.spec_specs.file_type['clear'] + '.txt']
+        dark_str_list = [self.spec_specs.file_type['dark'] + self.spec_specs.file_ext,
+                         self.spec_specs.file_type['dark'] + '.txt']
+
         # Setup empty dictionary sd
         sd = {}
 
         # Get all files into associated list/dictionary entry
-        sd['all'] = [f for f in os.listdir(self.spec_dir) if self.spec_specs.file_ext in f]
+        sd['all'] = [f for f in os.listdir(self.spec_dir) if any(map(f.__contains__, [self.spec_specs.file_ext, '.txt']))]
         sd['all'].sort()
-        sd['plume'] = [f for f in sd['all']
-                       if self.spec_specs.file_type['meas'] + self.spec_specs.file_ext in f]
+
+        sd['plume'] = [f for f in sd['all'] if any(map(f.__contains__, plume_str_list))]
         sd['plume'].sort()
-        sd['clear'] = [f for f in sd['all']
-                       if self.spec_specs.file_type['clear'] + self.spec_specs.file_ext in f]
+        sd['clear'] = [f for f in sd['all'] if any(map(f.__contains__, clear_str_list))]
         sd['clear'].sort()
-        sd['dark'] = [f for f in sd['all']
-                      if self.spec_specs.file_type['dark'] + self.spec_specs.file_ext in f]
+        sd['dark'] = [f for f in sd['all'] if any(map(f.__contains__, dark_str_list))]
         sd['dark'].sort()
+        print('Spectra dictionary: {}'.format(sd))
         return sd
 
     def find_dark_spectrum(self, spec_dir, ss):
@@ -686,7 +693,8 @@ class IFitWorker:
 
         # List all dark images in directory
         dark_list = [f for f in os.listdir(spec_dir)
-                     if self.spec_specs.file_type['dark'] in f and self.spec_specs.file_ext in f]
+                     if self.spec_specs.file_type['dark'] in f and any(map(f.__contains__,
+                                                                           [self.spec_specs.file_ext, 'txt']))]
 
         # Extract ss from each image and round to 2 significant figures
         ss_str = self.spec_specs.file_ss.replace('{}', '')
@@ -1075,14 +1083,11 @@ class IFitWorker:
         self.reset_self()
 
         # Get all files
-        spec_files = [f for f in os.listdir(self.spec_dir) if '.npy' in f]
-
-        # Sort files alphabetically (which will sort them by time due to file format)
-        spec_files.sort()
+        spec_files = self.get_spec_list()
 
         # Extract clear spectra if they exist. If not, the first file is assumed to be the clear spectrum
-        clear_spec = [f for f in spec_files if self.spec_specs.file_type['clear'] + '.npy' in f]
-        plume_spec = [f for f in spec_files if self.spec_specs.file_type['meas'] + '.npy' in f]
+        clear_spec = spec_files['clear']
+        plume_spec = spec_files['plume']
 
         # Loop through all files and add them to queue
         for file in clear_spec:

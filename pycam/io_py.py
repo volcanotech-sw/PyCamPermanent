@@ -71,15 +71,19 @@ def save_spectrum(wavelengths, spectrum, filename):
 
 
 def load_spectrum(filename):
-    """Essentially a wrapper to numpy load function, with added filename check
+    """Essentially a wrapper to numpy load function, with added filename check. Can load .npy or .txt files
     :param  filename:   str     Full path of spectrum to be loaded"""
-    try:
-        check_filename(filename, SpecSpecs().file_ext.split('.')[-1])
-    except:
-        raise
-    spec_array = np.load(filename)
-    wavelengths = spec_array[0, :]
-    spectrum = spec_array[1, :]
+    if filename.split('.')[-1] == 'txt':
+        data = np.loadtxt(filename)
+        wavelengths, spectrum = data.T
+    else:
+        try:
+            check_filename(filename, SpecSpecs().file_ext.split('.')[-1])
+        except:
+            raise
+        spec_array = np.load(filename)
+        wavelengths = spec_array[0, :]
+        spectrum = spec_array[1, :]
     return wavelengths, spectrum
 
 
