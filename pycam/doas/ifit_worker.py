@@ -674,7 +674,6 @@ class IFitWorker:
         sd['clear'].sort()
         sd['dark'] = [f for f in sd['all'] if any(map(f.__contains__, dark_str_list))]
         sd['dark'].sort()
-        print('Spectra dictionary: {}'.format(sd))
         return sd
 
     def find_dark_spectrum(self, spec_dir, ss):
