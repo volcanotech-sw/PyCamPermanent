@@ -38,7 +38,7 @@ config = read_file(FileLocator.CONFIG)
 # Setup mount object
 storage_mount = StorageMount()
 storage_mount.mount_dev()
-atexit.register(storage_mount.unmount_dev)      # Unmount device when script closes
+# atexit.register(storage_mount.unmount_dev)      # Unmount device when script closes
 
 # ======================================================================================================================
 #  NETWORK SETUP

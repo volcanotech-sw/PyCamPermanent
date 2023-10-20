@@ -169,7 +169,9 @@ class DropboxIO:
 
     def _start_uploading(self):
         """Does all the uploading from the upload file"""
+        self.mount.mount_dev()
         while True:
+
             try:
                 a = self.q.get(block=False)
                 return
