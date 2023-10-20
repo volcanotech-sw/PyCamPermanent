@@ -3,7 +3,7 @@
 import sys
 sys.path.append('/home/pi/')
 
-from pycam.utils import read_file, get_img_time, get_spec_time
+from pycam.utils import read_file, get_img_time, get_spec_time, StorageMount
 from pycam.setupclasses import FileLocator, CameraSpecs, SpecSpecs
 from pycam.directory_watcher import can_watch_directories, create_dir_watcher
 
@@ -23,17 +23,20 @@ class DropboxIO:
     """
     def __init__(self, refresh_token_from_file=True, refresh_token_path=FileLocator.DROPBOX_ACCESS_TOKEN,
                  root_folder=None, watch_folder=None, recursive=True, delete_after=False,
-                 save_folder=None, download_to_datedirs=True, timeout=1):
+                 save_folder=None, download_to_datedirs=True, timeout=1, mount=StorageMount()):
         self.refresh_token_path = refresh_token_path
         self.recursive = recursive
         self.delete_after = delete_after      # If True, the file is deleted from the local machine after upload
         self.q = queue.Queue()
+        self.mount = mount
         self.timeout = timeout
         self.lock = threading.Lock()
         self.save_folder = save_folder
         self.download_to_datedirs = download_to_datedirs
         self.uploading = False
         self.is_downloading = False
+
+        self.to_upload_file = FileLocator.DROPBOX_TO_UPLOAD
 
         # Access token for dropbox
         # self.access_token = self.get_access_token_from_file()
@@ -116,7 +119,7 @@ class DropboxIO:
             dbx = None
         return dbx
 
-    def upload_file(self, file_path, filename, folder=None, delete=False):
+    def upload_file(self, file_path, filename, folder=None, delete=False, rm_from_file=False):
         """
         Uploads file to folder. If no folder is provided we use the current folder_id
         :param file_path:        Full path to file to be uploaded
@@ -145,10 +148,48 @@ class DropboxIO:
 
         print('Uploaded file: {}'.format(filename))
 
+        # Remove the file from the upload file
+        if rm_from_file:
+            with self.lock:
+                with open(self.to_upload_file, 'r') as fin:
+                    data = fin.read().splitlines(True)
+                with open(self.to_upload_file, 'w') as fout:
+                    fout.writelines(data[1:])
+
         if delete:
             os.remove(full_path)
 
         return meta
+
+    def start_uploading(self):
+        """Starts upload thread"""
+        self.upload_thread = threading.Thread(target=self._start_uploading, args=())
+        self.upload_thread.daemon = True
+        self.upload_thread.start()
+
+    def _start_uploading(self):
+        """Does all the uploading from the upload file"""
+        while True:
+            try:
+                a = self.q.get(block=False)
+                return
+            except queue.Empty:
+                pass
+            pathname = self.get_next_file()
+            directory = os.path.dirname(pathname)
+            filename = os.path.basename(pathname)
+            self.upload_file(directory, filename, folder=self.root_folder, delete=self.delete_after, rm_from_file=True)
+
+    def stop_uploading(self):
+        """Stops uploader"""
+        self.q.put(1)
+
+    def get_next_file(self):
+        """Gets next file from the upload file - done safely using lock"""
+        with self.lock:
+            with open(self.to_upload_file, 'r') as f:
+                pathname = f.readline().strip('\n')
+        return pathname
 
     def set_watch_folder(self, watch_folder, start=True):
         """
@@ -213,10 +254,10 @@ class DropboxIO:
         else:
             return
 
-        # Upload file to correct date directory
-        while self.uploading:
-            time.sleep(0.1)
-        self.upload_file(directory, filename, folder=self.root_folder, delete=self.delete_after)
+        # Add the file
+        with self.lock:
+            with open(self.to_upload_file, 'a') as f:
+                f.write('{}\n'.format(pathname))
 
     def downloader(self):
         """Downloads data from dropbox folder"""
