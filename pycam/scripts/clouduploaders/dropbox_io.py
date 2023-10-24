@@ -326,22 +326,26 @@ if __name__ == '__main__':
     # upload_file_list = ['C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\PyCamPermanent\\pycam\\tests\\test_data\\2019-09-18T074335_fltrA_1ag_999904ss_Plume.png',
     #                     'C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\PyCamPermanent\\pycam\\tests\\test_data\\temp_io_test.txt']
 
-    upload_file_list = ['/home/pi/pycam/Images/2022-10-17T144122_fltrB_1ag_99980ss_Test.png']
+    # upload_file_list = ['/home/pi/pycam/Images/2022-10-17T144122_fltrB_1ag_99980ss_Test.png']
 
-    dbx = DropboxIO()
+    # dbx = DropboxIO()
 
-    #Get refresh token
-    # dbx.get_refresh_token()
+    # #Get refresh token
+    # # dbx.get_refresh_token()
+    #
+    #
+    # # Upload files
+    # for upload_file in upload_file_list:
+    #     pathname = os.path.dirname(upload_file)
+    #     filename = os.path.basename(upload_file)
+    #     # gdrive.upload_file(file_path=pathname, filename=filename, folder='test')
+    #     # res = dbx.dbx.files_list_folder('/Apps')
+    #     dbx.upload_file(file_path=pathname, filename=filename, folder='/Lascar')
 
 
-    # Upload files
-    for upload_file in upload_file_list:
-        pathname = os.path.dirname(upload_file)
-        filename = os.path.basename(upload_file)
-        # gdrive.upload_file(file_path=pathname, filename=filename, folder='test')
-        # res = dbx.dbx.files_list_folder('/Apps')
-        dbx.upload_file(file_path=pathname, filename=filename, folder='/Lascar')
-
+    dbx = DropboxIO(watch_folder='./', mount=None, delete_after=False, refresh_token_from_file='./dbx_access.txt')
+    dbx.watcher.start()
+    dbx.start_uploading()
 
 
 
