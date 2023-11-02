@@ -23,7 +23,8 @@ class DropboxIO:
     """
     def __init__(self, refresh_token_from_file=True, refresh_token_path=FileLocator.DROPBOX_ACCESS_TOKEN,
                  root_folder=None, watch_folder=None, recursive=True, delete_after=False,
-                 save_folder=None, download_to_datedirs=True, timeout=1, mount=StorageMount()):
+                 save_folder=None, download_to_datedirs=True, timeout=1, mount=StorageMount(),
+                 to_upload_file=FileLocator.DROPBOX_TO_UPLOAD):
         self.refresh_token_path = refresh_token_path
         self.recursive = recursive
         self.delete_after = delete_after      # If True, the file is deleted from the local machine after upload
@@ -36,7 +37,10 @@ class DropboxIO:
         self.uploading = False
         self.is_downloading = False
 
-        self.to_upload_file = FileLocator.DROPBOX_TO_UPLOAD
+        # Set upload file and create it if it doesn't exist already
+        self.to_upload_file = to_upload_file
+        if not os.path.exists(self.to_upload_file):
+            open(self.to_upload_file, 'a').close()
 
         # Access token for dropbox
         # self.access_token = self.get_access_token_from_file()
@@ -131,6 +135,7 @@ class DropboxIO:
         full_path = os.path.join(file_path, filename)
         if not os.path.exists(full_path):
             print('DropboxIO: File does not exist: {}'.format(full_path))
+            return
 
         if folder is not None:
             dropbox_file_path = folder + '/' + filename
@@ -179,6 +184,9 @@ class DropboxIO:
             except queue.Empty:
                 pass
             pathname = self.get_next_file()
+            if len(pathname) == 0:
+                time.sleep(0.5)
+                continue
             directory = os.path.dirname(pathname)
             filename = os.path.basename(pathname)
             self.upload_file(directory, filename, folder=self.root_folder, delete=self.delete_after, rm_from_file=True)
@@ -343,7 +351,8 @@ if __name__ == '__main__':
     #     dbx.upload_file(file_path=pathname, filename=filename, folder='/Lascar')
 
 
-    dbx = DropboxIO(watch_folder='./', mount=None, delete_after=False, refresh_token_from_file='./dbx_access.txt')
+    dbx = DropboxIO(watch_folder='./', mount=None, delete_after=False, refresh_token_path='./dbx_access.txt',
+                    to_upload_file='./test_upload.txt')
     dbx.watcher.start()
     dbx.start_uploading()
 
