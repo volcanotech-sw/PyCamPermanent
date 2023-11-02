@@ -22,9 +22,12 @@ count = 0
 nums = []
 for line in stdout_lines:
     if os.path.basename(__file__) in line and '/bin/sh' not in line:
-        sys.exit()
         count += 1
         nums.append(line.split()[0])
+
+# If a dropbox uploader is already running we just exit
+if count > 1:
+    sys.exit()
 
 # for i in range(len(nums) - 1):
 #     subprocess.call(['sudo', 'kill', '-9', nums[i]])
@@ -39,6 +42,7 @@ while True:
     try:
         if 'dbx' not in locals():
             # Create dropbox object
+            print('Creating uploader')
             dbx = DropboxIO(watch_folder=mount.data_path, delete_after=False, recursive=True, mount=mount)
             # dbx = DropboxIO(watch_folder='C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\', delete_after=False)
 
