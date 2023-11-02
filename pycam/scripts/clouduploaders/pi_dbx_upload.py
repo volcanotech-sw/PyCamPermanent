@@ -22,11 +22,12 @@ count = 0
 nums = []
 for line in stdout_lines:
     if os.path.basename(__file__) in line and '/bin/sh' not in line:
+        sys.exit()
         count += 1
         nums.append(line.split()[0])
 
-for i in range(len(nums) - 1):
-    subprocess.call(['sudo', 'kill', '-9', nums[i]])
+# for i in range(len(nums) - 1):
+#     subprocess.call(['sudo', 'kill', '-9', nums[i]])
 
 # ----------------------------------------------------------------
 
