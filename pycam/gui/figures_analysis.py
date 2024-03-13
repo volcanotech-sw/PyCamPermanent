@@ -2880,7 +2880,8 @@ class ProcessSettings(LoadSaveProcessingSettings):
                      'min_cd': float,
                      'img_buff_size': int,
                      'save_opt_flow': int,       # If True, optical flow is saved to buffer (takes up more space)
-                     'time_zone': int
+                     'time_zone': int,
+                     'use_off_band_correction': int
                      }
 
         self.main_gui = main_gui
@@ -2898,6 +2899,7 @@ class ProcessSettings(LoadSaveProcessingSettings):
         self._buff_size = tk.IntVar()
         self._save_opt_flow = tk.IntVar()
         self._time_zone = tk.IntVar()
+        self._use_off_band_correction = tk.IntVar()
 
         # Load defaults from file
         self.load_defaults()
@@ -2986,6 +2988,13 @@ class ProcessSettings(LoadSaveProcessingSettings):
         settings_frame.grid(row=1, column=0, sticky='nsw', padx=5, pady=5)
         row = 0
 
+        # Use off-band correction checkbutton
+        self.offband_check = ttk.Checkbutton(settings_frame, text='Use off-band correction',
+                                         variable=self._use_off_band_correction)
+        self.offband_check.grid(row=row, column=0, sticky='w', padx=self.pdx, pady=self.pdy)
+        row += 1
+
+        # Timezone spinbox
         ttk.Label(settings_frame, text='Time Zone [relative to UTC]:').grid(row=row, column=0,  sticky='w',
                                                                             padx=self.pdx, pady=self.pdy)
         self.time_zone_spin = ttk.Spinbox(settings_frame, textvariable=self._time_zone, from_=-12, to=12, increment=1,
@@ -3148,6 +3157,7 @@ class ProcessSettings(LoadSaveProcessingSettings):
     def use_light_dilution(self, value):
         self._use_light_dilution.set(value)
 
+
     @property
     def bg_A_path(self):
         return self._bg_A.get()
@@ -3205,6 +3215,14 @@ class ProcessSettings(LoadSaveProcessingSettings):
     @time_zone.setter
     def time_zone(self, value):
         self._time_zone.set(value)
+
+    @property
+    def use_off_band_correction(self):
+        return self._use_off_band_correction.get()
+
+    @use_off_band_correction.setter
+    def use_off_band_correction(self, value):
+        self._use_off_band_correction.set(value)
 
     def get_dark_img_dir(self):
         """Gives user options for retrieving dark image directory"""
@@ -3307,7 +3325,8 @@ class ProcessSettings(LoadSaveProcessingSettings):
         pyplis_worker.config['min_cd'] = self.min_cd
         pyplis_worker.config['img_buff_size'] = self.img_buff_size
         pyplis_worker.config['save_opt_flow'] = self.save_opt_flow
-        pyplis_worker.config['time_zone'] - self.time_zone
+        pyplis_worker.config['time_zone'] = self.time_zone
+        pyplis_worker.config['use_off_band_correction'] = self.use_off_band_correction
         if pyplis_worker.config["use_vign_corr"]:
             pyplis_worker.apply_config(subset=["dark_img_dir"])
             pyplis_worker.load_BG_img(self.bg_A_path, band='A')
@@ -3341,6 +3360,7 @@ class ProcessSettings(LoadSaveProcessingSettings):
         self.img_buff_size = pyplis_worker.config['img_buff_size']
         self.save_opt_flow = pyplis_worker.config['save_opt_flow']
         self.time_zone = pyplis_worker.config['time_zone']
+        self.use_off_band_correction = pyplis_worker.config['use_off_band_correction']
 
         self.in_frame = False
         self.frame.destroy()

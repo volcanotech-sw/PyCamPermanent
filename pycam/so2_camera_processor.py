@@ -104,7 +104,7 @@ class PyplisWorker:
         self.plume_bg_B.surface_fit_pyrlevel = 0
         self.plume_bg_A.mode = 4      # Plume background mode - default (4) is linear in x and y
         self.plume_bg_B.mode = 4      # Plume background mode - default (4) is linear in x and y
-        self.use_off_band_image = True      # If True, the off band is used to correct tau_A for aerosol.
+        self.use_off_band_correction = True      # If True, the off band is used to correct tau_A for aerosol.
 
         self.BG_CORR_MODES = [0,    # 2D poly surface fit (without sky radiance image)
                               1,    # Scaling of sky radiance image
