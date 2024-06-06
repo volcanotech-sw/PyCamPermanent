@@ -182,7 +182,6 @@ class PyMenu:
         self.menus[tab].add_command(label='Setup paths', command=process_settings.generate_frame)
         self.menus[tab].add_command(label='Background model', command=plume_bg.generate_frame)
         self.menus[tab].add_command(label='Plume velocity settings', command=opti_flow.generate_frame)
-        self.menus[tab].add_command(label='Cross-correlation', command=cross_correlation.generate_frame)
         self.menus[tab].add_command(label='Light dilution settings', command=light_dilution.generate_frame)
         self.menus[tab].add_separator()
 

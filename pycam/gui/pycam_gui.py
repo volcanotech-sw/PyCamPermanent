@@ -111,7 +111,7 @@ class PyCam(ttk.Frame):
         doas_fov.start_draw(self.root)      # start drawing of frame
         doas_fov.initiate_variables(self)
         cell_calib.initiate_variables(self)
-        cross_correlation.start_draw(self.root)
+        cross_correlation.parent = self.root
         cross_correlation.initiate_variables(self)
         opti_flow.initiate_variables(self)
         light_dilution.add_gui(self)

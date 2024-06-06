@@ -4263,10 +4263,6 @@ class CrossCorrelationSettings(LoadSaveProcessingSettings):
             self.initiate_variables()
             self.generate_frame()
 
-    def start_draw(self, parent):
-        self.parent = parent
-        self.__draw_canv__()
-
     def initiate_variables(self, main_gui):
         """
         Initiates all tkinter variables
@@ -4306,36 +4302,27 @@ class CrossCorrelationSettings(LoadSaveProcessingSettings):
         if update_pyplis:
             self.pyplis_worker.apply_config(subset=self.vars.keys())
 
-    def generate_frame(self):
+    def generate_frame(self, nadeau_frame, ica_frame):
         """
-        Generates widget settings frame
-        :return:
+        Generates frame based on ICA and Nadeau frames passed to it
         """
-        if self.in_frame:
-            self.frame.attributes('-topmost', 1)
-            self.frame.attributes('-topmost', 0)
-            return
-
-        self.update_variables() # Update to current settings
-
         self.in_frame = True
 
-        self.frame = tk.Toplevel()
-        self.frame.title('Cross-correlation settings')
-        self.frame.protocol('WM_DELETE_WINDOW', self.close_frame)
+        # Update variables
+        self.update_variables()
 
-        self.windows = ttk.Notebook(self.frame, style='One.TNotebook.Tab')
-        self.windows.pack(fill='both', expand=1, padx=5, pady=5)
+        # Generate frames
+        self._generate_frame_nadeau(nadeau_frame)
+        self._generate_frame_ica(ica_frame)
 
-        self.frame_ica = ttk.Frame(self.windows)
-        self.frame_ica.pack()
-        self.frame_nadeau = ttk.Frame(self.windows)
-        self.frame_nadeau.pack()
+        #Start canvas drawing
+        self.__draw_canv__()
 
-        self.windows.add(self.frame_nadeau, text='Nadeau cross-correlation')
-        self.windows.add(self.frame_ica, text='ICA cross-correlation')
-        self._generate_frame_ica(self.frame_ica)
-        self._generate_frame_nadeau()
+    def close_frame(self):
+        """Closes frame and applies relevant updates"""
+        self.q.put(2)
+        self.update_variables()
+        self.in_frame = False
 
     def _generate_frame_ica(self, frame):
         """
@@ -4392,20 +4379,20 @@ class CrossCorrelationSettings(LoadSaveProcessingSettings):
         self.fig_canvas._tkcanvas.pack(side=tk.TOP)
         # -------------------------------------------
 
-    def _generate_frame_nadeau(self):
+    def _generate_frame_nadeau(self, frame):
         """
         Generates flow_nadeau frame
         """
 
         # ----------------------------------------------
         # Building Nadeau frame
-        self.frame_opts_nad = ttk.LabelFrame(self.frame_nadeau, text='Options', relief=tk.RAISED, borderwidth=3)
+        self.frame_opts_nad = ttk.LabelFrame(frame, text='Options', relief=tk.RAISED, borderwidth=3)
         self.frame_opts_nad.grid(row=0, column=0, sticky='nsew', padx=self.pdx, pady=self.pdy)
 
-        self.frame_fig_nad = ttk.Frame(self.frame_nadeau, relief=tk.RAISED, borderwidth=3)
+        self.frame_fig_nad = ttk.Frame(frame, relief=tk.RAISED, borderwidth=3)
         self.frame_fig_nad.grid(row=0, column=1, sticky='nsew', padx=self.pdx, pady=self.pdy)
 
-        self.frame_nad_xcorr = ttk.Frame(self.frame_nadeau, relief=tk.RAISED, borderwidth=3)
+        self.frame_nad_xcorr = ttk.Frame(frame, relief=tk.RAISED, borderwidth=3)
         self.frame_nad_xcorr.grid(row=0, column=2, sticky='nsew', padx=self.pdx, pady=self.pdy)
 
         self.frame_nad_res = ttk.Frame(self.frame_nad_xcorr, relief=tk.RAISED, borderwidth=3)
@@ -4475,7 +4462,7 @@ class CrossCorrelationSettings(LoadSaveProcessingSettings):
             # Create figure
             self.fig_nad, self.axes = plt.subplots(2, 1, figsize=self.fig_size_nad, dpi=self.dpi,
                                                    gridspec_kw={'height_ratios': [self.h_ratio, 1]})
-        self.fig.subplots_adjust(left=0.05, right=0.92, top=0.95, bottom=0.05, wspace=0.00)
+        self.fig_nad.subplots_adjust(left=0.05, right=0.92, top=0.95, bottom=0.05, wspace=0.00)
 
         self.ax_nad = self.axes[0]
         self.ax_nad.set_aspect(1)
@@ -4874,18 +4861,6 @@ class CrossCorrelationSettings(LoadSaveProcessingSettings):
         if draw:
             self.q.put(1)
 
-    def close_frame(self):
-        """
-        Closes frame and makes sure current values are correct
-        :return:
-        """
-        # UPDATE CURRENT SETTINGS FROM CONFIG FILE
-        self.update_variables()
-
-        self.in_frame = False
-        # Close frame
-        self.frame.destroy()
-
     def __draw_canv__(self):
         """Draws canvas periodically"""
         try:
@@ -4896,7 +4871,7 @@ class CrossCorrelationSettings(LoadSaveProcessingSettings):
                     self.fig_canvas_nad.draw()
                     self.fig_canvas_lag.draw()
             else:
-                pass
+                return
         except queue.Empty:
             pass
         self.parent.after(refresh_rate, self.__draw_canv__)
@@ -4913,8 +4888,10 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
         4. Add its associated property with get and set options
         5. Add its default value to processing_setting_defaults.txt
     """
-    def __init__(self, generate_frame=False, pyplis_work=pyplis_worker, cam_specs=CameraSpecs(), fig_setts=gui_setts):
+    def __init__(self, cross_corr_frame=CrossCorrelationSettings(), generate_frame=False, pyplis_work=pyplis_worker,
+                 cam_specs=CameraSpecs(), fig_setts=gui_setts):
 
+        self.cross_corr_frame = cross_corr_frame
         self.pyplis_worker = pyplis_work
         self.pyplis_worker.fig_opt = self
         self.fig_SO2 = None
@@ -5021,7 +4998,7 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
         self.windows.add(self.frame_ica, text='ICA cross-correlation')
 
         self._generate_optflow_frame()
-
+        self.cross_corr_frame.generate_frame(self.frame_nadeau, self.frame_ica)
 
     def _generate_optflow_frame(self):
         """
@@ -5516,6 +5493,9 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
 
         # Close drawing function (it is started again on opening the frame
         self.q.put(2)
+
+        # Close cross-correlation frames
+        self.cross_corr_frame.close_frame()
 
         # Close frame
         self.frame.destroy()

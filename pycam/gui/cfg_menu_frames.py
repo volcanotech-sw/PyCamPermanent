@@ -38,7 +38,7 @@ cell_calib = CellCalibFrame(fig_setts=gui_setts, process_setts=process_settings)
 cross_correlation = CrossCorrelationSettings(fig_setts=gui_setts)
 
 # Optical flow frame
-opti_flow = OptiFlowSettings(fig_setts=gui_setts)
+opti_flow = OptiFlowSettings(cross_corr_frame=cross_correlation, fig_setts=gui_setts)
 
 # Light dilution frame
 light_dilution = LightDilutionSettings(fig_setts=gui_setts)
