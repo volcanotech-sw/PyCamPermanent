@@ -4332,13 +4332,20 @@ class CrossCorrelationSettings(LoadSaveProcessingSettings):
         self.frame_nadeau = ttk.Frame(self.windows)
         self.frame_nadeau.pack()
 
-        self.windows.add(self.frame_ica, text='ICA cross-correlation')
         self.windows.add(self.frame_nadeau, text='Nadeau cross-correlation')
+        self.windows.add(self.frame_ica, text='ICA cross-correlation')
+        self._generate_frame_ica(self.frame_ica)
+        self._generate_frame_nadeau()
+
+    def _generate_frame_ica(self, frame):
+        """
+        Generates ICA cross-correlation frame
+        """
 
         # -------------------------------------
         # Information frame
         row = 0
-        self.frame_info = ttk.Frame(self.frame_ica, relief=tk.RAISED, borderwidth=3)
+        self.frame_info = ttk.Frame(frame, relief=tk.RAISED, borderwidth=3)
         self.frame_info.grid(row=row, column=0, sticky='nsew', padx=self.pdx, pady=self.pdy)
 
         label_1 = ttk.Label(self.frame_info, text='ICA gap [m]:')
@@ -4366,7 +4373,7 @@ class CrossCorrelationSettings(LoadSaveProcessingSettings):
 
         # Figure frame
         row += 1
-        self.frame_fig = ttk.Frame(self.frame_ica, relief=tk.RAISED, borderwidth=3)
+        self.frame_fig = ttk.Frame(frame, relief=tk.RAISED, borderwidth=3)
         self.frame_fig.grid(row=row, column=0, sticky='nsew', padx=self.pdx, pady=self.pdy)
 
         # -------------------------------------------
@@ -4385,6 +4392,10 @@ class CrossCorrelationSettings(LoadSaveProcessingSettings):
         self.fig_canvas._tkcanvas.pack(side=tk.TOP)
         # -------------------------------------------
 
+    def _generate_frame_nadeau(self):
+        """
+        Generates flow_nadeau frame
+        """
 
         # ----------------------------------------------
         # Building Nadeau frame
@@ -4995,10 +5006,31 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
         self.frame.title('Plume velocity settings')
         self.frame.protocol('WM_DELETE_WINDOW', self.close_frame)
 
+        self.windows = ttk.Notebook(self.frame, style='One.TNotebook.Tab')
+        self.windows.pack(fill='both', expand=1, padx=5, pady=5)
+
+        self.frame_optflow = ttk.Frame(self.windows)
+        self.frame_optflow.pack()
+        self.frame_ica = ttk.Frame(self.windows)
+        self.frame_ica.pack()
+        self.frame_nadeau = ttk.Frame(self.windows)
+        self.frame_nadeau.pack()
+
+        self.windows.add(self.frame_optflow, text='Optical flow')
+        self.windows.add(self.frame_nadeau, text='Nadeau cross-correlation')
+        self.windows.add(self.frame_ica, text='ICA cross-correlation')
+
+        self._generate_optflow_frame()
+
+
+    def _generate_optflow_frame(self):
+        """
+        Builds optical flow frame
+        """
         # -------------------------
         # Build optical flow figure
         # -------------------------
-        self.frame_fig = tk.Frame(self.frame, relief=tk.RAISED, borderwidth=3)
+        self.frame_fig = tk.Frame(self.frame_optflow, relief=tk.RAISED, borderwidth=3)
         self.frame_fig.grid(row=0, column=0, columnspan=2, padx=5, pady=5)
         # self.frame.rowconfigure(0, weight=1)
         self._build_fig_img()
@@ -5007,7 +5039,7 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
         # -----------------
         # Parameter options
         # -----------------
-        self.param_frame = ttk.LabelFrame(self.frame, text='Optical flow parameters', borderwidth=5)
+        self.param_frame = ttk.LabelFrame(self.frame_optflow, text='Optical flow parameters', borderwidth=5)
         self.param_frame.grid(row=1, column=0, sticky='nsew', padx=5, pady=5)
 
         row = 0
@@ -5042,7 +5074,7 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
         # ------------------------------
         # Pyplis Analysis options frame
         # ------------------------------
-        self.analysis_frame = ttk.LabelFrame(self.frame, text='Analysis parameters', borderwidth=5)
+        self.analysis_frame = ttk.LabelFrame(self.frame_optflow, text='Analysis parameters', borderwidth=5)
         self.analysis_frame.grid(row=1, column=1, sticky='nsew', padx=5, pady=5)
         row = 0
 
@@ -5101,7 +5133,7 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
         # ----------------------------------
 
         # Set buttons
-        butt_frame = ttk.Frame(self.frame)
+        butt_frame = ttk.Frame(self.frame_optflow)
         butt_frame.grid(row=2, column=0, sticky='nsew')
 
         # Apply button
