@@ -344,7 +344,8 @@ class StorageMount:
                 print('Found SSD device path at {}'.format(self.dev_path))
 
         if sda_path is None:
-            print('Could not find SSD device in /dev/sda')
+            # print('Could not find SSD device in /dev/sda')
+            pass
 
     def mount_dev(self):
         """Mount device located at self.dev_path to self.mount_path destination"""
@@ -363,8 +364,8 @@ class StorageMount:
         # then search this string to determine what value X takes in /dev/sdaX. Then use this
         # in the mounting process, rather than just assuming the device is at '/dev/sda1'. Should
         # probably use this in the mntOutput.find() expression too, so I'm searching for the right device.
-        # SHould use try: or something that catches if the /dev/sda1 doesn't exist - i.e. no USB stick plugged in.
-        # THen print - please plug in device.
+        # Should use try: or something that catches if the /dev/sda1 doesn't exist - i.e. no USB stick plugged in.
+        # Then print - please plug in device.
         subprocess.call(['sudo', 'mount', '-o', 'uid=pi,gid=pi', self.dev_path, self.mount_path])
 
         # If the data directory doesn't exist, make it (after the device has been successfully mounted

@@ -341,7 +341,8 @@ class ImageFigure:
             self.num_cp_txt += 1
             self.img_canvas.draw()
         else:
-            print('Clicked outside axes bounds but inside plot window')
+            # print('Clicked outside axes bounds but inside plot window')
+            pass
 
     def cp_update(self):
         """Save control points

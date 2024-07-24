@@ -842,7 +842,8 @@ class ImageSO2(LoadSaveProcessingSettings):
 
             self.img_canvas.draw()
         else:
-            print('Clicked outside axes bounds but inside plot window')
+            # print('Clicked outside axes bounds but inside plot window')
+            pass
 
     def del_ica(self, line_num, update_all=True):
         """Searches axis for line object relating to pyplis line object and removes it
@@ -901,7 +902,7 @@ class ImageSO2(LoadSaveProcessingSettings):
         :param draw: bool   Defines whether the image canvas is redrawn after updating cmap
         :return:
         """
-        print('In scale image')
+        # print('In scale image')
         if self.disp_cal:
             print('In disp cal')
             # Get vmax either automatically or by defined spinbox value
@@ -1256,7 +1257,8 @@ class TimeSeriesFigure:
                                 marker=None,
                                 in_kg=False)
                     except KeyError:
-                        print('No emission rate analysis data available for {}'.format(self.line_plot))
+                        # print('No emission rate analysis data available for {}'.format(self.line_plot))
+                        pass
 
         # Plot the summed total
         if self.plot_total and len(self.total_lines) > 1:
@@ -1275,7 +1277,8 @@ class TimeSeriesFigure:
                                 marker=self.marker,
                                 in_kg=False)
                     except KeyError:
-                        print('No emission rate analysis data available for sum of all ICA lines')
+                        # print('No emission rate analysis data available for sum of all ICA lines')
+                        pass
 
         # Adjust ylimits and do general plot tidying
         self.axes[0].autoscale(axis='y')
@@ -2990,10 +2993,10 @@ class ProcessSettings(LoadSaveProcessingSettings):
 
         ttk.Label(settings_frame, text='Time Zone [relative to UTC]:').grid(row=row, column=0,  sticky='w',
                                                                             padx=self.pdx, pady=self.pdy)
-        self.time_zone_spin = ttk.Spinbox(settings_frame, textvariable=self._time_zone, from_=-12, to=12, increment=1,
-                                          width=2, font=self.main_gui.main_font)
-        self.time_zone_spin.grid(row=row, column=1, sticky='nsew', padx=self.pdx, pady=self.pdy)
-        row += 1
+        # self.time_zone_spin = ttk.Spinbox(settings_frame, textvariable=self._time_zone, from_=-12, to=12, increment=1,
+        #                                  width=2, font=self.main_gui.main_font)
+        # self.time_zone_spin.grid(row=row, column=1, sticky='nsew', padx=self.pdx, pady=self.pdy)
+        # row += 1
 
         # Optical flow to buffer checkbutton
         self.opt_check = ttk.Checkbutton(settings_frame, text='Save optical flow to buffer',

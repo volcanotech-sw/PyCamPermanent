@@ -195,7 +195,7 @@ class SpecWorker:
         """If dark_dir is changed we need to reset the dark_dict which holds preloaded dark specs"""
         self.dark_dict = {}
         self._dark_dir = value
-        print('Dark spectra directory set: {}'.format(self.dark_dir))
+        # print('Dark spectra directory set: {}'.format(self.dark_dir))
 
     @property
     def clear_spec_raw(self):

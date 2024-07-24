@@ -433,10 +433,8 @@ class IFitWorker(SpecWorker):
             self.stray_corr_spectra()
 
         # Run processing
-        #print('IFit worker: Running fit')
         fit_0 = self.analyser.fit_spectrum([self.wavelengths, self.plume_spec_shift], calc_od=self.ref_spec_used,
                                            fit_window=[self.start_fit_wave, self.end_fit_wave])
-        #print('IFit worker: Finished fit')
         self.applied_ld_correction = False
 
         # Update wavelengths
@@ -986,8 +984,8 @@ class IFitWorker(SpecWorker):
 
         # Force updating of ld analysers to use new ILS
         self.update_ld_analysers(force_both=True)
-        print('Updating ILS. Light dilution analysers will be updated. This could cause issues if lookup grids'
-              'were generated with a different ILS. Please ensure ILS represents the lookup grids currently in use')
+        # print('Updating ILS. Light dilution analysers will be updated. This could cause issues if lookup grids'
+        #      'were generated with a different ILS. Please ensure ILS represents the lookup grids currently in use')
 
     def update_ils(self):
         """Updates ILS in Analyser object for iFit (code taken from __init__ of Analyser, this should work..."""
@@ -1143,7 +1141,7 @@ class IFitWorker(SpecWorker):
         :param use_new_window   bool    If False, we revert back to the previous fit window after loading in the LD data
         :return:
         """
-        print('IFitWorker: Loading light dilution lookup grid: {}'.format(file_path))
+        # print('IFitWorker: Loading light dilution lookup grid: {}'.format(file_path))
 
         dat = np.load(file_path)
         x, y = dat  # unpack data into cd and error grids

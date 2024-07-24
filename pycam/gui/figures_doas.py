@@ -279,7 +279,6 @@ class SpectraPlot:
         """Draws canvas periodically"""
         try:
             update = self.q.get(block=False)
-            # print('Got {} from q'.format(update))
             if update == 1:
                 self.canv.draw()
             else:
@@ -292,7 +291,6 @@ class SpectraPlot:
     def close_widget(self):
         """Closes widget cleanly, by stopping __draw_canv__()"""
         self.q.put(2)
-        # print('Added to q')
 
 
 class DOASPlot(LoadSaveProcessingSettings):
@@ -477,7 +475,6 @@ class DOASPlot(LoadSaveProcessingSettings):
         """Draws canvas periodically"""
         try:
             update = self.Q.get(block=False)
-            # print('Got message')
             if update == 1:
                 # Only draw canvas of currently selected tab (save processing power)
                 species = self.tabs.tab(self.tabs.select(), "text")
@@ -496,11 +493,6 @@ class DOASPlot(LoadSaveProcessingSettings):
         """Saves processed DOAS spectra"""
         # Need to redo this as acquisition frame won't exist in this code
         pass
-        #
-        # if isinstance(self.acq_obj, AcquisitionFrame):
-        #     print('Saving...')
-        #     self.acq_obj.save_processed_spec()
-
 
 class DOASFigure:
     """
@@ -699,7 +691,6 @@ class CDSeries:
         """Draws canvas periodically"""
         try:
             update = self.q.get(block=False)
-            # print('Got {} from q'.format(update))
             if update == 1:
                 self.canv.draw()
             else:

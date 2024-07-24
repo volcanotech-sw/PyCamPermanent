@@ -24,11 +24,13 @@ try:
     seabreeze.use("pyseabreeze")
     import seabreeze.spectrometers as sb
 except ModuleNotFoundError:
-    warnings.warn('Working on machine without seabreeze, functionality of some classes will be lost')
+    pass
+    # warnings.warn('Working on machine without seabreeze, functionality of some classes will be lost')
 try:
     import picamera
 except ModuleNotFoundError:
-    warnings.warn('Working on machine without picamera, functionality of some classes will be lost')
+    pass
+    # warnings.warn('Working on machine without picamera, functionality of some classes will be lost')
 try:
     import cv2
 except ModuleNotFoundError:
@@ -93,13 +95,10 @@ class Camera(CameraSpecs):
     def _q_check(self, q, q_type='capt'):
         """Checks type of queue object and returns queue (ret_q). Sets queue to default queue if none is provided"""
         if isinstance(q, multiprocessing.managers.BaseProxy):
-            # print('Using multiprocessing queue')
             ret_q = q
         elif isinstance(q, queue.Queue):
-            # print('Using Queue queue')
             ret_q = q
         else:
-            # print('Unrecognized queue object, reverting to default')
             if q_type == 'capt':
                 ret_q = self.capture_q
             elif q_type == 'img':
@@ -154,7 +153,6 @@ class Camera(CameraSpecs):
 
         # Wait for camera exposure speed to settle on new value
         self.exposure_speed = self.check_exposure_speed(timeout=timeout)
-        # print('Exposure speed set for ss {}: {}'.format(ss, self.exposure_speed))
 
         # Set ss_idx
         self.ss_idx = np.argmin(np.absolute(ss - self.ss_list))
@@ -569,13 +567,10 @@ class Spectrometer(SpecSpecs):
     def _q_check(self, q, q_type='capt'):
         """Checks type of queue object and returns queue (ret_q). Sets queue to default queue if none is provided"""
         if isinstance(q, multiprocessing.managers.BaseProxy):
-            # print('Using multiprocessing queue')
             ret_q = q
         elif isinstance(q, queue.Queue):
-            # print('Using Queue queue')
             ret_q = q
         else:
-            # print('Unrecognized queue object, reverting to default')
             if q_type == 'capt':
                 ret_q = self.capture_q
             elif q_type == 'spec':

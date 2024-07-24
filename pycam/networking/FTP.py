@@ -370,8 +370,8 @@ class FTPClient:
             self.retrieve_schedule_files()
             return True
         except BaseException as e:
-            print('FTP connection encountered error - file transfer is inactive')
-            print(e)
+            # print('FTP connection encountered error - file transfer is inactive')
+            # print(e)
             return False
 
     def close_connection(self):
@@ -622,7 +622,8 @@ class FTPClient:
                 if new_only:
                     if file in ignore_list:
                         continue
-                print('Ignore list time taken: {:.3f}'.format(time.time() - start_1))
+                pass
+                # print('Ignore list time taken: {:.3f}'.format(time.time() - start_1))
 
                 # Extract filename to generate lock file
                 filename, ext = os.path.splitext(file)

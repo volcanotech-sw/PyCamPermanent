@@ -40,10 +40,6 @@ def run_pycam(ip, auto_capt=1):
         # stdin, stderr, stdout = ssh_cmd(connection, 'python3 {} {}'.format(pycam_path, auto_capt), background=True)
         stdin, stderr, stdout = ssh_cmd(connection, '{} {}'.format(pycam_path, auto_capt), background=True)
 
-        # print('STDIN: {}'.format(stdin))
-        # print('STDERR: {}'.format(stderr))
-        # print('STDOUT: {}'.format(stdout))
-
         # Close ssh connection
         close_ssh(connection)
 
@@ -562,7 +558,6 @@ class InstrumentConfiguration:
 
         std_in, std_out, std_err = ssh_cmd(ssh_cli, '(cd /home/pi/wittypi; sudo ./runScript.sh)', background=False)
         print(std_out.readlines())
-        # print(std_err.readlines())
         close_ssh(ssh_cli)
 
         # Update second pi if witty pi is used for second Pi
@@ -575,7 +570,6 @@ class InstrumentConfiguration:
 
             std_in, std_out, std_err = ssh_cmd(ssh_cli_2, '(cd /home/pi/wittypi; sudo ./runScript.sh)', background=False)
             print(std_out.readlines())
-            # print(std_err.readlines())
             close_ssh(ssh_cli_2)
 
         if not self.use_second_shutdown:

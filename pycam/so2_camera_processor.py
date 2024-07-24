@@ -44,6 +44,9 @@ import warnings
 from ruamel.yaml import YAML
 warnings.simplefilter("ignore", UserWarning)
 warnings.simplefilter("ignore", RuntimeWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", module="pydoas")
+warnings.filterwarnings("ignore", module="pyplis")
 
 yaml = YAML()
 
@@ -1078,7 +1081,6 @@ class PyplisWorker:
 
         # Add to plot queue if requested
         if plot:
-            print('Updating plot {}'.format(band))
             getattr(self, 'fig_{}'.format(band)).update_plot(img_path)
 
     def find_dark_img(self, img_dir, ss, band='on'):
@@ -1313,11 +1315,11 @@ class PyplisWorker:
 
         try:
             slope, offs = self.cell_calib.calib_data['aa'].calib_coeffs
-            print('Calibration parameters AA: {}, {}'.format(slope, offs))
+            # print('Calibration parameters AA: {}, {}'.format(slope, offs))
             slope, offs = self.cell_calib.calib_data['on'].calib_coeffs
-            print('Calibration parameters on-band: {}, {}'.format(slope, offs))
+            # print('Calibration parameters on-band: {}, {}'.format(slope, offs))
             slope, offs = self.cell_calib.calib_data['off'].calib_coeffs
-            print('Calibration parameters off-band: {}, {}'.format(slope, offs))
+            # print('Calibration parameters off-band: {}, {}'.format(slope, offs))
         except TypeError:
             messagebox.showerror('Calibration failed', 'Calibration failed.'
                                                        'This is probably related to NaNs in the tau vector. '
@@ -2185,7 +2187,8 @@ class PyplisWorker:
                 self.tau_A, self.tau_B, self.tau_B_warped = tau_A, tau_B, tau_B_warped
             print('Light dilution correction time: {}'.format(time.time()-t))
         else:
-            print('Light dilution correction not applied')
+            # print('Light dilution correction not applied')
+            pass
 
         # Adjust for changing FOV sensitivity if requested
         if self.use_sensitivity_mask:
@@ -2845,7 +2848,7 @@ class PyplisWorker:
         time_step = img_next.meta['start_acq'] - img_current.meta['start_acq']
         plume_speed = lag_length / time_step.total_seconds()
 
-        print('Nadeau plume speed (m/s): {:.2f}'.format(plume_speed))
+        # print('Nadeau plume speed (m/s): {:.2f}'.format(plume_speed))
         info_dict = {'profile_current': profile_current,
                      'profile_next': profile_next,
                      'x_vals': x_interp,
