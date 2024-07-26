@@ -251,7 +251,7 @@ class PyplisWorker:
         self._cal_series_path = None
         self.sens_mask_opts = [0,2]       # Use sensitivity mask when cal_type_int is set to one of the specified options, 0 = cell, 1 = doas, 2 = cell + doas
         self.use_sensitivity_mask = True  # If true, the sensitivty mask will be used to correct tau images
-        self.cal_type_int = 1             # Calibration method: 0 = Cell, 1= DOAS, 2 = Cell and DOAS (cell used to adjust FOV sensitivity), 4 = preloaded coefficients
+        self.cal_type_int = 1             # Calibration method: 0 = Cell, 1= DOAS, 2 = Cell and DOAS (cell used to adjust FOV sensitivity), 3 = preloaded coefficients
         self.cell_dict_A = {}
         self.cell_dict_B = {}
         self.cell_tau_dict = {}     # Dictionary holds optical depth images for each cell
@@ -3816,6 +3816,9 @@ class PyplisWorker:
             print('Please stop watcher before attempting to start new watch. '
                   'This isssue may be caused by having manual acquisitions running alongside continuous watching')
             return
+
+        if self.cal_type_int == 3:
+            # TODO raise a warning window and exit this function - can't perform RTP with a preloaded calibration
         
         if directory is not None:
             self.watching_dir = directory
