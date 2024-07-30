@@ -67,6 +67,7 @@ fov_rad: 0
 centre_pix_x: 0
 centre_pix_y: 0
 doas_cal_adjust_offset: 0
+doas_cal_timeout: 30
 
 # Plume speed algorithms
 flow_raw: 1

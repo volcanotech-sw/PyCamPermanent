@@ -220,6 +220,7 @@ class PyplisWorker:
         self.doas_last_save = datetime.datetime.now()
         self.doas_last_fov_cal = datetime.datetime.now()
         self.doas_cal_adjust_offset = False   # If True, only use gradient of tau-CD plot to calibrate optical depths. If false, the offset is used too (at times could be useful as someimes the background (clear sky) of an image has an optical depth offset (is very negative or positive)
+        self.doas_cal_timeout = 30              # Time period for checking for new doas result during calibration
 
         self.img_dir = None
         self.proc_name = 'Processed_{}'     # Directory name for processing
@@ -2506,7 +2507,7 @@ class PyplisWorker:
             tau = tau_fov.mean()
 
             try:
-                timeout = datetime.datetime.now() + datetime.timedelta(seconds = 30)
+                timeout = datetime.datetime.now() + datetime.timedelta(seconds = self.doas_cal_timeout)
                 # Keep retrying to get the cd for current time until timeout
                 # Will also exit if a new value with a greater datetime is added
                 while (datetime.datetime.now() < timeout) and not np.any(img_time < self.doas_worker.results.index):
