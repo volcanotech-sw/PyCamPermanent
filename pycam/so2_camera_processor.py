@@ -2509,14 +2509,17 @@ class PyplisWorker:
             try:
                 timeout = datetime.datetime.now() + datetime.timedelta(seconds = self.doas_cal_timeout)
                 # Keep retrying to get the cd for current time until timeout
-                # Will also exit if a new value with a greater datetime is added
-                while (datetime.datetime.now() < timeout) and not np.any(img_time < self.doas_worker.results.index):
+                while (datetime.datetime.now() < timeout):
                     # Get CD for current time
                     cd = self.doas_worker.results.get(img_time)
                     if cd is not None: break
+                    # Will also exit if a new value with a greater datetime is added to results
+                    # This may not currently work due to the lock on self.doas_worker.results
+                    if self.doas_worker.results.index[-1] > img_time:
+                        raise KeyError(f"spectra for {img_time} not found: later time point found")
                     time.sleep(0.5)
                 else:
-                    raise KeyError(f"spectra for {img_time} not found")
+                    raise KeyError(f"spectra for {img_time} not found: timeout")
 
                 # Get index for cd_err
                 cd_err = self.doas_worker.results.fit_errs[
