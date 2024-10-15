@@ -2774,6 +2774,9 @@ class PyplisWorker:
         # Set timepoint as index (useful for searching for times later) and drop rows that don't contain calibration data
         self.calibration_series = self.calibration_series.set_index('timepoint').dropna(subset=['coeff 0', 'coeff 1'])
 
+        # remove any duplicate rows
+        self.calibration_series = self.calibration_series[~self.calibration_series.index.duplicated(keep='first')]
+
     def calc_line_dist(self, line_1, line_2):
         """
         Calculates the distance (in pixels) between the centre points of 2 lines. This gives an estimate of the distance
