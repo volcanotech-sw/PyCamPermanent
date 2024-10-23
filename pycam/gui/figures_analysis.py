@@ -1034,7 +1034,7 @@ class ImageSO2(LoadSaveProcessingSettings):
         asp /= self.h_ratio
         self.ax_xsect.set_aspect(asp)
 
-        self.ax_xsect.grid(b=True, which='major')
+        self.ax_xsect.grid(visible=True, which='major')
         self.ax_xsect.legend(loc='upper right')
 
     def update_plot(self, img_tau, img_cal=None, draw=True):
@@ -1116,7 +1116,7 @@ class ImageSO2(LoadSaveProcessingSettings):
                 else:
                     with self.lock:
                         self.img_canvas.draw()
-                        self.cbar.draw_all()
+                        self.cbar._draw_all()
             else:
                 return
         except queue.Empty:
@@ -1339,7 +1339,7 @@ class TimeSeriesFigure:
         self.axes[2].set_ylabel(r"$\varphi\,[^{\circ}$]")
         self.axes[3].set_ylabel(r"$ROI_{BG}\,[cm^{-2}]$")
         for i in range(len(self.axes)):
-            self.axes[i].grid(b=True, which='major')
+            self.axes[i].grid(visible=True, which='major')
             if i == 1 or i == 2:
                 plt.setp(self.axes[i].get_xticklabels(), visible=False)
 
@@ -4257,11 +4257,11 @@ class CellCalibFrame:
         abs_img = self.pyplis_worker.cell_tau_dict[self.pyplis_worker.sens_mask_ppmm]
         self.abs_im.set_data(abs_img)
         self.ax_abs.set_title('Cell absorbance: {} ppm.m'.format(self.pyplis_worker.sens_mask_ppmm))
-        self.cbar_abs.draw_all()
+        self.cbar_abs._draw_all()
 
         # Plot sensitivity mask
         self.mask_im.set_data(self.pyplis_worker.sensitivity_mask)
-        self.cbar_mask.draw_all()
+        self.cbar_mask._draw_all()
 
         # Set limits for images
         self.scale_imgs(draw=False)
@@ -4871,7 +4871,7 @@ class NadeauFlowSettings(LoadSaveProcessingSettings):
         asp /= self.h_ratio
         self.ax_xsect.set_aspect(asp)
 
-        self.ax_xsect.grid(b=True, which='major')
+        self.ax_xsect.grid(visible=True, which='major')
         self.ax_xsect.set_xlabel('Pixel')
         self.ax_xsect.set_ylabel('\u03C4')
 
@@ -5015,7 +5015,7 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
         self.dpi = self.fig_setts.dpi
         self.fig_size = self.fig_setts.fig_SO2
         self.img_tau = None
-        self.img_vel = np.zeros([self.cam_specs.pix_num_y, self.cam_specs.pix_num_x], dtype=np.float)
+        self.img_vel = np.zeros([self.cam_specs.pix_num_y, self.cam_specs.pix_num_x], dtype=float)
 
         self.pdx = 5
         self.pdy = 5
