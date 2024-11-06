@@ -3343,9 +3343,9 @@ class PyplisWorker:
 
                         # Also add predominant flow direction
                         orient_series, upper, lower = props.get_orientation_tseries()
-                        res['flow_histo']._flow_orient.append(orient_series[-1])
-                        res['flow_histo']._flow_orient_upper.append(upper[-1])
-                        res['flow_histo']._flow_orient_lower.append(lower[-1])
+                        res['flow_histo']._flow_orient.append(orient_series.iloc[-1])
+                        res['flow_histo']._flow_orient_upper.append(upper.iloc[-1])
+                        res['flow_histo']._flow_orient_lower.append(lower.iloc[-1])
 
                         # Add to total emissions
                         if line_id in lines_total:
