@@ -53,14 +53,8 @@ class IFitWorker(SpecWorker):
 
         self.ppmm_conversion = 2.652e15   # convert absorption cross-section in cm2/molecule to ppm.m (MAY NEED TO CHANGE THIS TO A DICTIONARY AS THE CONVERSION MAY DIFFER FOR EACH SPECIES?)
 
-        self._start_stray_wave = 293    # Wavelength space stray light window definitions
-        self._end_stray_wave = 296
         self._start_fit_wave_init = 300  # Wavelength space fitting window definitions       Set big range to start Analyser
         self._end_fit_wave_init = 340
-        self._start_fit_wave = 308       # Update fit window to more reasonable starting size (initial setting was to create a big grid
-        self._end_fit_wave = 318
-        self.start_fit_wave_2 = 312      # Second fit window (used in light dilution correction)
-        self.end_fit_wave_2 = 322
 
         self.spec_time = None           # Time of currently loaded plume_spec
         self.ref_spec_used = list(species.keys())   # Reference spectra we actually want to use at this time (similar to ref_spec_types - perhaps one is obsolete (or should be!)
@@ -463,7 +457,7 @@ class IFitWorker(SpecWorker):
                     # Process second fit window
                     fit_1 = self.analyser.fit_spectrum([self.wavelengths, self.plume_spec_shift],
                                                        calc_od=self.ref_spec_used,
-                                                       fit_window=[self.start_fit_wave_2, self.end_fit_wave_2])
+                                                       fit_window=[self.start_fit_wave_ld, self.end_fit_wave_ld])
                     self.fit_0_uncorr = fit_0   # Save uncorrected fits as attributes
                     self.fit_1_uncorr = fit_1
                     df_lookup, df_refit, fit_0, fit_1 = self.ld_lookup(so2_dat=(fit_0.params['SO2'].fit_val,
@@ -848,15 +842,15 @@ class IFitWorker(SpecWorker):
         Also starts a processing thread, so that the images which arrive can be processed
         """
         if self.watching:
-            print('IFit worker: Already watching for spectra: {}'.format(self.watching_dir))
+            print('IFit worker: Already watching for spectra: {}'.format(self.transfer_dir))
             print('IFit worker: Please stop watcher before attempting to start new watch. '
                   'This isssue may be caused by having manual acquisitions running alongside continuous watching')
             return
         self.watcher = create_dir_watcher(directory, recursive, self.directory_watch_handler)
         self.watcher.start()
-        self.watching_dir = directory
+        self.transfer_dir = directory
         self.watching = True
-        print('IFit worker: Watching {} for new spectra'.format(self.watching_dir[-30:]))
+        print('IFit worker: Watching {} for new spectra'.format(self.transfer_dir[-30:]))
 
         # Start the processing thread
         self.start_processing_thread()
@@ -866,7 +860,7 @@ class IFitWorker(SpecWorker):
         if self.watching:
             if self.watcher is not None:
                 self.watcher.stop()
-                print('Stopped watching {} for new images'.format(self.watching_dir[-30:]))
+                print('Stopped watching {} for new images'.format(self.transfer_dir[-30:]))
                 self.watching = False
 
                 # Stop processing thread when we stop watching the directory
@@ -977,9 +971,9 @@ class IFitWorker(SpecWorker):
                                  frs_path=self.frs_path, stray_flag=False, dark_flag=False, ils_type='File',
                                  ils_path=self.ils_path)
 
-        if force_both or self.analyser1 is None or self.start_fit_wave_2 != self.analyser1.fit_window[0] \
-                or self.end_fit_wave_2 != self.analyser1.fit_window[1]:
-            self.analyser1 = Analyser(params=self.params, fit_window=[self.start_fit_wave_2, self.end_fit_wave_2],
+        if force_both or self.analyser1 is None or self.start_fit_wave_ld != self.analyser1.fit_window[0] \
+                or self.end_fit_wave_ld != self.analyser1.fit_window[1]:
+            self.analyser1 = Analyser(params=self.params, fit_window=[self.start_fit_wave_ld, self.end_fit_wave_ld],
                                  frs_path=self.frs_path, stray_flag=False, dark_flag=False, ils_type='File',
                                  ils_path=self.ils_path)
 
@@ -1033,7 +1027,7 @@ class IFitWorker(SpecWorker):
         # Create generator that encompasses full fit window
         pad = 1
         analyser = Analyser(params=self.params,
-                            fit_window=[self.start_fit_wave - pad, self.end_fit_wave_2 + pad],
+                            fit_window=[self.start_fit_wave - pad, self.end_fit_wave_ld + pad],
                             frs_path=self.frs_path,
                             stray_flag=False,      # We stray correct prior to passing spectrum to Analyser
                             dark_flag=False,
@@ -1044,7 +1038,7 @@ class IFitWorker(SpecWorker):
 
         ld_results = generate_ld_curves(analyser, [wavelengths, spec],
                                         wb1=[self.start_fit_wave, self.end_fit_wave],
-                                        wb2=[self.start_fit_wave_2, self.end_fit_wave_2],
+                                        wb2=[self.start_fit_wave_ld, self.end_fit_wave_ld],
                                         so2_lims=so2_lims, so2_step=so2_step, ldf_lims=ldf_lims, ldf_step=ldf_step)
 
         num_rows = ld_results.shape[0]
@@ -1082,8 +1076,8 @@ class IFitWorker(SpecWorker):
                                                                              int(np.round(self.end_fit_wave)),
                                                                              self.grid_max_ppmm, self.grid_increment_ppmm,
                                                                              ldf_step)
-        filename_1 = '{}_ld_lookup_{}-{}_0-{}-{}ppmm_ldf-0-1-{}.npy'.format(date_str, int(np.round(self.start_fit_wave_2)),
-                                                                             int(np.round(self.end_fit_wave_2)),
+        filename_1 = '{}_ld_lookup_{}-{}_0-{}-{}ppmm_ldf-0-1-{}.npy'.format(date_str, int(np.round(self.start_fit_wave_ld)),
+                                                                             int(np.round(self.end_fit_wave_ld)),
                                                                              self.grid_max_ppmm, self.grid_increment_ppmm,
                                                                              ldf_step)
         file_path_0 = os.path.join(FileLocator.LD_LOOKUP, filename_0)
@@ -1148,7 +1142,7 @@ class IFitWorker(SpecWorker):
         if fit_num == 0:
             self.start_fit_wave, self.end_fit_wave = int(start_fit_wave), int(end_fit_wave)
         elif fit_num == 1:
-            self.start_fit_wave_2, self.end_fit_wave_2 = int(start_fit_wave), int(end_fit_wave)
+            self.start_fit_wave_ld, self.end_fit_wave_ld = int(start_fit_wave), int(end_fit_wave)
 
         # Update analysers with fit window settings
         self.update_ld_analysers()

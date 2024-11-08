@@ -100,8 +100,6 @@ class ImageFigure:
         self.xsect_frame.grid(row=1, column=0, padx=5, pady=5, sticky='w')
         self.fig_frame.grid(row=2, column=0, columnspan=3, padx=5, pady=5)
 
-        self.save_butt = ttk.Button(self.frame, text='Save\n Control Points', command=self.cp_update)
-        self.save_butt.grid(row=1, column=1, padx=5, pady=5, sticky='nsew')
         self.reset_butt = ttk.Button(self.frame, text='Reset\n Control Points', command=self.cp_reset)
         self.reset_butt.grid(row=1, column=2, padx=5, pady=5, sticky='nsew')
 
@@ -344,26 +342,12 @@ class ImageFigure:
         else:
             print('Clicked outside axes bounds but inside plot window')
 
-    def cp_update(self):
-        """Save control points
-        ->
-        Attempt transform calculation if len(saved_coordinates_A) == len(saved_coordinates_B)"""
-
-        # Update saved coordinates in <ImageRegistartionFrame> object
-        setattr(self.img_reg, 'saved_coordinates_{}'.format(self.band),
-                np.array(getattr(self.img_reg, 'coordinates_{}'.format(self.band))))
-
-        # Invoke registration function which will perform registration if control point conditions are satisfied
-        if self.img_reg.reg_meth == 1:
-            self.img_reg.img_reg_select(1)      # The method is set to cp within this function
-
     def cp_reset(self):
         """
         Reset control points
         """
         # Reset img_reg coordinates list
         setattr(self.img_reg, 'coordinates_{}'.format(self.band), [])
-        setattr(self.img_reg, 'saved_coordinates_{}'.format(self.band), [])
 
         # Removing scatter points form plot and resetting the lists
         for i in range(len(self.plt_CP)):
@@ -435,12 +419,11 @@ class ImageRegistrationFrame:
         # CP select
         self.coordinates_A = []
         self.coordinates_B = []
-        self.saved_coordinates_A = []
-        self.saved_coordinates_B = []
 
         # TK variables
         self._reg_meth = tk.IntVar()        # Vals [0 = None, 1 = CP, 2 = CV]
         self.reg_meth = 0
+        self.previous_reg_meth = None
         self._num_it = tk.IntVar()
         self.num_it = 500
         self._term_eps = tk.DoubleVar()
@@ -454,17 +437,31 @@ class ImageRegistrationFrame:
         self.frame = ttk.LabelFrame(self.parent, text='Image Registration:', relief=tk.RAISED)
 
         # Registration method widgets
-        self.reg_none = ttk.Radiobutton(self.frame, variable=self._reg_meth, text='No Registration', value=0,
-                                        command=lambda: self.img_reg_select(self.reg_meth))
+        self.reg_none = ttk.Radiobutton(self.frame, variable=self._reg_meth, text='No Registration',
+                                        value=0, command=self.on_radio_change)
         self.reg_none.grid(row=0, column=0, columnspan=2, padx=self.pdx, pady=self.pdy, sticky='w')
-        self.reg_cp = ttk.Radiobutton(self.frame, variable=self._reg_meth, text='Control Point', value=1,
-                                      command=lambda: self.img_reg_select(self.reg_meth))
-        self.reg_cp.grid(row=1, column=0, columnspan=2, padx=self.pdx, pady=self.pdy, sticky='w')
 
+        # Control point box
+        self.cp_frame = ttk.Frame(self.frame, relief=tk.GROOVE, borderwidth=2)
+        self.cp_frame.grid(row=1, column=0, columnspan=4, padx=3, pady=2, sticky='nsew')
+        self.reg_cp = ttk.Radiobutton(self.cp_frame, variable=self._reg_meth, text='Control Point', 
+                                      value=1, state="disabled",
+                                      command=self.on_radio_change)
+        self.reg_cp.grid(row=0, column=0, columnspan=2, padx=self.pdx, pady=self.pdy, sticky='w')
+        # Control point
+        run_button = tk.Button(self.cp_frame, text='Run',
+                               command=lambda: self.img_reg_select(self.reg_cp['value'], rerun=True))
+        run_button.grid(row=1, column=0, columnspan=1, padx=self.pdx, pady=self.pdy, sticky='e')
+        res_button = tk.Button(self.cp_frame, text='Reset',
+                               command=lambda: self.img_reg_reset(self.reg_cp['value']))
+        res_button.grid(row=1, column=1, columnspan=1, padx=self.pdx, pady=self.pdy, sticky='e')
+
+        # OpenCV Box
         self.cv_frame = ttk.Frame(self.frame, relief=tk.GROOVE, borderwidth=2)
         self.cv_frame.grid(row=2, column=0, columnspan=4, padx=3, pady=2, sticky='nsew')
-        self.reg_cv = ttk.Radiobutton(self.cv_frame, variable=self._reg_meth, text='OpenCV ECC', value=2,
-                                      command=lambda: self.img_reg_select(self.reg_meth))
+        self.reg_cv = ttk.Radiobutton(self.cv_frame, variable=self._reg_meth, text='OpenCV ECC',
+                                      value=2, state="disabled",
+                                      command=self.on_radio_change)
         self.reg_cv.grid(row=0, column=0, columnspan=2, pady=self.pdy, sticky='w')
 
         # OpenCV options
@@ -480,12 +477,20 @@ class ImageRegistrationFrame:
         label = ttk.Label(self.cv_frame, text='e-10', font=self.main_gui.main_font)
         label.grid(row=2, column=3, padx=self.pdx, pady=self.pdy, sticky='w')
 
+        run_button = tk.Button(self.cv_frame, text='Run',
+                               command=lambda: self.img_reg_select(self.reg_cv['value'], rerun=True))
+        run_button.grid(row=6, column=0, columnspan=1, padx=self.pdx, pady=self.pdy, sticky='e')
+        res_button = tk.Button(self.cv_frame, text='Reset',
+                               command=lambda: self.img_reg_reset(self.reg_cv['value']))
+        res_button.grid(row=6, column=1, columnspan=1, padx=self.pdx, pady=self.pdy, sticky='e')
+
     @property
     def reg_meth(self):
         return self._reg_meth.get()
 
     @reg_meth.setter
     def reg_meth(self, value):
+        self.previous_reg_meth = value
         self._reg_meth.set(value)
 
     @property
@@ -504,38 +509,53 @@ class ImageRegistrationFrame:
     def term_eps(self, value):
         self._term_eps.set(value) / (10 ** -10)
 
-    def img_reg_select(self, meth):
-        """Initiates ragistration depending on the method selected
-        -> updates absorbance image"""
+    def on_radio_change(self):
+        """Handler for radio button changes."""
+        current_value = self._reg_meth.get()
+        # Only proceed if the value has changed
+        if self.previous_reg_meth != current_value:
+            self.previous_reg_meth = current_value
+            self.img_reg_select(current_value)
+
+    def img_reg_select(self, meth, rerun = False):
+        """Initiates registration depending on the method selected
+        -> updates absorbance image
+        
+        :param int meth: Variable representing the different registration options
+        :param bool rerun: Should the registration be re-run
+        
+        """
         kwargs = {}     # Dictionary for arguments for image registration settings (only used in CP I think)
 
         # Removing warp
         if meth == 0:
             self.img_reg.method = None
-            self.img_reg.warp_matrix_cv = False
-            self.img_reg.got_cv_transform = False   # Reset cv transform
 
         # CP warp
         elif meth == 1:
             self.img_reg.method = 'cp'
-            self.img_reg.warp_matrix_cv = False
-            if len(self.saved_coordinates_A) > 1 and len(self.saved_coordinates_A) == len(self.saved_coordinates_B):
-                # Set cp transform to false, so that a new tform is generated
-                self.img_reg.got_cp_transform = False
-                kwargs['coord_A'] = np.array(self.saved_coordinates_A)
-                kwargs['coord_B'] = np.array(self.saved_coordinates_B)
-            else:
-                messagebox.showinfo('Control point registration.',
-                    'To update image registration select the same number of control points for each image, and save.')
+            if rerun:
+                if len(self.coordinates_A) > 1 and len(self.coordinates_A) == len(self.coordinates_B):
+                    # Set cp transform to false, so that a new tform is generated
+                    self.img_reg.got_cp_transform = False
+                    self.img_reg.warp_matrix_cp = False
+                    kwargs['coord_A'] = np.array(self.coordinates_A)
+                    kwargs['coord_B'] = np.array(self.coordinates_B)
+                else:
+                    messagebox.showinfo('Control point registration.',
+                        'To update image registration select the same number of control points for each image, and click run.')
+                    return
 
         # CV warp
         elif meth == 2:
             self.img_reg.method = 'cv'
-            self.img_reg.warp_matrix_cv = False
+            if rerun:
+                self.img_reg.warp_matrix_cv = False
+                self.img_reg.got_cv_transform = False
 
-            # Update opencv settings
-            for opt in self.img_reg.cv_opts:
-                self.img_reg.cv_opts[opt] = getattr(self, opt)
+                # Update opencv settings
+                for opt in self.img_reg.cv_opts:
+                    self.img_reg.cv_opts[opt] = getattr(self, opt)
 
         # Once ImageRegistration object has been set up we call the registration function
         self.pyplis_worker.register_image(**kwargs)
@@ -550,7 +570,7 @@ class ImageRegistrationFrame:
             self.pyplis_worker.process_pair(img_path_A=None, img_path_B=None, plot=True, plot_bg=None, overwrite=True)
             messagebox.showinfo("Image registration changed",
                                 'Note that the newly processed pair will not include changes to optical flow '
-                                'since previous images have not been updated. Please reload the processing directory to'
+                                'since previous images have not been updated. Please reload the processing directory to '
                                 'see changes to all images.')
         else:
             messagebox.showinfo("Image registration changed",
@@ -562,3 +582,41 @@ class ImageRegistrationFrame:
         # Just rerun loading of sequence, which will mean that optical flow is run too (this requires updating
         # img_tau_prev as well as img_tau, which register_img() won't do on its own)
         # self.pyplis_worker.load_sequence(img_dir=self.pyplis_worker.img_dir, plot_bg=False)
+
+        if rerun:
+            self.update_reg_radios()
+            self.reg_meth = meth
+
+    def update_reg_radios(self):
+        """
+        Update the state of the image registration radio buttons based on availability of registrations
+        """
+
+        if self.img_reg.got_cp_transform:
+            self.reg_cp.config(state="normal")
+        else:
+            self.reg_cp.config(state="disabled")
+
+        if self.img_reg.got_cv_transform:
+            self.reg_cv.config(state="normal")
+        else:
+            self.reg_cv.config(state="disabled")
+
+    def img_reg_reset(self, meth):
+        """ Reset image registration
+
+        :param int meth: Variable representing the different registration options
+        """
+
+        if meth == 1:
+            self.img_reg.got_cp_transform = False
+        elif meth == 2:
+            self.img_reg.got_cv_transform = False
+        
+        # If the method being reset is the currently slected one, then move to the no reg option
+        # Otherwise just update the radio buttons
+        if meth == self.reg_meth:
+            self.img_reg_select(0, rerun=True)
+        else:
+            self.update_reg_radios()
+

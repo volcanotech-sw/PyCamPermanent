@@ -790,8 +790,7 @@ class BasicAcqHandler:
                 return
 
         # Start pyplis worker watcher
-        self.pyplis_worker.start_watching(self.img_dir.root_dir, recursive=True)
-        self.doas_worker.start_watching(self.spec_dir.root_dir, recursive=True)
+        self.pyplis_worker.start_watching_dir()
 
         # Build capture frame
         self.frame = tk.Toplevel()
@@ -1039,8 +1038,7 @@ class BasicAcqHandler:
         if mess:
             # Send commands to stop continuous capture of spectrometer and camera and stop auto SS
             cfg.send_comms.q.put({'SPC': 1, 'SPS': 1, 'ATA': 0, 'ATB': 0, 'ATS': 0})
-            self.pyplis_worker.stop_watching()
-            self.doas_worker.stop_watching()
+            self.pyplis_worker.stop_watching_dir()
             return 1
         else:
             return 0
@@ -1101,8 +1099,7 @@ class BasicAcqHandler:
         self.pyplis_worker.plot_iter = self.plot_iter_current
         self.img_dir.auto_mode = True
         self.spec_dir.auto_mode = True
-        self.pyplis_worker.stop_watching()
-        self.doas_worker.stop_watching()
+        self.pyplis_worker.stop_watching_dir()
         cfg.ftp_client.stop_watch()
 
         self.in_frame = False

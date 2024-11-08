@@ -39,6 +39,7 @@ import threading
 from pandas import Series
 import io
 import pickle
+import copy
 
 refresh_rate = 200    # Refresh rate of draw command when in processing thread
 
@@ -153,6 +154,14 @@ class SequenceInfo:
         self.num_img_tot_lab.configure(text=str(self.num_img_tot))
         self.date_lab.configure(text=self.date)
         self.time_lab.configure(text='{} - {}'.format(self.start_time, self.end_time))
+
+    def update_img_dir_lab(self, img_dir, watching = False):
+
+        if watching:
+            img_dir = "{} (Watching)".format(img_dir)
+
+        img_dir_short = truncate_path(img_dir, self.path_str_length)
+        self.img_dir_lab.configure(text=img_dir_short)
 
 
 class ImageSO2(LoadSaveProcessingSettings):
@@ -1172,6 +1181,8 @@ class TimeSeriesFigure:
         self.plot_total = 1
         self.lines = []                     # List holding ids of all lines currently drawn
         self.total_lines = []               # Lines which contribute to the 'total' emission rate
+        for key in self.pyplis_worker.velo_modes:
+            setattr(self, '_{}'.format(key), tk.BooleanVar(value=True))
 
     @property
     def plot_total(self):
@@ -1195,20 +1206,93 @@ class TimeSeriesFigure:
     def line_plot(self, value):
         self._line_plot.set(value)
 
+    @property
+    def flow_glob(self):
+        return self._flow_glob.get()
+
+    @flow_glob.setter
+    def flow_glob(self, value):
+        self._flow_glob.set(value)
+        if value:
+            self.disp_plot_checks['flow_glob'].configure(state=tk.ACTIVE)
+        else:
+            self.disp_plot_checks['flow_glob'].configure(state=tk.DISABLED)
+
+    @property
+    def flow_nadeau(self):
+        return self._flow_nadeau.get()
+
+    @flow_nadeau.setter
+    def flow_nadeau(self, value):
+        self._flow_nadeau.set(value)
+        if value:
+            self.disp_plot_checks['flow_nadeau'].configure(state=tk.ACTIVE)
+        else:
+            self.disp_plot_checks['flow_nadeau'].configure(state=tk.DISABLED)
+
+    @property
+    def flow_raw(self):
+        return self._flow_raw.get()
+
+    @flow_raw.setter
+    def flow_raw(self, value):
+        self._flow_raw.set(value)
+        if value:
+            self.disp_plot_checks['flow_raw'].configure(state=tk.ACTIVE)
+        else:
+            self.disp_plot_checks['flow_raw'].configure(state=tk.DISABLED)
+
+    @property
+    def flow_histo(self):
+        return self._flow_histo.get()
+
+    @flow_histo.setter
+    def flow_histo(self, value):
+        self._flow_histo.set(value)
+        if value:
+            self.disp_plot_checks['flow_histo'].configure(state=tk.ACTIVE)
+        else:
+            self.disp_plot_checks['flow_histo'].configure(state=tk.DISABLED)
+
+    @property
+    def flow_hybrid(self):
+        return self._flow_hybrid.get()
+
+    @flow_hybrid.setter
+    def flow_hybrid(self, value):
+        self._flow_hybrid.set(value)
+        if value:
+            self.disp_plot_checks['flow_hybrid'].configure(state=tk.ACTIVE)
+        else:
+            self.disp_plot_checks['flow_hybrid'].configure(state=tk.DISABLED)
+
     def _build_opts(self):
         """Builds options widget"""
         self.opts_frame = ttk.LabelFrame(self.frame, text='Options')
 
+        row = 0
         lab = ttk.Label(self.opts_frame, text='Plot line:', font=self.main_gui.main_font)
-        lab.grid(row=0, column=0, sticky='w', padx=2, pady=2)
+        lab.grid(row=row, column=0, sticky='w', padx=2, pady=2)
         self.line_opts = ttk.Combobox(self.opts_frame, textvariable=self._line_plot, justify='left',
                                       state='readonly', font=self.main_gui.main_font)
         self.line_opts.bind('<<ComboboxSelected>>', self.update_plot)
-        self.line_opts.grid(row=0, column=1, sticky='nsew', padx=2, pady=2)
+        self.line_opts.grid(row=row, column=1, sticky='nsew', padx=2, pady=2)
 
+        row += 1
         self.plt_tot_check = ttk.Checkbutton(self.opts_frame, text='Plot sum of all lines', variable=self._plot_total,
                                              command=self.update_plot)
-        self.plt_tot_check.grid(row=1, column=0, columnspan=2, sticky='w', padx=2, pady=2)
+        self.plt_tot_check.grid(row=row, column=0, columnspan=2, sticky='w', padx=2, pady=2)
+
+        # Options for toggling different velocity plot on and off
+        row += 1
+        plot_check_frame = ttk.Frame(self.opts_frame)
+        plot_check_frame.grid(row=row, column=0, columnspan=4, sticky='nsew')
+        self.disp_plot_checks = {}
+        for i, key in enumerate(self.pyplis_worker.velo_modes.keys()):
+            self.disp_plot_checks[key] = ttk.Checkbutton(plot_check_frame, text=key,
+                                                         variable=getattr(self, '_{}'.format(key)),
+                                                         command=self.update_plot)
+            self.disp_plot_checks[key].grid(row=0, column=i, sticky='w', padx=2, pady=2)
 
         # Update current line options
         self.update_lines(plot=False)
@@ -1281,15 +1365,16 @@ class TimeSeriesFigure:
             ax.clear()
 
         if self.line_plot.lower() != 'none':
+            self.plot_bg_roi(marker=self.marker)
             for mode in self.pyplis_worker.velo_modes:
-                if self.pyplis_worker.velo_modes[mode]:
+                if self.pyplis_worker.velo_modes[mode] and getattr(self, mode):
                     try:
                         if len(self.pyplis_worker.results[self.line_plot][mode]._phi) > 0:
                             line_lab = 'line_{}: {}'.format(int(self.line_plot) + 1, mode)
-                            self.plot_bg_roi(marker=self.marker)
-                            self.plot_flow_dir(self.line_plot, label=line_lab,
-                                               color=self.colours[int(self.line_plot)],
-                                               marker='.')
+                            if mode == 'flow_histo':    # Flow dir is reliant on flow_histo (the plot function currently is anyway)
+                                self.plot_flow_dir(self.line_plot, label=line_lab,
+                                                   color=self.colours[int(self.line_plot)],
+                                                   marker='.')
                             self.plot_veff(self.pyplis_worker.results[self.line_plot][mode],
                                            label=line_lab, ls=self.plot_styles[mode]['ls'],
                                            color=self.plot_styles[mode]['colour'],
@@ -1313,7 +1398,7 @@ class TimeSeriesFigure:
         # Plot the summed total
         if self.plot_total and len(self.total_lines) > 1:
             for mode in self.pyplis_worker.velo_modes:
-                if self.pyplis_worker.velo_modes[mode]:
+                if self.pyplis_worker.velo_modes[mode] and getattr(self, mode):
                     try:
                         if len(self.pyplis_worker.results['total'][mode]._phi) > 0:
                             self.pyplis_worker.results['total'][mode].plot(
@@ -2923,6 +3008,7 @@ class ProcessSettings(LoadSaveProcessingSettings):
         self.vars = {'plot_iter': int,
                      'bg_A_path': str,
                      'bg_B_path': str,
+                     'transfer_dir': str,
                      'dark_img_dir': str,
                      'dark_spec_dir': str,
                      'cell_cal_dir': str,
@@ -2939,6 +3025,7 @@ class ProcessSettings(LoadSaveProcessingSettings):
         self._plot_iter = tk.IntVar()
         self._bg_A = tk.StringVar()
         self._bg_B = tk.StringVar()
+        self._transfer_dir = tk.StringVar()
         self._dark_img_dir = tk.StringVar()
         self._dark_spec_dir = tk.StringVar()
         self._cell_cal_dir = tk.StringVar()
@@ -3000,7 +3087,7 @@ class ProcessSettings(LoadSaveProcessingSettings):
         label.grid(row=row, column=0, sticky='w', padx=self.pdx, pady=self.pdy)
         self.dark_img_label = ttk.Label(path_frame, text=self.dark_dir_short, width=self.path_widg_length, anchor='e', font=self.main_gui.main_font)
         self.dark_img_label.grid(row=row, column=1, padx=self.pdx, pady=self.pdy)
-        butt = ttk.Button(path_frame, text='Choose Folder', command=self.get_dark_img_dir)
+        butt = ttk.Button(path_frame, text='Choose Folder', command=lambda: self.change_path("dark_img_dir"))
         butt.grid(row=row, column=2, sticky='nsew', padx=self.pdx, pady=self.pdy)
         row += 1
 
@@ -3010,7 +3097,7 @@ class ProcessSettings(LoadSaveProcessingSettings):
         self.dark_spec_label = ttk.Label(path_frame, text=self.dark_spec_dir_short, width=self.path_widg_length,
                                          font=self.main_gui.main_font, anchor='e')
         self.dark_spec_label.grid(row=row, column=1, padx=self.pdx, pady=self.pdy)
-        butt = ttk.Button(path_frame, text='Choose Folder', command=self.get_dark_spec_dir)
+        butt = ttk.Button(path_frame, text='Choose Folder', command=lambda: self.change_path("dark_spec_dir"))
         butt.grid(row=row, column=2, sticky='nsew', padx=self.pdx, pady=self.pdy)
         row += 1
 
@@ -3020,18 +3107,28 @@ class ProcessSettings(LoadSaveProcessingSettings):
         self.cell_cal_label = ttk.Label(path_frame, text=self.cell_cal_dir_short, width=self.path_widg_length,
                                         font=self.main_gui.main_font, anchor='e')
         self.cell_cal_label.grid(row=row, column=1, padx=self.pdx, pady=self.pdy)
-        butt = ttk.Button(path_frame, text='Choose Folder', command=self.get_cell_cal_dir)
+        butt = ttk.Button(path_frame, text='Choose Folder', command=lambda: self.change_path("cell_cal_dir"))
         butt.grid(row=row, column=2, sticky='nsew', padx=self.pdx, pady=self.pdy)
         row += 1
 
-        # Cell calibration directory
+        # Preloaded calibration filepath
         label = ttk.Label(path_frame, text='Calibration time series file:', font=self.main_gui.main_font)
         label.grid(row=row, column=0, sticky='w', padx=self.pdx, pady=self.pdy)
         self.cal_series_label = ttk.Label(path_frame, text=self.cal_series_path_short, width=self.path_widg_length,
                                         font=self.main_gui.main_font, anchor='e')
         self.cal_series_label.grid(row=row, column=1, padx=self.pdx, pady=self.pdy)
-        butt = ttk.Button(path_frame, text='Choose File', command=self.get_cal_series_path)
+        butt = ttk.Button(path_frame, text='Choose File', command=lambda: self.change_path("cal_series_path", file=True))
         butt.grid(row=row, column=2, sticky='nsew', padx=self.pdx, pady=self.pdy)
+        row += 1
+
+        # Transfer directory
+        label = ttk.Label(path_frame, text='Transfer directory:', font=self.main_gui.main_font)
+        label.grid(row=row, column=0, sticky='w', padx=self.pdx, pady=self.pdy)
+        self.watching_label = ttk.Label(path_frame, text=self.transfer_dir_short, width=self.path_widg_length, anchor='e', font=self.main_gui.main_font)
+        self.watching_label.grid(row=row, column=1, sticky='e', padx=self.pdx, pady=self.pdy)
+        butt = ttk.Button(path_frame, text='Choose folder', command=lambda: self.change_path("transfer_dir"))
+        butt.grid(row=row, column=2, sticky='nsew', padx=self.pdx, pady=self.pdy)
+        row += 1
 
         # Processing
         settings_frame = ttk.LabelFrame(self.frame, text='Processing parameters', borderwidth=5)
@@ -3127,6 +3224,21 @@ class ProcessSettings(LoadSaveProcessingSettings):
     def dark_dir_short(self):
         """Returns shorter label for dark directory"""
         return truncate_path(self.dark_img_dir, self.path_str_length)
+    
+    @property
+    def transfer_dir(self):
+        return self._transfer_dir.get()
+
+    @transfer_dir.setter
+    def transfer_dir(self, value):
+        self._transfer_dir.set(value)
+        if hasattr(self, 'watching_label') and self.in_frame:
+            self.watching_label.configure(text=self.transfer_dir_short)
+
+    @property
+    def transfer_dir_short(self):
+        """Returns shorter label for dark directory"""
+        return truncate_path(self.transfer_dir, self.path_str_length)
 
     @property
     def dark_spec_dir(self):
@@ -3255,48 +3367,33 @@ class ProcessSettings(LoadSaveProcessingSettings):
     def time_zone(self, value):
         self._time_zone.set(value)
 
-    def get_dark_img_dir(self):
-        """Gives user options for retrieving dark image directory"""
-        dark_img_dir = filedialog.askdirectory(initialdir=self.dark_img_dir)
-
-        # Pull frame back to the top, as otherwise it tends to hide behind the main frame after closing the filedialog
-        self.frame.lift()
-
-        if len(dark_img_dir) > 0:
-            self.dark_img_dir = dark_img_dir
-
-    def get_dark_spec_dir(self):
-        """Gives user options for retrieving dark spectrum directory"""
-        dark_spec_dir = filedialog.askdirectory(initialdir=self.dark_spec_dir)
-
-        # Pull frame back to the top, as otherwise it tends to hide behind the main frame after closing the filedialog
-        if self.in_frame:
-            self.frame.lift()
-
-        if len(dark_spec_dir) > 0:
-            self.dark_spec_dir = dark_spec_dir
-
-    def get_cell_cal_dir(self, set_var=False):
+    def change_path(self, val_name, file = False, set_config=False):
         """
-        Gives user options for retrieving cell calibration directory
-        :param set_var: bool
+        Generalised function for setting a file or directory path via the GUI
+        :param val_name: str    Name of the parameter in the config/backend to be set
+        :param file: bool       Is the path to a file? if true then use the file dialog, otherwise use the dir dialog
+        :param set_config: bool
             If true, this will set the pyplis_worker value automatically. This means that this function can be used
             from outside of the process_settings widget and the directory will automatically be updated, without
-            requiring the OK click from the settings widget which usually instigates gather_vars. This is used by the
-            menu widget 'Load cell directory' submenu
+            requiring the OK click from the settings widget which usually instigates gather_vars.
         """
-        cell_cal_dir = filedialog.askdirectory(initialdir=self.cell_cal_dir)
+        curr_path = getattr(self, val_name)
+
+        if not file:
+            new_path = filedialog.askdirectory(initialdir=curr_path)
+        else:
+            new_path = filedialog.askopenfilename(initialdir=curr_path)
 
         # Pull frame back to the top, as otherwise it tends to hide behind the main frame after closing the filedialog
         if self.in_frame:
             self.frame.lift()
 
-        if len(cell_cal_dir) > 0:
-            self.cell_cal_dir = cell_cal_dir
+        if len(new_path) > 0:
+            setattr(self, val_name, new_path)
 
-        # Update pyplis worker value if requested (done when using submenu selection
-        if set_var:
-            pyplis_worker.config['cell_cal_dir'] = self.cell_cal_dir
+        if set_config:
+            pyplis_worker.config[val_name] = new_path
+
 
     def set_cell_cal_dir(self, cal_dir):
         """Directly sets cell calibration directory without filedialog"""
@@ -3305,28 +3402,6 @@ class ProcessSettings(LoadSaveProcessingSettings):
             return
         self.cell_cal_dir = cal_dir
         pyplis_worker.config['cell_cal_dir'] = self.cell_cal_dir
-
-    def get_cal_series_path(self, set_var=False):
-        """
-        Gives user options for retrieving calibration coefficients from file
-        :param set_var: bool
-            If true, this will set the pyplis_worker value automatically. This means that this function can be used
-            from outside of the process_settings widget and the directory will automatically be updated, without
-            requiring the OK click from the settings widget which usually instigates gather_vars. This is probably not
-            used anywhere currently
-        """
-        cal_series_path = filedialog.askopenfilename(initialdir=self.cal_series_path)
-
-        # Pull frame back to the top, as otherwise it tends to hide behind the main frame after closing the filedialog
-        if self.in_frame:
-            self.frame.lift()
-
-        if len(cal_series_path) > 0:
-            self.cal_series_path = cal_series_path
-
-        # Update pyplis worker value if requested (done when using submenu selection
-        if set_var:
-            pyplis_worker.config['cal_series_path'] = cal_series_path
 
     def get_bg_file(self, band):
         """Gives user options for retreiving dark directory"""
@@ -3347,6 +3422,7 @@ class ProcessSettings(LoadSaveProcessingSettings):
         """
         pyplis_worker.config['plot_iter'] = self.plot_iter
         doas_worker.plot_iter = self.plot_iter
+        pyplis_worker.config['transfer_dir'] = self.transfer_dir
         pyplis_worker.config['dark_img_dir'] = self.dark_img_dir       # Load dark_dir prior to bg images - bg images require dark dir
         pyplis_worker.config['cell_cal_dir'] = self.cell_cal_dir
         pyplis_worker.config["cal_series_path"] = self.cal_series_path
@@ -3377,6 +3453,7 @@ class ProcessSettings(LoadSaveProcessingSettings):
             return
         
         self.close_window()
+        self.main_gui.set_transfer_dir()
         # Reload sequence, to ensure that the updates have been made
         pyplis_worker.load_sequence(pyplis_worker.img_dir, plot=True, plot_bg=False)
         doas_worker.load_dir(prompt=False)
@@ -3385,6 +3462,7 @@ class ProcessSettings(LoadSaveProcessingSettings):
         """Closes window"""
         # Reset values if cancel was pressed, by retrieving them from their associated places
         self.plot_iter = self.vars['plot_iter'](pyplis_worker.config['plot_iter'])
+        self.transfer_dir = pyplis_worker.config['transfer_dir']
         self.bg_A_path = pyplis_worker.config['bg_A_path']
         self.bg_B_path = pyplis_worker.config['bg_B_path']
         self.dark_img_dir = pyplis_worker.config['dark_img_dir']
@@ -4110,7 +4188,7 @@ class CellCalibFrame:
 
     def change_cal_dir(self):
         """Changes the cell directory and loads calibration"""
-        self.process_setts.get_cell_cal_dir(set_var=True)
+        self.process_setts.change_path("cell_cal_dir", set_config=True)
         self.frame.attributes('-topmost', 1)
         self.frame.attributes('-topmost', 0)
 
@@ -5009,6 +5087,7 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
         self.pyplis_worker = pyplis_work
         self.pyplis_worker.fig_opt = self
         self.fig_SO2 = None
+        self.fig_time_series = None
         self.q = queue.Queue()
         self.cam_specs = cam_specs
         self.fig_setts = fig_setts
@@ -5392,6 +5471,7 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
         # Loop through flow options and set them
         for key in self.pyplis_worker.velo_modes:
             self.pyplis_worker.config[key] = bool(getattr(self, key))
+            setattr(self.fig_time_series, key, bool(getattr(self, key)))  # Update timeseires fig too
 
         non_opt_flow_setts = self.vars.keys() - self.settings_vars
 

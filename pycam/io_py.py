@@ -9,6 +9,7 @@ from .utils import check_filename
 import numpy as np
 import os
 import datetime
+from datetime import datetime as dt
 import time
 from tkinter import filedialog
 try:
@@ -234,6 +235,30 @@ def load_light_dil_line(filename, color='blue', line_id='line'):
     line = load_pcs_line(filename, color, line_id)
     return line
 
+def load_picam_png(file_path, meta={}, **kwargs):
+    """Load PiCam png files and import meta information"""
+
+    raw_img = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
+    
+    # cv2 returns None if file failed to load
+    if raw_img is None:
+        raise FileNotFoundError(f"Image from {file_path} could not be loaded.") 
+
+    img = np.array(raw_img)
+
+    # Split both forward and backward slashes, to account for both formats
+    file_name = file_path.split('\\')[-1].split('/')[-1]
+
+    # Update metadata dictionary
+    meta["bit_depth"] = 10
+    meta["device_id"] = "picam-1"
+    meta["file_type"] = "png"
+    meta["start_acq"] = dt.strptime(file_name.split('_')[0], "%Y-%m-%dT%H%M%S")
+    meta["texp"] = float([f for f in file_name.split('_') if 'ss' in f][0].replace('ss', '')) * 10 ** -6  # exposure in seconds
+    meta["read_gain"] = 1
+    meta["pix_width"] = meta["pix_height"] = 5.6e-6  # pixel width in m
+
+    return img, meta
 
 def save_fov_txt(filename, fov_obj):
     """
@@ -328,11 +353,13 @@ def save_so2_img(path, img, filename=None, compression=0, max_val=None):
     cv2.imwrite(full_path, im2save, png_compression)
 
 
-def save_emission_rates_as_txt(path, emission_dict, only_last_value=False):
+def save_emission_rates_as_txt(path, emission_dict, ICA_dict, only_last_value=False):
     """
     Saves emission rates as text files every hour - emission rates are split into hour-long
     :param path:            str     Directory to save to
     :param emission_dict:   dict    Dictionary of emission rates for different lines and different flow modes
+                                    Assumed to be time-sorted
+    :param ICA_dict         dict    Dictionary of ICA masses for different lines
                                     Assumed to be time-sorted
     :param only_last_value: bool    If True, add only the most recent values to the output file
     :return:
@@ -360,7 +387,13 @@ def save_emission_rates_as_txt(path, emission_dict, only_last_value=False):
         except BaseException as e:
             print('Could not save emission rate data as path definition is not valid:\n'
                   '{}'.format(e))
-                
+        
+        index = -1 if only_last_value else 0
+
+        ICA_masses_df = DataFrame(ICA_dict[line_id]['value'][index:],
+                                  index = ICA_dict[line_id]['datetime'][index:],
+                                  columns = ["ICA_mass_(kg/m)"])
+
         for flow_mode in emission_dict[line_id]:
             emis_dict = emission_dict[line_id][flow_mode]
             # Check there is data in this dictionary - if not, we don't save this data
@@ -380,6 +413,8 @@ def save_emission_rates_as_txt(path, emission_dict, only_last_value=False):
                 # Convert emis_dict object to dataframe
                 emission_df = emis_dict.to_pandas_dataframe()
                 header = True
+
+            emission_df = emission_df.join(ICA_masses_df)
 
             # Round to 3 decimal places
             emission_df = emission_df.round(3)

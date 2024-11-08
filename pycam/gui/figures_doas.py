@@ -194,17 +194,21 @@ class SpectraPlot:
         self.ax.set_xlim([self.doas_worker.wavelengths[0], self.doas_worker.wavelengths[-1]])
         self.q.put(1)
 
-    def update_stray_start(self, event = None):
+    def update_stray_start(self, event = None, stray_start = None):
         """Updates stray light range on plot"""
-        stray_start = self.stray_start.get()
+        if stray_start is None:
+            stray_start = self.stray_start.get()
+        else:
+            self.stray_start.set(stray_start)
 
         # Ensure the end of the stray range doesn't become less than the start
         if stray_start >= self.stray_end.get():
             stray_start = self.stray_end.get() - 0.1
             self.stray_start.set(stray_start)
 
-        # Update DOASWorker with new stray range
-        self.doas_worker.start_stray_wave = stray_start
+        # Update DOASWorker with new stray range if different
+        if stray_start != self.doas_worker.start_stray_wave:
+            self.doas_worker.start_stray_wave = stray_start
 
         # Update plot
         self.min_stray_line[0].set_data([self.doas_worker.start_stray_wave, self.doas_worker.start_stray_wave], [0, self.max_DN])
@@ -218,17 +222,21 @@ class SpectraPlot:
             self.doas_worker.process_doas()
             self.doas_plot.update_plot()
 
-    def update_stray_end(self, event = None):
+    def update_stray_end(self, event = None, stray_end = None):
         """Updates stray light range on plot"""
-        stray_end = self.stray_end.get()
+        if stray_end is None:
+            stray_end = self.stray_end.get()
+        else:
+            self.stray_end.set(stray_end)
 
         # Ensure the end of the stray range doesn't become less than the start
         if stray_end <= self.stray_start.get():
             stray_end = self.stray_start.get() + 0.1
             self.stray_end.set(stray_end)
 
-        # Update DOASWorker with new stray range
-        self.doas_worker.end_stray_wave = stray_end
+        # Update DOASWorker with new stray range if different
+        if stray_end != self.doas_worker.end_stray_wave:
+            self.doas_worker.end_stray_wave = stray_end
 
         # Update plot
         self.max_stray_line[0].set_data([self.doas_worker.end_stray_wave, self.doas_worker.end_stray_wave], [0, self.max_DN])
@@ -240,17 +248,22 @@ class SpectraPlot:
             self.doas_worker.process_doas()
             self.doas_plot.update_plot()
 
-    def update_fit_wind_start(self, event = None):
+    def update_fit_wind_start(self, event = None, fit_wind_start = None):
         """updates fit window on plot"""
-        fit_wind_start = self.fit_wind_start.get()
+        if fit_wind_start is None:
+            fit_wind_start = self.fit_wind_start.get()
+        else:
+            self.fit_wind_start.set(fit_wind_start)
+
 
         # Ensure the end of the fit window doesn't become less than the start
         if fit_wind_start >= self.fit_wind_end.get():
             fit_wind_start = self.fit_wind_end.get() - 0.1
             self.fit_wind_start.set(fit_wind_start)
 
-        # Update DOASWorker with new fit window
-        self.doas_worker.start_fit_wave = fit_wind_start
+        # Update DOASWorker with new fit window if different
+        if fit_wind_start != self.doas_worker.start_fit_wave:
+            self.doas_worker.start_fit_wave = fit_wind_start
 
         # Update plot
         self.min_line[0].set_data([self.doas_worker.start_fit_wave, self.doas_worker.start_fit_wave], [0, self.max_DN])
@@ -262,9 +275,12 @@ class SpectraPlot:
             self.doas_worker.process_doas()
             self.doas_plot.update_plot()
 
-    def update_fit_wind_end(self, event = None):
+    def update_fit_wind_end(self, event = None, fit_wind_end = None):
         """updates fit window on plot"""
-        fit_wind_end = self.fit_wind_end.get()
+        if fit_wind_end is None:
+            fit_wind_end = self.fit_wind_end.get()
+        else:
+            self.fit_wind_end.set(fit_wind_end)
 
         # Ensure the end of the fit window doesn't become less than the start
         if fit_wind_end <= self.fit_wind_start.get():
@@ -272,7 +288,8 @@ class SpectraPlot:
             self.fit_wind_end.set(fit_wind_end)
 
         # Update DOASWorker with new fit window
-        self.doas_worker.end_fit_wave = fit_wind_end
+        if fit_wind_end != self.doas_worker.end_fit_wave:
+            self.doas_worker.end_fit_wave = fit_wind_end
 
         # Update plot
         self.max_line[0].set_data([self.doas_worker.end_fit_wave, self.doas_worker.end_fit_wave], [0, self.max_DN])
@@ -296,6 +313,12 @@ class SpectraPlot:
         except queue.Empty:
             pass
         self.root.after(refresh_rate, self.__draw_canv__)
+
+    def update_all(self):
+        self.update_stray_start(stray_start = self.doas_worker.start_stray_wave)
+        self.update_stray_end(stray_end = self.doas_worker.end_stray_wave)
+        self.update_fit_wind_start(fit_wind_start = self.doas_worker.start_fit_wave)
+        self.update_fit_wind_end(fit_wind_end = self.doas_worker.end_fit_wave)
 
     def close_widget(self):
         """Closes widget cleanly, by stopping __draw_canv__()"""
@@ -478,6 +501,9 @@ class DOASPlot(LoadSaveProcessingSettings):
 
         # Draw updates
         self.Q.put(1)
+
+    def update_vals(self):
+        self.shift_box.set(self.doas_worker.shift)
 
     def __update_tab__(self, event):
         """

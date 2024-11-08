@@ -5,11 +5,13 @@
 Scripts are an edited version of the pyplis example scripts, adapted for use with the PiCam"""
 from __future__ import (absolute_import, division)
 
-from pycam.setupclasses import CameraSpecs, SpecSpecs
+from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator
 from pycam.utils import calc_dt, get_horizontal_plume_speed
-from pycam.io_py import save_img, save_emission_rates_as_txt, save_so2_img, save_so2_img_raw, save_pcs_line, save_light_dil_line
+from pycam.io_py import (
+    save_img, save_emission_rates_as_txt, save_so2_img, save_so2_img_raw,
+    save_pcs_line, save_light_dil_line, load_picam_png
+)
 from pycam.directory_watcher import create_dir_watcher
-from pycam.img_import import load_picam_png
 from pycam.exceptions import InvalidCalibration
 
 import pyplis
@@ -39,15 +41,15 @@ import os
 import cv2
 from skimage import transform as tf
 import warnings
-import traceback
 from ruamel.yaml import YAML
+from inspect import cleandoc
 warnings.simplefilter("ignore", UserWarning)
 warnings.simplefilter("ignore", RuntimeWarning)
 
 yaml = YAML()
 
 path_params = [
-    "img_dir", "dark_img_dir", "watching_dir", "spec_dir", "dark_spec_dir", "bg_A_path", "bg_B_path", "cell_cal_dir",
+    "img_dir", "dark_img_dir", "transfer_dir", "spec_dir", "dark_spec_dir", "bg_A_path", "bg_B_path", "cell_cal_dir",
     "pcs_lines", "img_registration", "dil_lines", "ld_lookup_1", "ld_lookup_2", "ILS_path", "default_cam_geom", "cal_series_path"
 ]
 
@@ -172,6 +174,7 @@ class PyplisWorker:
         self.lightcorr_A = None                         # Light dilution corrected image
         self.lightcorr_B = None                         # Light dilution corrected image
         self.results = {}
+        self.ICA_masses = {}
         self.init_results()
 
         # Some pyplis tracking parameters
@@ -247,7 +250,6 @@ class PyplisWorker:
         self.img_tau_prev = copy.deepcopy(self.img_A)
         self.img_cal = None         # Calibrated image
         self.img_cal_prev = None
-        self.test_img = copy.deepcopy(self.img_A)
 
         # Calibration attributes
         self.got_doas_fov = False
@@ -305,7 +307,7 @@ class PyplisWorker:
         self.process_thread = None  # Placeholder for threading object
         self.in_processing = False
         self.watching = False       # Bool defining if the object is currently watching a directory
-        self.watching_dir = None    # Directory that is currently being watched
+        self.transfer_dir = None    # Directory where images are transfered to (either in RTP or FTP)
         self.watcher = None         # Directory watcher object
         self.watched_imgs = dict()  # Dictionary containing new files added to directory - keys are times of images
         self.watched_pair = {self.cam_specs.file_filterids['on']: None,         #For use with force_pair_processing
@@ -319,9 +321,26 @@ class PyplisWorker:
 
         self.geom_dict = {}
 
+        self.missing_path_param_warn = None
         self.config = {}
         self.raw_configs = {}
-        self.load_config(config_path, "default")
+        self.load_default_conf_errors = None
+        try:
+            # Try Loading the config
+            self.load_config(config_path, "default")
+        except (FileNotFoundError, ValueError) as e:
+
+            # Record that the default config load was unsuccessful to show an error later 
+            self.load_default_conf_errors = cleandoc(f"""
+                Problem loading specified default config file:
+                {config_path}\n
+                Error: {e}\n
+                Reverting to config file supplied with PyCam""")
+
+            print(self.load_default_conf_errors)
+            
+            # If any files not found then retry with the supplied config
+            self.load_config(FileLocator.PROCESS_DEFAULTS, "default")
         self.apply_config()
 
     def load_config(self, file_path, conf_name):
@@ -329,10 +348,11 @@ class PyplisWorker:
 
         file_path = os.path.normpath(file_path)
         with open(file_path, "r") as file:
-            self.raw_configs[conf_name] = yaml.load(file)
+            raw_config = yaml.load(file)
 
+        checked_config = self.check_config_paths(file_path, raw_config)
+        self.raw_configs[conf_name] = checked_config
         self.config.update(self.raw_configs[conf_name])
-        self.check_config_paths(file_path)
 
     def apply_config(self, subset = None):
         """take items in config dict and set them as attributes in pyplis_worker"""
@@ -341,24 +361,60 @@ class PyplisWorker:
         else: 
             [setattr(self, key, value) for key, value in self.config.items()]
 
-    def check_config_paths(self, config_path):
+    def check_config_paths(self, config_path, raw_config):
+        missing_path_params = []
         config_dir = os.path.dirname(config_path)
+
         for path_param in path_params:
             # Skip if cal_type_int is not pre-loaded
-            if path_param == "cal_series_path" and self.config["cal_type_int"] != 3:
+            if path_param == "cal_series_path" and raw_config["cal_type_int"] != 3:
                 continue
 
-            config_value = self.config.get(path_param)
-            # Value could be a string or list of strings, we want to do the same thing to both but iterate over
-            # the list of strings.
+            config_value = raw_config.get(path_param)
+
+            # If there is no value in the config for this parameter then record and skip
+            # Unless it is when no other config file has been loaded, then throw an error.
+            if config_value is None:
+                if self.config:
+                    missing_path_params.append(path_param)
+                    continue
+                else:
+                    raise ValueError(f"Default value for {path_param} missing.")
+
+            # Value could be a string or list of strings, we want to do the same thing to both
+            # but iterate over the list of strings.
             # Not the most elegent way to do this, but it'll do for now.
             if type(config_value) is str:
-                new_value = self.expand_config_path(config_value, config_dir)
-                self.config[path_param] = new_value
+                new_value = self.expand_check_path(config_value, config_dir, path_param)
+                raw_config[path_param] = new_value
             else:
                 for idx, val in enumerate(config_value):
-                    new_value = self.expand_config_path(val, config_dir)
-                    self.config[path_param][idx] = new_value
+                    new_value = self.expand_check_path(val, config_dir, path_param)
+                    raw_config[path_param][idx] = new_value
+
+        if missing_path_params:
+            miss_param_str = [f"- {par}" for par in missing_path_params]
+
+            self.missing_path_param_warn = "\n".join(
+                ["The following parameters were not present in the loaded config:",
+                 *miss_param_str,
+                 "Current values were retained."])
+            print(self.missing_path_param_warn)
+
+        return raw_config
+
+    def expand_check_path(self, value, dir, path_param):
+        """
+        Runs the expand and check path methods and catches errors from either to produce 
+        informative error messages """
+        try:
+            new_value = self.expand_config_path(value, dir)
+            new_value = os.path.normpath(new_value)
+            self.check_path(new_value)
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"{path_param} - {e}")
+
+        return new_value
 
     def expand_config_path(self, path, config_dir):
         """ Converts paths string absolute path if needed"""
@@ -367,6 +423,9 @@ class PyplisWorker:
         # (specified by a path relative to pycam location)
         if not os.path.isabs(config_dir):
             return path
+        
+        if path == '':
+            raise FileNotFoundError("Path not specified")
         # If it's an absolute path then just use as is
         elif os.path.isabs(path):
             return path
@@ -376,6 +435,10 @@ class PyplisWorker:
         # Otherwise prepend the path with the location of the config file
         else:
             return os.path.join(config_dir, path)
+
+    def check_path(self, path):
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"File path {path} does not exist")
 
     def save_all_pcs(self, save_dir):
         """Save all the currently loaded/drawn pcs lines to files and update config"""
@@ -457,7 +520,12 @@ class PyplisWorker:
             "grid_max_ppmm": "grid_max_ppmm",
             "grid_increment_ppmm": "grid_increment_ppmm",
             "spec_recal_time": "recal_ld_mins",
-            "LDF": "LDF"
+            "LDF": "LDF",
+            "start_stray_wave": "start_stray_wave",
+            "end_stray_wave": "end_stray_wave",
+            "start_fit_wave": "start_fit_wave",
+            "end_fit_wave": "end_fit_wave",
+            "shift": "shift"
         }
         
         current_params = {key: getattr(self.doas_worker, value)
@@ -897,9 +965,11 @@ class PyplisWorker:
             if line is not None:
                 line_id = line.line_id
                 self.add_line_to_results(line_id)
-
+                self.ICA_masses[line_id] = {"datetime": [], "value": []}
+        
         # Add EmissionRates objects for the total emission rates (sum of all lines)
         self.results['total'] = {}
+        self.ICA_masses['total'] = {"datetime": [], "value": []}
         for mode in self.velo_modes:
             self.results['total'][mode] = EmissionRates('total', mode)
 
@@ -961,7 +1031,8 @@ class PyplisWorker:
         self.set_processing_directory()
 
         # Update frame containing details of image directory
-        self.seq_info.update_variables()
+        if self.seq_info is not None:
+            self.seq_info.update_variables()
 
         # Display first images of sequence
         if len(self.img_list) > 0:
@@ -1126,23 +1197,21 @@ class PyplisWorker:
 
         self.prep_img(img, img_path, band, plot, temporary)
 
-
     def get_img(self, img_path, attempts = 1):
         
         while attempts > 0:
             # Try and load the image
-            img = pyplis.image.Img(img_path, self.load_img_func)
-
-            # If successful then leave the loop
-            if img.img is not None:
+            try:
+                img = pyplis.image.Img(img_path, self.load_img_func)
+            except FileNotFoundError as e:
+                err = e
+                time.sleep(0.2)
+                attempts -= 1
+            else:
                 break
-            
-            # Otherwise wait half a second and decrease the number of attempts left
-            time.sleep(0.1)
-            attempts -= 1
         else:
             # This will run once the number of repeats is 0
-            raise FileNotFoundError(f"Image from {img_path} could not be loaded. Skipping pair.")
+            raise err
 
         img.filename = img_path.split('\\')[-1].split('/')[-1]
         img.pathname = img_path
@@ -2549,13 +2618,18 @@ class PyplisWorker:
                     # point for img_time, so we can raise the error which moves us onto the interpolation section.
                     with self.doas_worker.lock:
                         cd = self.doas_worker.results.get(img_time)
+                        if cd is None:
+                            raise KeyError(f"spectra for {img_time} not found")
                         # Get index for cd_err
                         cd_err = self.doas_worker.results.fit_errs[
                             np.where(self.doas_worker.results.index.array == img_time)[0][0]]
-                    if cd is None:
-                        raise KeyError(f"spectra for {img_time} not found")
 
             except BaseException as e:
+                
+                # Give warning when unexpected (i.e. non-KeyError) is caught.
+                if type(e) is not KeyError:
+                    print(f"Unexpected error: {e}" )
+
                 with self.doas_worker.lock:
                     # If there is no data for the specific time of the image we will have to interpolate
                     dts = self.doas_worker.results.index - img_time
@@ -2567,6 +2641,20 @@ class PyplisWorker:
                         print('No DOAS data point within {}s of image time: {}. '
                               'Image is not added to DOAS calibration'.format(self.max_doas_cam_dif,
                                                                               img_time.strftime('%H:%M:%S')))
+
+                        # Only add if the calibration is already available
+                        if self.fit_data.size > 0:
+
+                            # Add empty tau_values
+                            tau_val_ncols = self.tau_vals.shape[1]
+                            empty_tau_vals = np.column_stack([img_time, *np.repeat(np.nan, tau_val_ncols-1)])
+                            self.tau_vals = np.append( self.tau_vals, empty_tau_vals, axis = 0)
+
+                            # Add the last calibration values
+                            last_cal = self.fit_data[-1][1:]
+                            fit_data = np.hstack((img_time, *last_cal))
+                            self.fit_data = np.append(self.fit_data, fit_data[np.newaxis, :], axis = 0)
+
                         return
 
                     zero = datetime.timedelta(0)
@@ -3025,12 +3113,10 @@ class PyplisWorker:
                                                      vel_glob_err,
                                                      cd_buff['disterr'][i])
 
-                # Pack results into dictionary
-                res['flow_glob']._start_acq.append(img_time)
-                res['flow_glob']._phi.append(phi)
-                res['flow_glob']._phi_err.append(phi_err)
-                res['flow_glob']._velo_eff.append(vel_glob)
-                res['flow_glob']._velo_eff_err.append(vel_glob_err)
+                # Update results dictionary in place
+                self.update_results(
+                    res, 'flow_glob', start_acq = img_time, phi = phi, phi_err = phi_err,
+                    velo_eff = vel_glob, velo_eff_err = vel_glob_err)
 
                 # Add all lines to total emissions
                 if line in lines_total:
@@ -3063,13 +3149,24 @@ class PyplisWorker:
         # Loop through results dictionary and add the 'total' measurements
         mode = 'flow_glob'
         for i, img_time in enumerate(total_emissions['time']):
-            self.results['total'][mode]._start_acq.append(img_time)
-            self.results['total'][mode]._phi.append(np.nansum(total_emissions['phi'][i]))
-            self.results['total'][mode]._phi_err.append(
-                np.sqrt(np.nansum(np.power(total_emissions['phi_err'][i], 2))))
-            self.results['total'][mode]._velo_eff.append(np.nanmean(total_emissions['veff'][i]))
-            self.results['total'][mode]._velo_eff_err.append(
-                np.sqrt(np.nansum(np.power(total_emissions['veff_err'][i], 2))))
+
+            phi_tot = np.nansum(total_emissions['phi'][i])
+            phi_err_tot = np.sqrt(np.nansum(np.power(total_emissions['phi_err'][i], 2)))
+            velo_eff_tot = np.nanmean(total_emissions['veff'][i])
+            velo_eff_err_tot = np.sqrt(np.nansum(np.power(total_emissions['veff_err'][i], 2)))
+
+            if img_time in self.results['total'][mode]._start_acq:
+                time_idx = self.results['total'][mode]._start_acq.index(img_time)
+                self.results['total'][mode]._phi[time_idx] = phi_tot
+                self.results['total'][mode]._phi_err[time_idx] = phi_err_tot
+                self.results['total'][mode]._velo_eff[time_idx] = velo_eff_tot
+                self.results['total'][mode]._velo_eff_err[time_idx] = velo_eff_err_tot
+            else:
+                self.results['total'][mode]._start_acq.append(img_time)
+                self.results['total'][mode]._phi.append(phi_tot)
+                self.results['total'][mode]._phi_err.append(phi_err_tot)
+                self.results['total'][mode]._velo_eff.append(velo_eff_tot)
+                self.results['total'][mode]._velo_eff_err.append(velo_eff_err_tot)
 
         # # Ensure the results dictionary is sorted (may not be critical?)
         # sorted_args = np.array(self.results['total'][mode]._start_acq).argsort()
@@ -3140,6 +3237,45 @@ class PyplisWorker:
                     get_horizontal_plume_speed(self.opt_flow, self.dist_img_step, self.PCS_lines_all[0], filename=filename)
 
         return self.flow, self.velo_img
+    
+    @staticmethod
+    def calculate_ICA_mass(cds, distarr):
+        """ Caluculate the SO2 mass for given column densities and pixel distances
+
+        :param numpy.array cds: Array of estimated column densities for each pixel in ICA line 
+        :param numpy.array distarr: Array of pixel distance values
+        :return float: Estimate of SO2 mass (kg/m) for the ICA line
+        """
+        C = 100**2 * MOL_MASS_SO2 / N_A
+        ICA_Mass = (np.nansum(cds * distarr) * C) / 1000
+
+        return ICA_Mass
+
+    def update_results(self, res, flow_id, **kwargs):
+        """Append results to results dictionary
+
+        :param dict res: Results dictionary
+        :param str flow_id: Flow type
+        """
+        res[flow_id]._start_acq.append(kwargs['start_acq'])
+        res[flow_id]._phi.append(kwargs['phi'])
+        res[flow_id]._phi_err.append(kwargs['phi_err'])
+        res[flow_id]._velo_eff.append(kwargs['velo_eff'])
+        res[flow_id]._velo_eff_err.append(kwargs['velo_eff_err'])
+
+    def update_total_emissions(self, total_emissions, flow_id, line_include, **kwargs):
+        """ Appends results to total emaissions dictionary if line_include is True
+
+        :param dict total_emissions: Total emissions dictionary
+        :param str flow_id: Flow type
+        :param bool line_include: Indicates whether the line_id is in the lines_total array
+        """
+
+        if line_include:
+            total_emissions[flow_id]['phi'].append(kwargs['phi'])
+            total_emissions[flow_id]['phi_err'].append(kwargs['phi_err'])
+            total_emissions[flow_id]['veff'].append(kwargs['velo_eff'])
+            total_emissions[flow_id]['veff_err'].append(kwargs['velo_eff_err'])
 
     def calculate_emission_rate(self, img, flow=None, nadeau_speed=None, plot=True):
         """
@@ -3188,6 +3324,8 @@ class PyplisWorker:
                            'flow_histo': {'phi': [], 'phi_err': [], 'veff': [], 'veff_err': []},
                            'flow_hybrid': {'phi': [], 'phi_err': [], 'veff': [], 'veff_err': []},
                            'flow_nadeau': {'phi': [], 'phi_err': [], 'veff': [], 'veff_err': []}}
+        
+        ICA_mass_total = 0
 
         # Get IDs of all lines we want to add up to give the total emissions (basically exclude cross-correlation line)
         lines_total = [line.line_id for line in self.PCS_lines if isinstance(line, LineOnImage)]
@@ -3217,6 +3355,8 @@ class PyplisWorker:
                 if line_id not in self.results:
                     self.add_line_to_results(line_id)
 
+                line_include = line_id in lines_total
+
                 # Get EmissionRates object for this line
                 res = self.results[line_id]
 
@@ -3236,6 +3376,34 @@ class PyplisWorker:
                 verr = None                 # Used and redefined later in flow_histo/flow_hybrid
                 dx, dy = None, None         # Generated later. Instantiating here optimizes by preventing repeats later
 
+                ICA_mass = self.calculate_ICA_mass(cds, distarr)
+                self.update_ICA_masses(line_id, img_time, ICA_mass)
+
+                if line_include: ICA_mass_total += ICA_mass
+
+                if flow is not None:
+                    delt = flow.del_t
+
+                    if (self.velo_modes['flow_raw'] or self.velo_modes['flow_hybrid']):
+                        # retrieve diplacement vectors along line
+                        dx = line.get_line_profile(flow.flow[:, :, 0])
+                        dy = line.get_line_profile(flow.flow[:, :, 1])
+                    
+                    if self.velo_modes['flow_histo'] or self.velo_modes['flow_hybrid']:
+                        # get mask specifying plume pixels
+                        mask = img.get_thresh_mask(self.min_cd)
+                        props.get_and_append_from_farneback(flow, line=line, pix_mask=mask,
+                                                            dir_multi_gauss=self.use_multi_gauss)
+                        idx = -1
+
+                if self.velo_modes['flow_histo'] or self.velo_modes['flow_hybrid']:
+                    # Add predominant flow direction (it will be identical to histo values, so we
+                    # only need to do this once per line, and we just always store it in flow_histo)
+                    orient_series, upper, lower = props.get_orientation_tseries()
+                    res['flow_histo']._flow_orient.append(orient_series[-1])
+                    res['flow_histo']._flow_orient_upper.append(upper[-1])
+                    res['flow_histo']._flow_orient_lower.append(lower[-1])
+
                 # Cross-correlation emission rate retrieval
                 if self.velo_modes['flow_glob']:
                     # If vel_glob is None but cross-correlation is requested we store all required variables in a buffer
@@ -3249,19 +3417,15 @@ class PyplisWorker:
                         phi, phi_err = self.det_emission_rate_kgs(cds, vel_glob, distarr,
                                                          cd_err, vel_glob_err, disterr)
 
-                        # Pack results into dictionary
-                        res['flow_glob']._start_acq.append(img_time)
-                        res['flow_glob']._phi.append(phi)
-                        res['flow_glob']._phi_err.append(phi_err)
-                        res['flow_glob']._velo_eff.append(vel_glob)
-                        res['flow_glob']._velo_eff_err.append(vel_glob_err)
-
-                        # Add to total emissions
-                        if line_id in lines_total:
-                            total_emissions['flow_glob']['phi'].append(phi)
-                            total_emissions['flow_glob']['phi_err'].append(phi_err)
-                            total_emissions['flow_glob']['veff'].append(vel_glob)
-                            total_emissions['flow_glob']['veff_err'].append(vel_glob_err)
+                        # Update results dictionary in place
+                        self.update_results(
+                            res, 'flow_glob', start_acq = img_time, phi = phi, phi_err = phi_err,
+                            velo_eff = vel_glob, velo_eff_err = vel_glob_err)
+                        
+                        # Update total emissions dictionary in place
+                        self.update_total_emissions(
+                            total_emissions, 'flow_glob', line_include, phi = phi,
+                            phi_err = phi_err, velo_eff = vel_glob, velo_eff_err = vel_glob_err)
 
                 # Nadeau plume speed algorithm
                 if self.velo_modes['flow_nadeau']:
@@ -3269,194 +3433,141 @@ class PyplisWorker:
                     phi, phi_err = self.det_emission_rate_kgs(cds, nadeau_speed, distarr, cd_err,
                                                      velo_err=None, pix_dists_err=disterr)
 
-                    # Update results dictionary
-                    res['flow_nadeau']._start_acq.append(img_time)
-                    res['flow_nadeau']._phi.append(phi)
-                    res['flow_nadeau']._phi_err.append(phi_err)
-                    res['flow_nadeau']._velo_eff.append(nadeau_speed)
-                    res['flow_nadeau']._velo_eff_err.append(np.nan)
+                    # Update results dictionary in place
+                    self.update_results(
+                        res, 'flow_nadeau', start_acq = img_time, phi = phi, phi_err = phi_err,
+                        velo_eff = nadeau_speed, velo_eff_err = np.nan)
 
-                    # Add to total emissions
-                    if line_id in lines_total:
-                        total_emissions['flow_nadeau']['phi'].append(phi)
-                        total_emissions['flow_nadeau']['phi_err'].append(phi_err)
-                        total_emissions['flow_nadeau']['veff'].append(nadeau_speed)
-                        total_emissions['flow_nadeau']['veff_err'].append(np.nan)
+                    # Update total emissions dictionary in place
+                    self.update_total_emissions(
+                        total_emissions, 'flow_nadeau', line_include, phi = phi, phi_err = phi_err,
+                        velo_eff = nadeau_speed, velo_eff_err = np.nan)
 
                 # Raw farneback velocity field emission rate retrieval
-                if self.velo_modes['flow_raw']:
-                    if flow is not None:
-                        delt = flow.del_t
+                if self.velo_modes['flow_raw'] and flow is not None:
 
-                        # retrieve diplacement vectors along line
-                        dx = line.get_line_profile(flow.flow[:, :, 0])
-                        dy = line.get_line_profile(flow.flow[:, :, 1])
+                    # determine array containing effective velocities
+                    # through the line using dot product with line normal
+                    veff_arr = np.dot(n, (dx, dy))[cond] * distarr / delt
 
-                        # detemine array containing effective velocities
-                        # through the line using dot product with line normal
-                        veff_arr = np.dot(n, (dx, dy))[cond] * distarr / delt
+                    # Calculate mean of effective velocity through l and
+                    # uncertainty using 2 sigma confidence of standard
+                    # deviation
+                    veff_avg = veff_arr.mean()
+                    veff_err = veff_avg * self.optflow_err_rel_veff
 
-                        # Calculate mean of effective velocity through l and
-                        # uncertainty using 2 sigma confidence of standard
-                        # deviation
-                        veff_avg = veff_arr.mean()
-                        veff_err = veff_avg * self.optflow_err_rel_veff
+                    # Get emission rate
+                    phi, phi_err = self.det_emission_rate_kgs(cds, veff_arr, distarr, cd_err, veff_err, disterr)
 
-                        # Get emission rate
-                        phi, phi_err = self.det_emission_rate_kgs(cds, veff_arr, distarr, cd_err, veff_err, disterr)
+                    # Update results dictionary in place
+                    self.update_results(
+                        res, 'flow_raw', start_acq = img_time, phi = phi, phi_err = phi_err,
+                        velo_eff = veff_avg, velo_eff_err = veff_err)
 
-                        # Update results dictionary
-                        res['flow_raw']._start_acq.append(img_time)
-                        res['flow_raw']._phi.append(phi)
-                        res['flow_raw']._phi_err.append(phi_err)
-                        res['flow_raw']._velo_eff.append(veff_avg)
-                        res['flow_raw']._velo_eff_err.append(veff_err)
-
-                        # Add to total emissions
-                        if line_id in lines_total:
-                            total_emissions['flow_raw']['phi'].append(phi)
-                            total_emissions['flow_raw']['phi_err'].append(phi_err)
-                            total_emissions['flow_raw']['veff'].append(veff_avg)
-                            total_emissions['flow_raw']['veff_err'].append(veff_err)
+                    # Update total emissions dictionary in place
+                    self.update_total_emissions(
+                        total_emissions, 'flow_raw', line_include, phi = phi, phi_err = phi_err,
+                        velo_eff = veff_avg, velo_eff_err = veff_err)
 
                 # Histogram analysis of farneback velocity field for emission rate retrieval
-                if self.velo_modes['flow_histo']:
-                    if flow is not None:
-                        # get mask specifying plume pixels
-                        mask = img.get_thresh_mask(self.min_cd)
-                        props.get_and_append_from_farneback(flow, line=line, pix_mask=mask,
-                                                            dir_multi_gauss=self.use_multi_gauss)
-                        idx = -1
+                if self.velo_modes['flow_histo'] and flow is not None:
 
-                        # get effective velocity through the pcs based on
-                        # results from histogram analysis
-                        (v, verr) = props.get_velocity(idx, distarr.mean(), disterr, line.normal_vector,
-                                                       sigma_tol=flow.settings.hist_sigma_tol)
-                        phi, phi_err = self.det_emission_rate_kgs(cds, v, distarr, cd_err, verr, disterr)
+                    # get effective velocity through the pcs based on
+                    # results from histogram analysis
+                    (v, verr) = props.get_velocity(idx, distarr.mean(), disterr, line.normal_vector,
+                                                    sigma_tol=flow.settings.hist_sigma_tol)
+                    phi, phi_err = self.det_emission_rate_kgs(cds, v, distarr, cd_err, verr, disterr)
 
-                        # Update results dictionary
-                        res['flow_histo']._start_acq.append(img_time)
-                        res['flow_histo']._phi.append(phi)
-                        res['flow_histo']._phi_err.append(phi_err)
-                        res['flow_histo']._velo_eff.append(v)
-                        res['flow_histo']._velo_eff_err.append(verr)
+                    # Update results dictionary in place
+                    self.update_results(
+                        res, 'flow_histo', start_acq = img_time, phi = phi, phi_err = phi_err,
+                        velo_eff = v, velo_eff_err = verr)
 
-                        # Also add predominant flow direction
-                        orient_series, upper, lower = props.get_orientation_tseries()
-                        res['flow_histo']._flow_orient.append(orient_series.iloc[-1])
-                        res['flow_histo']._flow_orient_upper.append(upper.iloc[-1])
-                        res['flow_histo']._flow_orient_lower.append(lower.iloc[-1])
-
-                        # Add to total emissions
-                        if line_id in lines_total:
-                            total_emissions['flow_histo']['phi'].append(phi)
-                            total_emissions['flow_histo']['phi_err'].append(phi_err)
-                            total_emissions['flow_histo']['veff'].append(v)
-                            total_emissions['flow_histo']['veff_err'].append(verr)
+                    # Update total emissions dictionary in place
+                    self.update_total_emissions(
+                        total_emissions, 'flow_histo', line_include, phi = phi, phi_err = phi_err,
+                        velo_eff = v, velo_eff_err = verr)
 
                 # Hybrid histogram analysis of farneback velocity field for emission rate retrieval
-                if self.velo_modes['flow_hybrid']:
-                    if flow is not None:
-                        # get results from local plume properties analysis
-                        if not self.velo_modes['flow_histo']:
-                            mask = img.get_thresh_mask(self.min_cd)
-                            props.get_and_append_from_farneback(flow, line=line, pix_mask=mask,
-                                                                dir_multi_gauss=self.use_multi_gauss)
-                            idx = -1
+                if self.velo_modes['flow_hybrid'] and flow is not None:
 
-                        if dx is None:
-                            # extract raw diplacement vectors along line
-                            dx = line.get_line_profile(flow.flow[:, :, 0])
-                            dy = line.get_line_profile(flow.flow[:, :, 1])
+                    if verr is None:
+                        # get effective velocity through the pcs based on
+                        # results from histogram analysis
+                        (_, verr) = props.get_velocity(idx, distarr.mean(), disterr,
+                                                        line.normal_vector,
+                                                        sigma_tol=flow.settings.hist_sigma_tol)
 
-                        if verr is None:
-                            # get effective velocity through the pcs based on
-                            # results from histogram analysis
-                            (_, verr) = props.get_velocity(idx, distarr.mean(), disterr,
-                                                           line.normal_vector,
-                                                           sigma_tol=flow.settings.hist_sigma_tol)
+                    # determine orientation angles and magnitudes along
+                    # raw optflow output
+                    phis = np.rad2deg(np.arctan2(dx, -dy))[cond]
+                    mag = np.sqrt(dx ** 2 + dy ** 2)[cond]
 
-                        # determine orientation angles and magnitudes along
-                        # raw optflow output
-                        phis = np.rad2deg(np.arctan2(dx, -dy))[cond]
-                        mag = np.sqrt(dx ** 2 + dy ** 2)[cond]
+                    # get expectation values of predominant displacement
+                    # vector
+                    min_len = (props.len_mu[idx] - props.len_sigma[idx])
 
-                        # get expectation values of predominant displacement
-                        # vector
-                        min_len = (props.len_mu[idx] - props.len_sigma[idx])
+                    min_len = max([min_len, flow.settings.min_length])
 
-                        min_len = max([min_len, flow.settings.min_length])
+                    dir_min = (props.dir_mu[idx] -
+                                flow.settings.hist_sigma_tol * props.dir_sigma[idx])
+                    dir_max = (props.dir_mu[idx] + flow.settings.hist_sigma_tol * props.dir_sigma[idx])
 
-                        dir_min = (props.dir_mu[idx] -
-                                   flow.settings.hist_sigma_tol * props.dir_sigma[idx])
-                        dir_max = (props.dir_mu[idx] + flow.settings.hist_sigma_tol * props.dir_sigma[idx])
+                    # get bool mask for indices along the pcs
+                    bad = ~ (np.logical_and(phis > dir_min, phis < dir_max) * (mag > min_len))
 
-                        # get bool mask for indices along the pcs
-                        bad = ~ (np.logical_and(phis > dir_min, phis < dir_max) * (mag > min_len))
+                    try:
+                        frac_bad = sum(bad) / float(len(bad))
+                    except ZeroDivisionError:
+                        frac_bad = 0
+                    indices = np.arange(len(bad))[bad]
+                    # now check impact of ill-constraint motion vectors
+                    # on ICA
+                    ica_fac_ok = sum(cds[~bad] / sum(cds))
 
-                        try:
-                            frac_bad = sum(bad) / float(len(bad))
-                        except ZeroDivisionError:
-                            frac_bad = 0
-                        indices = np.arange(len(bad))[bad]
-                        # now check impact of ill-constraint motion vectors
-                        # on ICA
-                        ica_fac_ok = sum(cds[~bad] / sum(cds))
+                    vec = props.displacement_vector(idx)
 
-                        vec = props.displacement_vector(idx)
+                    flc = flow.replace_trash_vecs(displ_vec=vec, min_len=min_len,
+                                                    dir_low=dir_min, dir_high=dir_max)
 
-                        flc = flow.replace_trash_vecs(displ_vec=vec, min_len=min_len,
-                                                      dir_low=dir_min, dir_high=dir_max)
+                    dx = line.get_line_profile(flc.flow[:, :, 0])
+                    dy = line.get_line_profile(flc.flow[:, :, 1])
+                    veff_arr = np.dot(n, (dx, dy))[cond] * distarr / delt
 
-                        delt = flow.del_t
-                        dx = line.get_line_profile(flc.flow[:, :, 0])
-                        dy = line.get_line_profile(flc.flow[:, :, 1])
-                        veff_arr = np.dot(n, (dx, dy))[cond] * distarr / delt
+                    # Calculate mean of effective velocity through l and
+                    # uncertainty using 2 sigma confidence of standard
+                    # deviation
+                    veff_avg = veff_arr.mean()
+                    fl_err = veff_avg * self.optflow_err_rel_veff
 
-                        # Calculate mean of effective velocity through l and
-                        # uncertainty using 2 sigma confidence of standard
-                        # deviation
-                        veff_avg = veff_arr.mean()
-                        fl_err = veff_avg * self.optflow_err_rel_veff
+                    # neglect uncertainties in the successfully constraint
+                    # flow vectors along the pcs by initiating an zero
+                    # array ...
+                    veff_err_arr = np.ones(len(veff_arr)) * fl_err
+                    # ... and set the histo errors for the indices of
+                    # ill-constraint flow vectors on the pcs (see above)
+                    veff_err_arr[indices] = verr
 
-                        # neglect uncertainties in the successfully constraint
-                        # flow vectors along the pcs by initiating an zero
-                        # array ...
-                        veff_err_arr = np.ones(len(veff_arr)) * fl_err
-                        # ... and set the histo errors for the indices of
-                        # ill-constraint flow vectors on the pcs (see above)
-                        veff_err_arr[indices] = verr
+                    # Determine emission rate
+                    phi, phi_err = self.det_emission_rate_kgs(cds, veff_arr, distarr, cd_err, veff_err_arr, disterr)
+                    veff_err_avg = veff_err_arr.mean()
 
-                        # Determine emission rate
-                        phi, phi_err = self.det_emission_rate_kgs(cds, veff_arr, distarr, cd_err, veff_err_arr, disterr)
-                        veff_err_avg = veff_err_arr.mean()
+                    # Update results dictionary in place
+                    self.update_results(
+                        res, 'flow_hybrid', start_acq = img_time, phi = phi, phi_err = phi_err,
+                        velo_eff = veff_avg, velo_eff_err = veff_err_avg)
 
-                        # Add to EmissionRates object
-                        res['flow_hybrid']._start_acq.append(img_time)
-                        res['flow_hybrid']._phi.append(phi)
-                        res['flow_hybrid']._phi_err.append(phi_err)
-                        res['flow_hybrid']._velo_eff.append(veff_avg)
-                        res['flow_hybrid']._velo_eff_err.append(veff_err_avg)
-                        res['flow_hybrid']._frac_optflow_ok.append(1 - frac_bad)
-                        res['flow_hybrid']._frac_optflow_ok_ica.append(ica_fac_ok)
+                    # Update total emissions dictionary in place 
+                    self.update_total_emissions(
+                        total_emissions, 'flow_hybrid', line_include, phi = phi, phi_err = phi_err,
+                        velo_eff = veff_avg, velo_eff_err = veff_err_avg)
+                    
+                    res['flow_hybrid']._frac_optflow_ok.append(1 - frac_bad)
+                    res['flow_hybrid']._frac_optflow_ok_ica.append(ica_fac_ok)
 
-                        # Also add predominant flow direction (it will be identical to histo values, so we only need to
-                        # do this once per line, and we just always store it in flow_histo)
-                        if not self.velo_modes['flow_histo']:
-                            orient_series, upper, lower = props.get_orientation_tseries()
-                            res['flow_histo']._flow_orient.append(orient_series[-1])
-                            res['flow_histo']._flow_orient_upper.append(upper[-1])
-                            res['flow_histo']._flow_orient_lower.append(lower[-1])
-
-                        # Add to total emissions
-                        if line_id in lines_total:
-                            total_emissions['flow_hybrid']['phi'].append(phi)
-                            total_emissions['flow_hybrid']['phi_err'].append(phi_err)
-                            total_emissions['flow_hybrid']['veff'].append(veff_avg)
-                            total_emissions['flow_hybrid']['veff_err'].append(veff_err_avg)
-
-        # Sum all lines of equal times and make this a 'total' EmissionRates object. So have a total for
-        # each flow type
+                    
+        # Sum all lines of equal times and make this a 'total' EmissionRates object. So have a total
+        # for each flow type
         for mode in self.velo_modes:
             if self.velo_modes[mode]:
                 self.results['total'][mode]._start_acq.append(img_time)
@@ -3467,10 +3578,22 @@ class PyplisWorker:
                 self.results['total'][mode]._velo_eff_err.append(
                     np.sqrt(np.nansum(np.power(total_emissions[mode]['veff_err'], 2))))
 
+        self.update_ICA_masses('total', img_time, ICA_mass_total)
+
         if plot:
             self.fig_series.update_plot()
 
         return self.results
+    
+    def update_ICA_masses(self, line_id, img_time, ICA_mass):
+        """Append ICA mass result to results dictionary
+
+        :param str line_id: ID of line ICA mass generated for
+        :param datetime img_time: Timepoint for ICA mass
+        :param float ICA_mass: Value of ICA mass
+        """
+        self.ICA_masses[line_id]["datetime"].append(img_time)
+        self.ICA_masses[line_id]["value"].append(ICA_mass)
 
     @staticmethod
     def det_emission_rate_kgs(*args, **kwargs):
@@ -3503,12 +3626,6 @@ class PyplisWorker:
             img_A = self.get_img(img_path_A, attempts=3)
         if img_path_B is not None:
             img_B = self.get_img(img_path_B, attempts=3)
-
-        try:
-            img = img_A - self.test_img
-            img = img_B - self.test_img
-        except (TypeError, AttributeError) as e:
-            raise FileNotFoundError('{}'.format(e))
 
         # Can pass None to this function for img paths, and then the current images will be processed
         if img_path_A is not None:
@@ -3911,8 +4028,9 @@ class PyplisWorker:
             # Process the pair
             try:
                 self.process_pair(img_path_A, img_path_B, plot=self.plot_iter)
-            except FileNotFoundError:
-                traceback.print_exc()
+            except FileNotFoundError as e:
+                print(e)
+                print("Skipping pair")
                 continue
 
             # Save all images that have been requested
@@ -3955,7 +4073,7 @@ class PyplisWorker:
         Also starts a processing thread, so that the images which arrive can be processed
         """
         if self.watching:
-            print('Already watching: {}'.format(self.watching_dir))
+            print('Already watching: {}'.format(self.transfer_dir))
             print('Please stop watcher before attempting to start new watch. '
                   'This isssue may be caused by having manual acquisitions running alongside continuous watching')
             return
@@ -3964,13 +4082,13 @@ class PyplisWorker:
             raise InvalidCalibration("Preloaded calibration is invalid for real-time processing")
 
         if directory is not None:
-            self.watching_dir = directory
+            self.transfer_dir = directory
 
-        if self.watching_dir is not None:
-            self.watcher = create_dir_watcher(self.watching_dir, recursive, self.directory_watch_handler)
+        if self.transfer_dir is not None:
+            self.watcher = create_dir_watcher(self.transfer_dir, recursive, self.directory_watch_handler)
             self.watcher.start()
             self.watching = True
-            print('Watching {} for new images'.format(self.watching_dir[-30:]))
+            print('Watching {} for new images'.format(self.transfer_dir[-30:]))
         else:
             print("No Directory to watch provided")
             return
@@ -3982,7 +4100,7 @@ class PyplisWorker:
         """Stop directory watcher and end processing thread"""
         if self.watcher is not None and self.watching:
             self.watcher.stop()
-            print('Stopped watching {} for new images'.format(self.watching_dir[-30:]))
+            print('Stopped watching {} for new images'.format(self.transfer_dir[-30:]))
             self.watching = False
 
             # Stop processing thread when we stop watching the directory
@@ -4128,17 +4246,22 @@ class PyplisWorker:
         self.fit_data = np.append(self.fit_data, fit_data[np.newaxis, :], axis = 0)
 
     def start_watching_dir(self):
-        
-        self.doas_worker.start_watching(self.watching_dir)
+
+        if self.seq_info is not None:
+            self.seq_info.update_img_dir_lab(self.transfer_dir, True)
+        self.doas_worker.start_watching(self.transfer_dir)
         self.start_watching()
 
     def stop_watching_dir(self):
         
+        if self.seq_info is not None:
+            self.seq_info.update_img_dir_lab(self.img_dir)
         self.doas_worker.stop_watching()
         self.stop_watching()
 
     def save_results(self, only_last_value=False):
-        save_emission_rates_as_txt(self.processed_dir, self.results, only_last_value=only_last_value)
+        save_emission_rates_as_txt(self.processed_dir, self.results, self.ICA_masses,
+                                   only_last_value=only_last_value)
         
         # Calibration only produced when DOAS in calibration type and not needed for pre-loaded
         if self.cal_type_int in [1,2]:
@@ -4322,23 +4445,23 @@ class ImageRegistration:
             with open(pathname, 'rb') as f:
                 self.cp_tform = pickle.load(f)
             self.got_cp_transform = True
-            try:
-                img_reg_frame.reg_meth = 1
-            except AttributeError:
-                pass
+            reg_meth = 1
         elif file_ext == 'npy':
             self.method = 'cv'
             with open(pathname, 'rb') as f:
                 self.warp_matrix_cv = np.load(f)
             self.got_cv_transform = True
-            try:
-                img_reg_frame.reg_meth = 2
-                if rerun:
-                    img_reg_frame.pyplis_worker.load_sequence(img_dir=img_reg_frame.pyplis_worker.img_dir, plot_bg=False)
-            except AttributeError:
-                pass
+            reg_meth = 2
         else:
             print('Unrecognised file type, cannot load registration')
+            return
+        
+        try:
+            img_reg_frame.reg_meth = reg_meth
+            if rerun:
+                img_reg_frame.pyplis_worker.load_sequence(img_dir=img_reg_frame.pyplis_worker.img_dir, plot_bg=False)
+        except AttributeError:
+            pass
 
 
 # ## SCRIPT FUNCTION DEFINITIONS

@@ -36,6 +36,14 @@ class SpecWorker:
         self.stretch_tol = 0            # As shift_tol but for stretch
         self.stretch_adjuster = 0.0001  # Factor to scale stretch (needed if different spectrometers have different pixel resolutions otherwise the stretch applied may be in too large or too small stages)
         self.stretch_resample = 100     # Number of points to resample the spectrum by during stretching
+        
+        self._start_stray_wave = 293    # Wavelength space stray light window definitions
+        self._end_stray_wave = 296
+        self._start_fit_wave = 308       # Update fit window to more reasonable starting size (initial setting was to create a big grid
+        self._end_fit_wave = 318
+        self.start_fit_wave_ld = 312      # Second fit window (used in light dilution correction)
+        self.end_fit_wave_ld = 322
+        
         self._start_stray_pix = None    # Pixel space stray light window definitions
         self._end_stray_pix = None
         self._start_fit_pix = None  # Pixel space fitting window definitions
@@ -104,7 +112,7 @@ class SpecWorker:
         self.q_spec = queue.Queue()     # Queue where spectra files are placed, for processing herein
         self.q_doas = q_doas
         self.watcher = None
-        self.watching_dir = None
+        self.transfer_dir = None
         self.watching = False
 
         self._dark_dir = None
@@ -350,6 +358,18 @@ class SpecWorker:
     def load_spec(self):
         """Load spectrum"""
         pass
+
+    def get_wavelengths(self, config):
+        """ Get wavelengths fron config dict and set as attributes"""
+        wavelengths = ["start_stray_wave", "end_stray_wave", "start_fit_wave", "end_fit_wave",
+                       "start_fit_wave_ld", "end_fit_wave_ld"]
+        [setattr(self, wavelength, config.get(wavelength)) for wavelength in wavelengths
+         if config.get(wavelength) is not None]
+
+    def get_shift(self, config):
+        shift_val = config.get("shift")
+        if shift_val is not None:
+            setattr(self, "shift", shift_val)
 
     def reset_stray_pix(self):
         self._start_stray_pix = None

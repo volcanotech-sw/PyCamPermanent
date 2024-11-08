@@ -48,11 +48,6 @@ class DOASWorker(SpecWorker):
         # Initial Definitions
         # ======================================================================================================================
         self.ppmm_conversion = 2.7e15   # convert absorption cross-section in cm2/molecule to ppm.m (MAY NEED TO CHANGE THIS TO A DICTIONARY AS THE CONVERSION MAY DIFFER FOR EACH SPECIES?)
-        
-        self._start_stray_wave = 280    # Wavelength space stray light window definitions
-        self._end_stray_wave = 290
-        self._start_fit_wave = 305  # Wavelength space fitting window definitions
-        self._end_fit_wave = 320
 
         self.ref_spec_used = spec_types    # Reference spectra we actually want to use at this time (similar to ref_spec_types - perhaps one is obsolete (or should be!)
         self.ref_spec_dict = spec_dict
@@ -587,15 +582,15 @@ class DOASWorker(SpecWorker):
         Also starts a processing thread, so that the images which arrive can be processed
         """
         if self.watching:
-            print('Already watching for spectra: {}'.format(self.watching_dir))
+            print('Already watching for spectra: {}'.format(self.transfer_dir))
             print('Please stop watcher before attempting to start new watch. '
                   'This isssue may be caused by having manual acquisitions running alongside continuous watching')
             return
         self.watcher = create_dir_watcher(directory, True, self.directory_watch_handler)
         self.watcher.start()
-        self.watching_dir = directory
+        self.transfer_dir = directory
         self.watching = True
-        print('Watching {} for new spectra'.format(self.watching_dir[-30:]))
+        print('Watching {} for new spectra'.format(self.transfer_dir[-30:]))
 
         # Start the processing thread
         self.start_processing_thread()

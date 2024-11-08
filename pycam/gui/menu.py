@@ -25,6 +25,7 @@ import tkinter.ttk as ttk
 from tkinter import filedialog
 from tkinter import messagebox
 from shutil import copyfile
+from inspect import cleandoc
 import os
 import threading
 
@@ -222,8 +223,8 @@ class PyMenu:
         tab = 'Real-time Processing'
         keys.append(tab)
         self.menus[tab] = tk.Menu(self.frame, tearoff=0)
-        self.menus[tab].add_command(label="Start Watching Directory", command=self.start_watching_dir)
-        self.menus[tab].add_command(label="Stop Watching Directory", command=pyplis_worker.stop_watching_dir)
+        self.menus[tab].add_command(label="Start Watching Transfer Directory", command=self.start_watching_dir)
+        self.menus[tab].add_command(label="Stop Watching Transfer Directory", command=pyplis_worker.stop_watching_dir)
 
         # -------------------------------------------------------------------------------------------------------
 
@@ -726,6 +727,7 @@ class LoadFrame(LoadSaveProcessingSettings):
 
         if os.path.exists(filename):
             self.pyplis_worker.img_reg.load_registration(filename, img_reg_frame=self.img_reg_frame, rerun=rerun)
+            self.img_reg_frame.update_reg_radios()
 
     def load_all(self):
         """Runs all load functions to prepare pyplis worker"""
@@ -755,7 +757,18 @@ class LoadFrame(LoadSaveProcessingSettings):
                 initialdir=self.init_dir)
         
         if len(filename) > 0:
-            self.pyplis_worker.load_config(filename, "user")
+            try:
+                self.pyplis_worker.load_config(filename, "user")
+            except FileNotFoundError as e:
+                error_msg = cleandoc(
+                    f"""
+                    Config load unsuccessful\n
+                    Error: {e}
+                    """)
+
+                messagebox.showerror("Config load failure",
+                                     error_msg)
+                return
 
             self.reload_config()
 
@@ -780,12 +793,16 @@ class LoadFrame(LoadSaveProcessingSettings):
         self.pyplis_worker.apply_config()
         self.pyplis_worker.load_sequence(pyplis_worker.img_dir, plot_bg=False)
         self.doas_worker.load_dir(self.pyplis_worker.spec_dir, prompt=False, plot=True)
+        self.main_gui.set_transfer_dir()
+        self.doas_worker.get_wavelengths(pyplis_worker.config)
+        self.doas_worker.get_shift(pyplis_worker.config)
+        self.main_gui.spec_wind.spec_frame.update_all()
+        self.main_gui.spec_wind.doas_frame.update_vals()
 
-        # This will work but doesn't cover all edge cases
-        if self.pyplis_worker.config.get("FTP_output_dir") is not None:
-            ftp_output_dir = getattr(self.pyplis_worker, "FTP_output_dir")
-            cfg.current_dir_img.root_dir = ftp_output_dir
-            cfg.current_dir_spec.root_dir = ftp_output_dir
+        if pyplis_worker.missing_path_param_warn is not None:
+            messagebox.showwarning("Missing path params not updated",
+                                   pyplis_worker.missing_path_param_warn)
+            pyplis_worker.missing_path_param_warn = None
 
     def reset_pcs_lines(self):
         """Reset current PCS lines"""
