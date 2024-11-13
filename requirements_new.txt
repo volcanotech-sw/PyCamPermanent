@@ -1,0 +1,23 @@
+astropy
+geonum
+LatLon23
+matplotlib
+basemap
+numpy
+opencv-python
+pandas
+paramiko
+Pillow
+scipy
+Shapely 
+ttkthemes
+scikit-image
+ruamel.yaml
+srtm.py
+watchdog
+parameterized
+dropbox
+pywin32
+pydoas @ git+https://github.com/christopher-wild/pydoas.git@typing_updates
+pyplis @ git+https://github.com/ubdbra001/pyplis.git@sources_fix_312
+iFit @ git+https://github.com/ubdbra001/iFit.git@make-pip-install
