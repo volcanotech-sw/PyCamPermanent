@@ -3751,7 +3751,7 @@ class PyplisWorker:
         # I will be able to process it too. Otherwise I can only process all but the final image, since I will need to
         # generate the optical flow)
         if self.idx_current < self.img_buff_size:
-            num_buff = self.idx_current - 1
+            num_buff = self.idx_current
         else:
             num_buff = self.img_buff_size
 
