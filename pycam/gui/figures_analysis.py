@@ -626,8 +626,8 @@ class ImageSO2(LoadSaveProcessingSettings):
             self.line_draw = self.fig.canvas.callbacks.connect('button_press_event', self.ica_draw)
         elif self.interactive_mode == 1:
             self.fig.canvas.mpl_disconnect(self.line_draw)
-            self.rs = widgets.RectangleSelector(self.ax, self.draw_roi, drawtype='box',
-                                                rectprops=dict(facecolor='red', edgecolor='blue', alpha=0.5, fill=True))
+            self.rs = widgets.RectangleSelector(self.ax, self.draw_roi,
+                                                props=dict(facecolor='red', edgecolor='blue', alpha=0.5, fill=True))
         else:
             raise ValueError('Unrecognised interactive_mode for ImageSO2')
 
@@ -2516,11 +2516,11 @@ class PlumeBackground(LoadSaveProcessingSettings):
         rect_dict = dict(fc=self.rect_colours[self.rect_selector.get()], ec=self.rect_colours[self.rect_selector.get()],
                          alpha=0.3, fill=True)
 
-        self.rs_A = widgets.RectangleSelector(self.fig_tau_A.axes[0], self.draw_roi_A, drawtype='box',
-                                              rectprops=rect_dict)
+        self.rs_A = widgets.RectangleSelector(self.fig_tau_A.axes[0], self.draw_roi_A,
+                                              props=rect_dict)
 
-        self.rs_B = widgets.RectangleSelector(self.fig_tau_B.axes[0], self.draw_roi_B, drawtype='box',
-                                              rectprops=rect_dict)
+        self.rs_B = widgets.RectangleSelector(self.fig_tau_B.axes[0], self.draw_roi_B,
+                                              props=rect_dict)
 
     def draw_roi_A(self, eclick, erelease):
         """Draws ROI"""
@@ -5525,8 +5525,8 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
         self.img_canvas.get_tk_widget().grid(row=0, column=0)
 
         # Add rectangle crop functionality
-        self.rs = widgets.RectangleSelector(self.ax, self.draw_roi, drawtype='box',
-                                            rectprops=dict(facecolor='red', edgecolor='blue', alpha=0.5, fill=True))
+        self.rs = widgets.RectangleSelector(self.ax, self.draw_roi,
+                                            props=dict(facecolor='red', edgecolor='blue', alpha=0.5, fill=True))
 
         # Initial rectangle format
         self.roi_start_x, self.roi_end_x = self.roi_abs[0], self.roi_abs[2]
@@ -6407,8 +6407,8 @@ class LightDilutionSettings(LoadSaveProcessingSettings):
             self.line_draw = self.fig.canvas.callbacks.connect('button_press_event', self.draw_line)
         else:
             self.fig.canvas.mpl_disconnect(self.line_draw)
-            self.rs = widgets.RectangleSelector(self.ax, self.draw_roi, drawtype='box',
-                                                rectprops=dict(facecolor='red', edgecolor='blue', alpha=0.5, fill=True))
+            self.rs = widgets.RectangleSelector(self.ax, self.draw_roi,
+                                                props=dict(facecolor='red', edgecolor='blue', alpha=0.5, fill=True))
 
     def draw_line(self, event):
         """Draws line on image for light dilution following click event"""
