@@ -75,7 +75,7 @@ class Camera(CameraSpecs):
     def __del__(self):
         """Whenever this object is deleted (such as end of script) the camera must be closed to free it up for next
         time"""
-        self.close_camera()
+        self.close()
 
     @property
     def analog_gain(self):
@@ -109,7 +109,7 @@ class Camera(CameraSpecs):
 
         return ret_q
 
-    def initialise_camera(self):
+    def initialise(self):
         """Initialises PiCam by setting appropriate settings"""
         # Set camera shutter speed if possible, if not raise error
         if self.shutter_speed is None:
@@ -126,7 +126,7 @@ class Camera(CameraSpecs):
         # Flag that camera has been initialised
         self.cam_init = True
 
-    def close_camera(self):
+    def close(self):
         """"Closes camera - may be required to free up camera for later use in other scripts"""
         print('Closing camera')
         self.cam.framerate = 1
@@ -313,7 +313,7 @@ class Camera(CameraSpecs):
 
         # Initialise camera if not already done
         if not self.cam_init:
-            self.initialise_camera()
+            self.initialise()
 
         # Setup queue
         capt_q = self._q_check(capt_q, q_type='capt')
@@ -394,7 +394,7 @@ class Camera(CameraSpecs):
 
         # Initialise camera if not already done
         if not self.cam_init:
-            self.initialise_camera()
+            self.initialise()
 
         # Setup queues
         img_q = self._q_check(img_q, q_type='img')      # Queue for placing images
@@ -490,7 +490,7 @@ class Camera(CameraSpecs):
 
         # Initialise camera if not already done
         if not self.cam_init:
-            self.initialise_camera()
+            self.initialise()
 
         time_start = time.time()
         # Loop through shutter speeds in ss_list
@@ -548,6 +548,11 @@ class Spectrometer(SpecSpecs):
             else:
                 raise
 
+    def __del__(self):
+        """Whenever this object is deleted (such as end of script) the spectroemter must be closed to free it up for next
+        time"""
+        self.close()
+
     def find_device(self):
         """Function to search for devices"""
         try:
@@ -584,6 +589,16 @@ class Spectrometer(SpecSpecs):
                 ret_q = queue.Queue()
 
         return ret_q
+
+    def initialise(self):
+        """Initialises spectrometer by setting appropriate settings"""
+        # TODO
+
+    def close(self):
+        """"Closes spectrometer - may be required to free up camera for later use in other scripts"""
+        # TODO
+        # print('Closing spectrometer')
+        pass
 
     @property
     def int_time(self):

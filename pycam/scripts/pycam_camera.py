@@ -32,19 +32,19 @@ cam = Camera(band=config_cam['band'], filename=FileLocator.CONFIG_CAM)
 
 # -----------------------------------------------------------------
 # Setup shutdown procedure
-atexit.register(cam.close_camera)
+atexit.register(cam.close)
 
 # If second flag is a 0 we don't add the save specs to the register - pycam_dark_capture.py doesn't want specs saved
 if len(sys.argv) > 2:
     if sys.argv[2] != '0':
-        # We always must save the current camera settings (this runs before cam.close_camera as it is added to register second
+        # We always must save the current camera settings (this runs before cam.close as it is added to register second
         atexit.register(cam.save_specs)
 else:
     atexit.register(cam.save_specs)
 # ------------------------------------------------------------------
 
 # Initialise camera (may need to set shutter speed first?)
-cam.initialise_camera()
+cam.initialise()
 
 # Setup thread for controlling camera capture
 cam.interactive_capture()

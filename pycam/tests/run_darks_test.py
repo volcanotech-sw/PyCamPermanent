@@ -14,7 +14,7 @@ import time
 cam = Camera()
 
 # Initialise camera
-cam.initialise_camera()
+cam.initialise()
 # cam.cam.start_preview()
 
 # Run dark mode capture
@@ -26,4 +26,4 @@ cam.capture_darks()
 # Close camera
 # time.sleep(5)
 # print('Closing camera now')
-# cam.close_camera()
+# cam.close()
