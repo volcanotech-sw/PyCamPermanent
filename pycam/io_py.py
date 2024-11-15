@@ -438,155 +438,45 @@ def get_last_emission_vals(emission_obj):
     return DataFrame(last_vals, index = index)
 
 
-def write_witty_schedule_file(filename, time_on, time_off, time_on_2=None, time_off_2=None):
+def write_schedule_file(filename, time_on, time_off):
     """
-    Writes a file for controlling the Witty Pi on/off scheduling
-    :param filename:    str         Full path to file for writing
-    :param time_on:     datetime    Time to turn pi on each day
-    :param time_off:    datetime    Time to turn pi off each day
-    :param time_on_2:   datetime    Time to turn pi on each day (2nd schedule)
-    :param time_off_2:  datetime    Time to turn pi off each day (2nd schedule)
+    Writes a file for scheduling capture
+    :param filename:    str              Full path to file for writing
+    :param time_on:     datetime.time    Time to start capture each day
+    :param time_off:    datetime.time    Time to stop capture each day
     """
-    time_fmt = '%H:%M:%S'
-    time_on_str = time_on.strftime(time_fmt)
-    date_now = datetime.datetime.now()
-    date_now_str = date_now.strftime('%Y-%m-%d')
+    time_fmt = '%H:%M'
 
-    if time_off_2 is None or time_on_2 is None:
-        if time_off - time_on > datetime.timedelta(0):
-            time_delt_on = time_off - time_on
-            num_hours_on, rem = divmod(time_delt_on.total_seconds(), 60*60)
-            num_mins_on = rem / 60
+    with open(filename, 'w', newline='\n') as f:
+        f.write('# Raspberry Pi start-up/shut-down schedule script\n')
 
-            time_delt_off = datetime.timedelta(hours=24) - time_delt_on
-            num_hours_off, rem = divmod(time_delt_off.total_seconds(), 60 * 60)
-            num_mins_off = rem / 60
-
-        elif time_off - time_on < datetime.timedelta(0):
-            time_delt_off = time_on - time_off
-            num_hours_off, rem = divmod(time_delt_off.total_seconds(), 60 * 60)
-            num_mins_off = rem / 60
-
-            time_delt_on = datetime.timedelta(hours=24) - time_delt_off
-            num_hours_on, rem = divmod(time_delt_on.total_seconds(), 60 * 60)
-            num_mins_on = rem / 60
-
-        else:
-            # TODO time_off and time on are the same - we don't ever turn the pi off. Work out how to cancel script use
-            # TODO on witty pi
-            num_hours_on, num_mins_on = 24, 0
-            num_hours_off, num_mins_off = 0, 0
-
-        with open(filename, 'w', newline='\n') as f:
-            f.write('# Raspberry Pi start-up/shut-down schedule script\n')
-
-            # Add lines for quicker/easier access when reading file
-            f.write('# on_time={}\n'.format(time_on.strftime('%H:%M')))
-            f.write('# off_time={}\n'.format(time_off.strftime('%H:%M')))
-
-            f.write('BEGIN {} {}\n'.format(date_now_str, time_on_str))
-            f.write('END 2038-01-01 12:00:00\n')
-            f.write('ON H{:.0f} M{:.0f}\n'.format(num_hours_on, num_mins_on))
-            f.write('OFF H{:.0f} M{:.0f}\n'.format(num_hours_off, num_mins_off))
-
-    else:
-        # Arrange time ons and time offs to be in consecutive order, starting with the earliest time on. The final time
-        # off might be later in the day or at the start of the next day (before the time on) so to account for this we
-        # need to find the time off that follows the first time on - this becomes time_stop_1 regardless of if it was
-        # initially time_off or time_off_2
-        if time_on < time_on_2:
-            time_start_1 = time_on
-            time_start_2 = time_on_2
-            if time_off > time_on:
-                time_stop_1 = time_off
-                time_stop_2 = time_off_2
-            else:
-                time_stop_1 = time_off_2
-                time_stop_2 = time_off
-        else:
-            time_start_1 = time_on_2
-            time_start_2 = time_on
-            if time_off_2 > time_on_2:
-                time_stop_1 = time_off_2
-                time_stop_2 = time_off
-            else:
-                time_stop_1 = time_off
-                time_stop_2 = time_off_2
-
-        # if time_start_1 < time_stop_1:
-        #     key_list = ['time_start_1', 'time_stop_1', 'time_start_2', 'time_stop_2']
-        #     str_list = ['ON', 'OFF', 'ON', 'OFF']
-        # elif time_start_1 > time_stop_1:
-        #     key_list =
-
-        # Time_1 will always have to be time_on < time_off if valid, so easy to calculate first part
-        time_delt_1 = time_stop_1 - time_start_1
-        num_hours_on_1, rem = divmod(time_delt_1.total_seconds(), 60*60)
-        num_mins_on_1 = rem / 60
-
-        # Time off 1 is simlarly easy
-        time_delt_2 = time_start_2 - time_stop_1
-        num_hours_off_1, rem = divmod(time_delt_2.total_seconds(), 60*60)
-        num_mins_off_1 = rem / 60
-
-        if time_stop_2 > time_start_2:
-            time_delt_3 = time_stop_2 - time_start_2
-            num_hours_on_2, rem = divmod(time_delt_3.total_seconds(), 60*60)
-            num_mins_on_2 = rem / 60
-
-            time_delt_4 = datetime.timedelta(hours=24) - (time_delt_1 + time_delt_2 + time_delt_3)
-            num_hours_off_2, rem = divmod(time_delt_4.total_seconds(), 60*60)
-            num_mins_off_2 = rem / 60
-        else:
-            time_delt_3 = time_start_1 - time_stop_2
-            num_hours_off_2, rem = divmod(time_delt_3.total_seconds(), 60*60)
-            num_mins_off_2 = rem / 60
-
-            time_delt_4 = datetime.timedelta(hours=24) - (time_delt_1 + time_delt_2 + time_delt_3)
-            num_hours_on_2, rem = divmod(time_delt_4.total_seconds(), 60*60)
-            num_mins_on_2 = rem / 60
-
-        with open(filename, 'w', newline='\n') as f:
-            f.write('# Raspberry Pi start-up/shut-down schedule script\n')
-
-            # Add lines for quicker/easier access when reading file
-            f.write('# on_time={}\n'.format(time_on.strftime('%H:%M')))
-            f.write('# off_time={}\n'.format(time_off.strftime('%H:%M')))
-            f.write('# on_time_2={}\n'.format(time_on_2.strftime('%H:%M')))
-            f.write('# off_time_2={}\n'.format(time_off_2.strftime('%H:%M')))
-            f.write('BEGIN {} {}\n'.format(date_now_str, time_start_1.strftime(time_fmt)))
-            f.write('END 2038-01-01 12:00:00\n')
-            f.write('ON H{:.0f} M{:.0f}\n'.format(num_hours_on_1, num_mins_on_1))
-            f.write('OFF H{:.0f} M{:.0f}\n'.format(num_hours_off_1, num_mins_off_1))
-            f.write('ON H{:.0f} M{:.0f}\n'.format(num_hours_on_2, num_mins_on_2))
-            f.write('OFF H{:.0f} M{:.0f}\n'.format(num_hours_off_2, num_mins_off_2))
+        # Add lines for quicker/easier access when reading file
+        f.write('on_time={}\n'.format(time_on.strftime(time_fmt)))
+        f.write('off_time={}\n'.format(time_off.strftime(time_fmt)))
 
 
-def read_witty_schedule_file(filename):
-    """Read witty schedule file"""
-    on_hour, on_min = None, None
-    off_hour, off_min = None, None
-    on_hour_2, on_min_2 = None, None
-    off_hour_2, off_min_2 = None, None
+def read_schedule_file(filename):
+    """
+    Read schedule file
+    Returns (on_time: datetime.time, off_time: datetime.time)
+    """
+    on_time = None
+    off_time = None
 
     with open(filename, 'r', newline='\n') as f:
         for line in f:
             if 'on_time=' in line:
-                on_time = line.split('=')[1].split('\n')[0]
-                on_hour, on_min = [int(x) for x in on_time.split(':')]
+                on_time_str = line.split('=')[1].split('\n')[0]
+                on_time = datetime.time.fromisoformat(on_time_str)
             elif 'off_time=' in line:
-                off_time = line.split('=')[1].split('\n')[0]
-                off_hour, off_min = [int(x) for x in off_time.split(':')]
-            elif 'on_time_2=' in line:
-                on_time_2 = line.split('=')[1].split('\n')[0]
-                on_hour_2, on_min_2 = [int(x) for x in on_time_2.split(':')]
-            elif 'off_time_2=' in line:
-                off_time_2 = line.split('=')[1].split('\n')[0]
-                off_hour_2, off_min_2 = [int(x) for x in off_time_2.split(':')]
-    try:
-        return (on_hour, on_min), (off_hour, off_min), (on_hour_2, on_min_2), (off_hour_2, off_min_2)
-    except AttributeError:
+                off_time_str = line.split('=')[1].split('\n')[0]
+                off_time = datetime.time.fromisoformat(off_time_str)
+
+    if on_time is None or off_time is None:
         print('File not in expected format to retrieve start-up/shut-down information for instrument')
+        on_time = datetime.time(7,0)
+        off_time = datetime.time(22,0)
+    return (on_time, off_time)
 
 
 def write_script_crontab(filename, cmd, time_on):

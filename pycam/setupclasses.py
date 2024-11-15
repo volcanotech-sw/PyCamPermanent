@@ -31,8 +31,8 @@ class FileLocator:
     CONFIG_CAM_WIN = CONF_DIR_WINDOWS + 'cam_specs.txt'         # Camera configuration file
     CONFIG_SPEC = CONF_DIR + 'spec_specs.txt'                   # Spectrometer configuration file
     CONFIG_SPEC_WIN = CONF_DIR_WINDOWS + 'spec_specs.txt'       # Spectrometer configuration file
-    SCHEDULE_FILE = CONF_DIR_WINDOWS + 'witty_schedule.wpi'     # Schedule script for local storage
-    SCHEDULE_FILE_PI = '/home/pi/wittypi/schedule.wpi'          # Schedule script on pi
+    SCHEDULE_FILE = CONF_DIR_WINDOWS + 'schedule.txt'           # Schedule script for local storage
+    SCHEDULE_FILE_PI = CONF_DIR + 'schedule.txt'          # Schedule script on pi
     SCRIPT_SCHEDULE_FILE = 'script_schedule.txt'                # Filename for start/stop pycam script schedule
     CRON_PYCAM = CONF_DIR_WINDOWS + 'cron/'
     CRON_PYCAM_PI = CONF_DIR + 'cron/'

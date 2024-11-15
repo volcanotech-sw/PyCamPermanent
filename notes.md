@@ -1,6 +1,6 @@
 PyCamPermanent
 
-###Check that I don't add too many dependencies to utils and setupclasses - wittypi runs the remote_pi_on/off scripts as root, so root needs to be able to import all modules otherwise it will fail###
+###Check that I don't add too many dependencies to utils and setupclasses - the remote_pi_on/off runs scripts as root, so root needs to be able to import all modules otherwise it will fail###
 
 Software for permanent installation PiCam
 
@@ -12,7 +12,6 @@ To install:
 > sudo apt install exfat-fuse exfat-utils for SSD compatibility on pi
 
 Hardware setup:
-> Connect GPIO 23 (physical pin 16) on masterpi to GPIO 3 (physical pin 5) on slave pi. This allows off/on functionality through wittypi start-up/shutdown scripts
 > If using a 128GB microSD must expand filesystem after copying disk image. sudo raspi-config > advanced options > expand filesystem. All space should then be available to pi
 
 Bug report:
@@ -92,7 +91,7 @@ In config.txt you need to change the host_ip (master) and pi_ip (slave) IPs.
 > then the edits have been made.
 You then need to make changes on the Pi operating system itself, since we have set it up to have a static IP address
 May find online help useful for setting up the static IPs https://elinux.org/RPi_Setting_up_a_static_IP_in_Debian
-Pi 1 (Witty Pi):
+Pi 1:
 > /etc/network/interfaces - line 18: change to desired host address.
 > May need to the change lines 20 and 21 in above file: network and broadcast to reflect the new IP. Keep the endings the same, just change the first 2 numbers
 > /etc/ntp.conf - line 32: Change "restrict" IP address to desired new Pi 2 Address. 

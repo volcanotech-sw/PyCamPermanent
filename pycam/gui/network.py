@@ -5,7 +5,7 @@
 import pycam.gui.cfg as cfg
 from pycam.networking.ssh import open_ssh, close_ssh, ssh_cmd
 from pycam.setupclasses import FileLocator, ConfigInfo
-from pycam.io_py import write_witty_schedule_file, read_witty_schedule_file, write_script_crontab, read_script_crontab
+from pycam.io_py import write_schedule_file, read_schedule_file, write_script_crontab, read_script_crontab
 from pycam.utils import read_file
 
 import tkinter as tk
@@ -246,7 +246,7 @@ class GUICommRecvHandler:
 
 class InstrumentConfiguration:
     """
-    Class creating a widget for configuring the instrument, e.g. adjusting its off/on time through Witty Pi
+    Class creating a widget for configuring the instrument, e.g. adjusting capture start/stop time
 
     To add a new script to be run in the crontab scheduler:
     1. Add script to config.txt and add associated identifier to ConfigInfo
@@ -258,9 +258,8 @@ class InstrumentConfiguration:
     7. Update messagebox to display settings after they have been updated
     8. Add line to script_schedule.txt so that it can be read by this class on first startup
     """
-    def __init__(self, ftp, cfg, main_gui=None, ftp_2=None):
+    def __init__(self, ftp, cfg, main_gui=None):
         self.ftp = ftp
-        self.ftp_2 = ftp_2
         self.time_fmt = '{}:{}'
         self.frame = None
         self.in_frame = False
@@ -283,12 +282,6 @@ class InstrumentConfiguration:
         self._off_hour = tk.IntVar()        # Hour to shutdown pi
         self._off_min = tk.IntVar()
 
-        self._on_hour_2 = tk.IntVar()       # Hour to turn on pi (second time)
-        self._on_min_2 = tk.IntVar()
-
-        self._off_hour_2 = tk.IntVar()        # Hour to shutdown pi (second time)
-        self._off_min_2 = tk.IntVar()
-
         self._use_second_shutdown = tk.IntVar()     # If True, the second shutdown/startup sequence is used
 
         self._capt_start_hour = tk.IntVar()     # Hour to start capture
@@ -303,15 +296,12 @@ class InstrumentConfiguration:
         self._temp_logging = tk.IntVar()        # Temperature logging frequency (minutes)
         self._check_disk_space = tk.IntVar()    # Check disk space frequency (minutes)
 
-        on_time, off_time, on_time_2, off_time_2 = read_witty_schedule_file(FileLocator.SCHEDULE_FILE)
-        if None in on_time_2 or None in off_time_2:
-            self.use_second_shutdown = 0
-        else:
-            self.use_second_shutdown = 1
-        self.on_hour, self.on_min = on_time
-        self.off_hour, self.off_min = off_time
-        self.on_hour_2, self.on_min_2 = on_time_2
-        self.off_hour_2, self.off_min_2 = off_time_2
+        on_time, off_time = read_schedule_file(FileLocator.SCHEDULE_FILE)
+        self.use_second_shutdown = 0 # TODO remove as 2nd pi elements are removed
+        self.on_hour = on_time.strftime('%H')
+        self.on_min = on_time.strftime('%M')
+        self.off_hour = off_time.strftime('%H')
+        self.off_min = off_time.strftime('%M')
 
         # Read cronfile looking for defined scripts. ADD SCRIPT TO LIST HERE TO SEARCH FOR IT
         results = read_script_crontab(FileLocator.SCRIPT_SCHEDULE,
@@ -360,28 +350,6 @@ class InstrumentConfiguration:
         min_stop = ttk.Spinbox(frame_on, textvariable=self._off_min, from_=00, to=59, increment=1, width=2, font=self.main_gui.main_font)
         # min_stop.set("{:02d}".format(self.off_min))
         min_stop.grid(row=1, column=3, padx=2, pady=2)
-
-        # Second shutdown option
-        check_shut = ttk.Checkbutton(frame_on, text='Use start-up/shut-down sequence 2',
-                                     variable=self._use_second_shutdown, command=self.second_shutdown_config)
-        check_shut.grid(row=2, column=0, columnspan=4, sticky='w', padx=2, pady=2)
-        lab = ttk.Label(frame_on, text='Start-up 2 (hour:minutes):', font=self.main_gui.main_font)
-        lab.grid(row=3, column=0, sticky='w', padx=2, pady=2)
-        lab = ttk.Label(frame_on, text='Shut-down 2 (hour:minutes):', font=self.main_gui.main_font)
-        lab.grid(row=4, column=0, sticky='w', padx=2, pady=2)
-
-        self.hour_start_2 = ttk.Spinbox(frame_on, textvariable=self._on_hour_2, from_=00, to=23, increment=1, width=2, font=self.main_gui.main_font)
-        self.hour_start_2.grid(row=3, column=1, padx=2, pady=2)
-        ttk.Label(frame_on, text=':', font=self.main_gui.main_font).grid(row=3, column=2, padx=2, pady=2)
-        self.min_start_2 = ttk.Spinbox(frame_on, textvariable=self._on_min_2, from_=00, to=59, increment=1, width=2, font=self.main_gui.main_font)
-        self.min_start_2.grid(row=3, column=3, padx=2, pady=2)
-
-        self.hour_stop_2 = ttk.Spinbox(frame_on, textvariable=self._off_hour_2, from_=00, to=23, increment=1, width=2, font=self.main_gui.main_font)
-        self.hour_stop_2.grid(row=4, column=1, padx=2, pady=2)
-        ttk.Label(frame_on, text=':', font=self.main_gui.main_font).grid(row=4, column=2, padx=2, pady=2)
-        self.min_stop_2 = ttk.Spinbox(frame_on, textvariable=self._off_min_2, from_=00, to=59, increment=1, width=2, font=self.main_gui.main_font)
-        self.min_stop_2.grid(row=4, column=3, padx=2, pady=2)
-        self.second_shutdown_config()   # Set current state of widgets based on start-up variable values
 
         # Update button
         butt = ttk.Button(frame_on, text='Update', command=self.update_on_off)
@@ -449,50 +417,10 @@ class InstrumentConfiguration:
         butt = ttk.Button(frame_cron, text='Update', command=self.update_acq_time)
         butt.grid(row=row, column=0, columnspan=4, sticky='e', padx=2, pady=2)
 
-    def second_shutdown_config(self):
-        """Controls configuration of widgets for if a second shutdown is to be used or not"""
-        if self.use_second_shutdown:
-            state = tk.NORMAL
-        else:
-            state = tk.DISABLED
-
-        # Loop through widgets and disable/enable them
-        for widget in [self.hour_start_2, self.min_start_2, self.hour_stop_2, self.min_stop_2]:
-            widget.configure(state=state)
-
     def check_second_shutdown(self):
         """Checks whether second shutdown sequence is valid (if it is being used)"""
         if not self.use_second_shutdown:
             return
-
-        if self.on_time_2 == self.off_time_2:
-            self.use_second_shutdown = 0
-            print('Start-up/shut-down times are the same for second schedule. Second sequence will not be used')
-            return
-
-        # Check if on/off times fall within the first on/off schedule - we return if this is not the case, so return the
-        # function if all is well
-        if self.on_time < self.off_time:
-            if self.on_time_2 < self.off_time_2:
-                if self.off_time_2 < self.on_time or self.on_time_2 > self.off_time:
-                    return
-            elif self.on_time_2 > self.off_time_2:
-                if self.on_time_2 > self.off_time and self.off_time_2 < self.on_time:
-                    return
-
-        elif self.on_time > self.off_time:
-            if self.on_time_2 < self.off_time_2:
-                if self.on_time_2 > self.off_time and self.off_time_2 < self.on_time:
-                    return
-            # If on_time_2 > off_time_2 then both times pass through midnight so they can't be compatible
-
-        self.use_second_shutdown = 0
-        a = messagebox.showwarning('Incompatible second start-up/shut-down sequence',
-                                   'Second start-up/shut-down sequence is incompatible with the first\n'
-                                   'Second sequence will be removed.\n'
-                                   'This happens when a second start-up/shut-down is attempted at a time when\n'
-                                   'the first sequence already has the instrument turned on or if the on/off\n'
-                                   'times overlap at any point. Please check times.')
 
     def check_script_time(self, script_time, script_name):
         """
@@ -514,32 +442,11 @@ class InstrumentConfiguration:
             # The pi is not being turned off if the time is the same, so we're all good?
             return
 
-        # Check on second start-up/shut-down sequence
-        if self.use_second_shutdown:
-            if self.on_time_2 < self.off_time_2:
-                if script_time > self.on_time_2 and script_time <= self.off_time_2:
-                    return
-                elif self.on_time_2 > self.off_time_2:
-                    if script_time > self.on_time_2 or script_time < self.off_time_2:
-                        return
-                else:
-                    return
-
-        if self.use_second_shutdown:
-            mess = 'Script start time incompatible with instrument on/off time\n\n'\
-                   'Script name: {}\nScript start time: {}\n'\
-                   'Instrument start time: {}\nInstruments shutdown time: {}\nInstrument start time 2: {}\n' \
-                   'Instrument shutdown time 2: {}\n'.format(script_name, script_time.strftime('%H:%M'),
-                                                             self.on_time.strftime('%H:%M'),
-                                                             self.off_time.strftime('%H:%M'),
-                                                             self.on_time_2.strftime('%H:%M'),
-                                                             self.off_time_2.strftime('%H:%M'))
-        else:
-            mess = 'Script start time incompatible with instrument on/off time\n\n' \
-                   'Script name: {}\nScript start time: {}\nInstrument start time: {}\n' \
-                   'Instruments shutdown time: {}\n'.format(script_name, script_time.strftime('%H:%M'),
-                                                            self.on_time.strftime('%H:%M'),
-                                                            self.off_time.strftime('%H:%M'))
+        mess = 'Script start time incompatible with instrument on/off time\n\n' \
+                'Script name: {}\nScript start time: {}\nInstrument start time: {}\n' \
+                'Instruments shutdown time: {}\n'.format(script_name, script_time.strftime('%H:%M'),
+                                                        self.on_time.strftime('%H:%M'),
+                                                        self.off_time.strftime('%H:%M'))
 
         a = tk.messagebox.showwarning('Configuration incompatible', mess, parent=self.frame)
         self.frame.attributes('-topmost', 1)
@@ -547,51 +454,19 @@ class InstrumentConfiguration:
 
     def update_on_off(self):
         """Controls updating start/stop time of pi"""
-        # Write wittypi schedule file locally
-        if not self.use_second_shutdown:
-            write_witty_schedule_file(FileLocator.SCHEDULE_FILE, self.on_time, self.off_time)
-        else:
-            write_witty_schedule_file(FileLocator.SCHEDULE_FILE, self.on_time, self.off_time,
-                                      time_on_2=self.on_time_2, time_off_2=self.off_time_2)
+        # Write schedule file locally
+        write_schedule_file(FileLocator.SCHEDULE_FILE, self.on_time, self.off_time)
 
         # Transfer file to instrument
         self.ftp.move_file_to_instrument(FileLocator.SCHEDULE_FILE, FileLocator.SCHEDULE_FILE_PI)
 
-        # Open ssh and run wittypi update script
-        ssh_cli = open_ssh(self.ftp.host_ip)
+        # TODO get master pi to reload the schedule
 
-        std_in, std_out, std_err = ssh_cmd(ssh_cli, '(cd /home/pi/wittypi; sudo ./runScript.sh)', background=False)
-        print(std_out.readlines())
-        # print(std_err.readlines())
-        close_ssh(ssh_cli)
-
-        # Update second pi if witty pi is used for second Pi
-        if self.ftp_2 is not None:
-            # Transfer file to instrument
-            self.ftp_2.move_file_to_instrument(FileLocator.SCHEDULE_FILE, FileLocator.SCHEDULE_FILE_PI)
-
-            # Open ssh and run wittypi update script
-            ssh_cli_2 = open_ssh(self.ftp_2.host_ip)
-
-            std_in, std_out, std_err = ssh_cmd(ssh_cli_2, '(cd /home/pi/wittypi; sudo ./runScript.sh)', background=False)
-            print(std_out.readlines())
-            # print(std_err.readlines())
-            close_ssh(ssh_cli_2)
-
-        if not self.use_second_shutdown:
-            a = tk.messagebox.showinfo('Instrument update',
-                                       'Updated instrument start-up/shut-down schedule:\n\n'
-                                       'Start-up:\t\t{} UTC\n''Shut-down:\t{} UTC'.format(self.on_time.strftime('%H:%M'),
-                                                                                      self.off_time.strftime('%H:%M')),
-                                       parent=self.frame)
-        else:
-            a = tk.messagebox.showinfo('Instrument update',
-                                       'Updated instrument start-up/shut-down schedule:\n\n'
-                                       'Start-up:\t\t{} UTC\n''Shut-down:\t{} UTC\n'
-                                       'Start-up 2:\t{} UTC\n''Shut-down 2:\t{} UTC\n'.format(
-                                           self.on_time.strftime('%H:%M'), self.off_time.strftime('%H:%M'),
-                                           self.on_time_2.strftime('%H:%M'), self.off_time_2.strftime('%H:%M')),
-                                       parent=self.frame)
+        a = tk.messagebox.showinfo('Instrument update',
+                                    'Updated capture start-up/shut-down schedule:\n\n'
+                                    'Start-up:\t\t{} UTC\n''Shut-down:\t{} UTC'.format(self.on_time.strftime('%H:%M'),
+                                                                                    self.off_time.strftime('%H:%M')),
+                                    parent=self.frame)
 
         self.frame.attributes('-topmost', 1)
         self.frame.attributes('-topmost', 0)
@@ -678,16 +553,6 @@ class InstrumentConfiguration:
         return datetime.datetime(year=2020, month=1, day=1, hour=self.off_hour, minute=self.off_min)
 
     @property
-    def on_time_2(self):
-        """Return datetime object of time to turn pi on. Date is not important, only time, so use arbitrary date"""
-        return datetime.datetime(year=2020, month=1, day=1, hour=self.on_hour_2, minute=self.on_min_2)
-
-    @property
-    def off_time_2(self):
-        """Return datetime object of time to turn pi off. Date is not important, only time, so use arbitrary date"""
-        return datetime.datetime(year=2020, month=1, day=1, hour=self.off_hour_2, minute=self.off_min_2)
-
-    @property
     def start_capt_time(self):
         """Return datetime object of time to turn start acq. Date is not important, only time, so use arbitrary date"""
         return datetime.datetime(year=2020, month=1, day=1, hour=self.capt_start_hour, minute=self.capt_start_min)
@@ -733,46 +598,6 @@ class InstrumentConfiguration:
     @off_min.setter
     def off_min(self, value):
         self._off_min.set(value)
-
-    @property
-    def on_hour_2(self):
-        return self._on_hour_2.get()
-
-    @on_hour_2.setter
-    def on_hour_2(self, value):
-        if value is None:
-            value = 0
-        self._on_hour_2.set(value)
-
-    @property
-    def on_min_2(self):
-        return self._on_min_2.get()
-
-    @on_min_2.setter
-    def on_min_2(self, value):
-        if value is None:
-            value = 0
-        self._on_min_2.set(value)
-
-    @property
-    def off_hour_2(self):
-        return self._off_hour_2.get()
-
-    @off_hour_2.setter
-    def off_hour_2(self, value):
-        if value is None:
-            value = 0
-        self._off_hour_2.set(value)
-
-    @property
-    def off_min_2(self):
-        return self._off_min_2.get()
-
-    @off_min_2.setter
-    def off_min_2(self, value):
-        if value is None:
-            value = 0
-        self._off_min_2.set(value)
 
     @property
     def use_second_shutdown(self):

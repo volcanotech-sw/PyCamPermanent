@@ -397,8 +397,8 @@ class FTPClient:
         self.test_connection() and self.retrieve_schedule_files()
 
     def retrieve_schedule_files(self):
-        """Retrieves witty pi and crontab schedule files"""
-        # Transfer wittypi file and script schedule file to local, so GUI is accurate when it's opened
+        """Retrieves capture and crontab schedule files"""
+        # Transfer capture file and script schedule file to local, so GUI is accurate when it's opened
         # TODO THIS HASN'T BEEN TESTED!!!!! (18/04/2023)
         self.get_file(FileLocator.SCRIPT_SCHEDULE_PI, FileLocator.SCRIPT_SCHEDULE, rm=False)
         self.get_file(FileLocator.SCHEDULE_FILE_PI, FileLocator.SCHEDULE_FILE, rm=False)
