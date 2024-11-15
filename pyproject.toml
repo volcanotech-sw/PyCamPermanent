@@ -24,7 +24,7 @@ dependencies = [
     "scikit-image",
     "srtm.py",
     "watchdog",
-    "pydoas @ git+https://github.com/christopher-wild/pydoas.git@typing_updates"
+    "pydoas @ git+https://github.com/christopher-wild/pydoas.git@typing_updates",
     "pyplis @ git+https://github.com/ubdbra001/pyplis.git@typing_update",
     "iFit @ git+https://github.com/ubdbra001/iFit.git@make-pip-install",
 ]
