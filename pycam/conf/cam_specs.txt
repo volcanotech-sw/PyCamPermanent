@@ -29,3 +29,6 @@ auto_ss=True
 min_saturation=0.7
 max_saturation=0.9
 band=on
+raw_num_x=2592
+raw_num_y=1944
+raw_pixel_format=SGBRG10

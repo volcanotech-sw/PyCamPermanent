@@ -52,8 +52,8 @@ cam.interactive_capture()
 if len(sys.argv) > 1:
     if sys.argv[1] == '1':
         # Start up continuous capture straight away
-        # cam.set_shutter_speed(100000)   # Set a start shutter speed
-        # cam.set_shutter_speed(100000)   # Set a start shutter speed
+        # cam.shutter_speed = 100000   # Set a start shutter speed
+        # cam.shutter_speed = 100000   # Set a start shutter speed
         # cam.auto_ss = True      # Always run automated shutter speed on this
         cam.capture_q.put({'start_cont': True})
         print('pycam_camera.py: Continuous capture started')

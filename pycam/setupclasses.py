@@ -7,6 +7,7 @@ Setup classes for defining default parameters or loading in parameters from file
 """
 import warnings
 import numpy as np
+import numpy.typing
 from .utils import check_filename
 
 
@@ -141,19 +142,32 @@ class CameraSpecs:
         path to configuration file (*.txt) to read in camera parameters. If no file is provided the internal defaults
         are use
     """
+
+    filename: None | str
+
+    _bit_depth: int
+    _max_DN: int
+    _analog_gain: float
+    _shutter_speed: int
+    _ss_idx: int
+
+    attr_to_io: dict
+    save_attrs: list
+
     def __init__(self, filename=None):
         self.filename = filename    # Filename for loading specifications
 
         # Hidden variables
-        self._bit_depth = None  # Hidden bit depth holder
-        self._max_DN = None     # Maximum digital number of images (associated with bit depth)
-        self._shutter_speed = None
-        self._ss_idx = None
+        self._bit_depth = 0  # Hidden bit depth holder
+        self._max_DN = 0     # Maximum digital number of images (associated with bit depth)
+        self._analog_gain = 1
+        self._shutter_speed = 1000
+        self._ss_idx = 0
 
-        self.attr_to_io = {'int': ['pix_num_x', 'pix_num_y', '_bit_depth', '_shutter_speed'],
+        self.attr_to_io = {'int': ['pix_num_x', 'pix_num_y', '_bit_depth', '_shutter_speed', 'raw_num_x', 'raw_num_y'],
                            'float': ['pix_size_x', 'pix_size_y', 'fov_x', 'fov_y', 'framerate', '_analog_gain',
                                      'min_saturation', 'max_saturation', 'file_ss_units'],
-                           'str': ['save_path', 'file_ext', 'file_datestr', 'file_ss', 'band'],
+                           'str': ['save_path', 'file_ext', 'file_datestr', 'file_ss', 'band', 'raw_pixel_format'],
                            'dict': ['file_filterids', 'file_type'],
                            'bool': ['auto_ss']
                            }
@@ -166,13 +180,54 @@ class CameraSpecs:
         if isinstance(self.filename, str):
             self.load_specs(self.filename)
 
+    band: str
+
+    pix_size_x: float
+    pix_size_y: float
+    pix_num_x: int
+    pix_num_y: int
+    raw_num_x: int
+    raw_num_y: int
+    raw_pixel_format: str
+    fov_x: float
+    fov_y: float
+
+    save_path: str
+    file_ext: str
+    file_datestr: str
+    file_filterids: dict
+    file_ag: str
+    file_ss: str
+    file_ss_units: float
+    file_type: dict
+
+    file_date_loc: int
+    file_fltr_loc: int
+    file_gain_loc: int
+    file_ss_loc: int
+    file_type_loc: int
+
+    ss_list:  numpy.typing.NDArray[np.integer]
+
+    framerate: float
+    auto_ss: bool
+    min_saturation: float
+    max_saturation: float
+    saturation_pixels: int
+    saturation_rows: int
+
     def _default_specs(self):
         """Define camera default specs > binned picam setup"""
+        self.band = 'on'
+
         # Camera specs
         self.pix_size_x = 5.6e-6    # Pixel width in m
         self.pix_size_y = 5.6e-6    # Pixel height in m
         self.pix_num_x = 648        # Number of pixels in horizontal
         self.pix_num_y = 486        # Number of pixels in vertical
+        self.raw_num_x = 2592       # Raw horizontal sensor resolution
+        self.raw_num_y = 1944       # Raw vertical sensor resolution
+        self.raw_pixel_format = "SGBRG10"  # Raw pixel format
         self.fov_x = 28             # Field of view in x
         self.fov_y = 21             # FOV in y
         # self.fov_x = 23.1           # FOV for old lenses
@@ -193,6 +248,7 @@ class CameraSpecs:
                           'clear': 'Clear',
                           'test': 'Test',
                           'dark_corr': 'darkcorr'}
+        # these are indexes of these details if you split the filename by _
         self.file_date_loc = 0      # Location of date string in filename
         self.file_fltr_loc = 1      # Location of filter string
         self.file_gain_loc = 2      # Location of gain string
@@ -209,7 +265,7 @@ class CameraSpecs:
 
         # Acquisition settings
         self.shutter_speed = 10000  # Camera shutter speeds (us)
-        self.framerate = 0.2       # Camera framerate (Hz)
+        self.framerate = 0.2        # Camera framerate (Hz) - not actually FPS, but rather the frequency at which pictures can be captured
         self.analog_gain = 1        # Camera analog gain
         self.auto_ss = True         # Bool for requesting automated shutter speed adjustment
         self.min_saturation = 0.5   # Minimum saturation accepted before adjusting shutter speed (if auto_ss is True)
@@ -218,31 +274,35 @@ class CameraSpecs:
         self.saturation_rows = int(self.pix_num_y / 2)   # rows to extract for saturation check (don't want to check lower rows as snow may be present (if negative, rows start from bottom and work up, postive -top-down)
 
     @property
-    def bit_depth(self):
+    def bit_depth(self) -> int:
         return self._bit_depth
 
     @bit_depth.setter
-    def bit_depth(self, value):
+    def bit_depth(self, value: int):
         """Update _max_DN when bit_depth is defined (two are intrinsically linked)"""
         self._bit_depth = value
         self._max_DN = (2 ** self.bit_depth) - 1
 
     @property
-    def shutter_speed(self):
+    def analog_gain(self) -> float:
+        return self._analog_gain
+
+    @property
+    def shutter_speed(self) -> int:
         return self._shutter_speed
 
     @shutter_speed.setter
-    def shutter_speed(self, value):
+    def shutter_speed(self, ss: int):
         """Update ss_idx to nearest shutter_speed value in ss_list"""
-        self._shutter_speed = value
-        self._ss_idx = np.argmin(np.abs(self.ss_list - self.shutter_speed))
+        self._shutter_speed = ss
+        self._ss_idx = np.argmin(np.abs(self.ss_list - ss))
 
     @property
-    def ss_idx(self):
+    def ss_idx(self) -> int:
         return self._ss_idx
 
     @ss_idx.setter
-    def ss_idx(self, value):
+    def ss_idx(self, value: int):
         """Update shutter speed to value in ss_list defined by ss_idx when ss_idx is changed
         Accesses hidden variable _shutter_speed directly to avoid causing property method being called"""
         # Check that we have been passed a valid index, if not we adjust it appropriately
@@ -253,27 +313,27 @@ class CameraSpecs:
         self._ss_idx = value
         self._shutter_speed = self.ss_list[self.ss_idx]
 
-    def estimate_focal_length(self):
+    def estimate_focal_length(self) -> float:
         """
         Calculates focal length from FOV and detector dimensions
         Returns: focal length (m)
         """
-        fl_x = ((self.pix_num_x * self.pix_size_x) / 2) / np.tan(np.deg2rad(self.fov_x / 2))
-        fl_y = ((self.pix_num_y * self.pix_size_y) / 2) / np.tan(np.deg2rad(self.fov_y / 2))
+        fl_x = (float(self.pix_num_x * self.pix_size_x) / 2.0) / np.tan(np.deg2rad(self.fov_x / 2.0))
+        fl_y = (float(self.pix_num_y * self.pix_size_y) / 2.0) / np.tan(np.deg2rad(self.fov_y / 2.0))
 
         # Check focal lengths calculated from 2 dimensions are roughly equal (within 5%)
         if fl_x < 0.95 * fl_y or fl_x > 1.05 * fl_y:
             raise ValueError('Focal lengths calculated from x and y dimensions do not agree within a reasonable range')
         else:
             # Calculate average focal length and return
-            fl = np.mean([fl_x, fl_y])
+            fl = (fl_x + fl_y) / 2.0
             return fl
 
-    def extract_info(self, line):
+    def extract_info(self, line: str) -> str:
         """Extracts information from line of text based on typical text format for picam files"""
         return line.split('=')[1].split()[0]
 
-    def load_specs(self, filename):
+    def load_specs(self, filename: str):
         """Load camera specifications from file
 
         Parameters
@@ -346,7 +406,7 @@ class CameraSpecs:
                                           .format(attr, val, getattr(CameraSpecs(), attr)))
                             setattr(self, attr, getattr(CameraSpecs(), attr))
 
-    def save_specs(self, filename=FileLocator.CONFIG_CAM):
+    def save_specs(self, filename: str = FileLocator.CONFIG_CAM):
         """Save camera specifications to file
 
         Parameters
@@ -445,6 +505,7 @@ class SpecSpecs:
         self.file_type = {'meas': 'Plume', 'dark': 'Dark', 'cal': 'ppmm', 'clear': 'Clear', 'test': 'Test'}
         self.file_datestr = "%Y-%m-%dT%H%M%S"                   # Date/time format spec in filename
         self.file_coadd = 'coadd'   # Coadd string format
+        # these are indexes of these details if you split the filename by _
         self.file_date_loc = 0
         self.file_ss_loc = 1        # Shutter speed location in filename
         self.file_coadd_loc = 2     # Coadd location in filename
@@ -460,7 +521,7 @@ class SpecSpecs:
         self.min_coadd = 1
         self.max_coadd = 100
         self.coadd = 1            # Number of spectra to coadd
-        self.framerate = 0.25            # Framerate of acquisitions (Hz)
+        self.framerate = 0.25           # Framerate of acquisitions (Hz)
         self.wavelengths = None         # Wavelengths (nm)
         self.spectrum = None            # Spectrum
         self.spectrum_filename = None   # Filename for spectrum

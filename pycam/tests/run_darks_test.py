@@ -21,7 +21,7 @@ cam.initialise()
 cam.capture_darks()
 
 # # Decrease shutter speed for shutdown
-# cam.set_shutter_speed(5000)
+# cam.shutter_speed = 5000
 # cam.cam.stop_preview()
 # Close camera
 # time.sleep(5)

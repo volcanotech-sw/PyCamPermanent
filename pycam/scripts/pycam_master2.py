@@ -52,11 +52,11 @@ for instrument in instruments:
 # Initialise
 
 if "1" in sys.argv:
-    start_cont = 1
+    start_cont = True
     print("Continuous capture on start-up is activated")
 else:
+    start_cont = False
     print("Continuous capture on start-up not activated")
-    start_cont = 0
 
 for instrument in instruments:
     # Initialise camera (may need to set shutter speed first?)
@@ -65,8 +65,9 @@ for instrument in instruments:
     # Setup thread for controlling camera capture
     instrument.interactive_capture()
 
-    instrument.capture_q.put({"start_cont": True})
-    print("Continuous capture started")
+    if start_cont:
+        instrument.capture_q.put({"start_cont": True})
+        print("Continuous capture queued")
 
 
 # ----------------------------------------------------------------
@@ -77,6 +78,8 @@ for instrument in instruments:
 # -----------------------------------------------------------------
 # Handle communications/main loop
 
+print("Entering main loop")
+
 running = True
 while running:
 
@@ -85,4 +88,5 @@ while running:
         time.sleep(1)
     except KeyboardInterrupt:
         # and just try to quit nicely when ctrl-c'd
+        print("Quitting")
         running = False

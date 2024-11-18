@@ -784,7 +784,7 @@ class PiSocketCamComms(SocketClient):
                     if self.camera.in_interactive_capture:
                         self.camera.capture_q.put({'ss': value})
                     else:
-                        self.camera.set_shutter_speed(value)
+                        self.camera.shutter_speed = value
                     comm = self.encode_comms({'SSA': value})
                 except Exception as e:
                     print('pycam_camera.py: Error setting shutter speed: {}'.format(e))
@@ -811,7 +811,7 @@ class PiSocketCamComms(SocketClient):
                     if self.camera.in_interactive_capture:
                         self.camera.capture_q.put({'ss': value})
                     else:
-                        self.camera.set_shutter_speed(value)
+                        self.camera.shutter_speed = value
                     comm = self.encode_comms({'SSB': value})
                 except:
                     comm = self.encode_comms({'ERR': 'SSB'})

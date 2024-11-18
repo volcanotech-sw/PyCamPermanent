@@ -6,33 +6,44 @@ Main controller classes for the PiCam and OO Flame spectrometer
 
 import warnings
 import queue
-import multiprocessing.managers
+import multiprocessing.queues
 import io
 import os
 import time
 import datetime
 import numpy as np
+import numpy.typing
 import threading
+from typing import Any
 
 from .setupclasses import CameraSpecs, SpecSpecs, FileLocator
-from .utils import format_time
-
+from .utils import format_time, set_capture_status
 
 
 try:
     import seabreeze
+
     seabreeze.use("pyseabreeze")
     import seabreeze.spectrometers as sb
 except ModuleNotFoundError:
-    warnings.warn('Working on machine without seabreeze, functionality of some classes will be lost')
+    warnings.warn(
+        "Working on machine without seabreeze, functionality of some classes will be lost"
+    )
+
 try:
-    import picamera
+    import libcamera  # for constants
+    from picamera2 import Picamera2
 except ModuleNotFoundError:
-    warnings.warn('Working on machine without picamera, functionality of some classes will be lost')
+    warnings.warn(
+        "Working on machine without Picamera2, functionality of some classes will be lost"
+    )
+
 try:
     import cv2
 except ModuleNotFoundError:
-    warnings.warn('OpenCV could not be imported, there may be some issues caused by this')
+    warnings.warn(
+        "OpenCV could not be imported, there may be some issues caused by this"
+    )
 
 
 class Camera(CameraSpecs):
@@ -40,59 +51,99 @@ class Camera(CameraSpecs):
 
     subclass of: class: CameraSpecs
     """
-    def __init__(self, band='on', filename=None):
-        self.band = band                    # 'on' or 'off' band camera (band can be overwritten by file load)
-        self.capture_q = queue.Queue()      # Queue for requesting images
-        self.img_q = queue.Queue()          # Queue where images are put for extraction
-        self.capture_thread = None          # Thread for running interactive capture
 
-        # Attempt to creat picamera object. If we can't we flag that no camera is active
+    # typing hints
+    band: str
+    capture_q: multiprocessing.queues.Queue | queue.Queue
+    img_q: multiprocessing.queues.Queue | queue.Queue
+    capture_thread: threading.Thread
+
+    cam: None | Picamera2
+    cam_init: bool
+
+    in_interactive_capture: bool
+    continuous_capture: bool
+    in_dark_capture: bool
+
+    filename: None | str
+    lock: bool
+
+    image: numpy.typing.NDArray[np.uint16]
+
+    def __init__(self, band="on", filename=None, ignore_device=False):
+        # 'on' or 'off' band camera (band can be overwritten by file load)
+        self.band = band
+        self.capture_q = queue.Queue()  # Queue for requesting images
+        self.img_q = queue.Queue()  # Queue where images are put for extraction
+        self.capture_thread = None  # Thread for running interactive capture
+
+        self.cam = None  # Underlying camera object
+        self.cam_init = False  # Flags whether the camera has been initialised
+
+        self.in_interactive_capture = False  # Flags when in interactive capture
+        self.continuous_capture = False  # Flag when in continuous capture mode
+        self.in_dark_capture = False  # Flag when in dark capture mode
+
+        # Attempt to create a Picamera2 object. If we can't we flag that no camera is active.
         try:
-            self.cam = picamera.PiCamera()      # picamera object for control of camera acquisitions
-            self.camera_active = True
+            if self.band == "on":
+                num = 0
+            elif self.band == "off":
+                num = 1
+            else:
+                raise Exception(f"Unknown band: {band}")
+            # PiCamera2 object for control of camera acquisitions
+            self.cam = Picamera2(num)
         except NameError:
-            self.camera_active = False
+            if ignore_device:
+                print("Camera unavailable")
+            else:
+                raise
 
-        self.cam_init = False               # Flags whether the camera has been initialised
-        self.filename = None                                        # Image filename
-        self._analog_gain = 1
-        self.exposure_speed = None          # True camera exposure speed retrieved from picamera object
-        self.lock = False                   # A lock to make sure that the camera is not being accessed somewhere
-        self.in_interactive_capture = False # Bool to flag when in interactive capture
-        self.continuous_capture = False     # Bool to flag when in continuous capture mode
-        self.in_dark_capture = False        # Bool to flag when in dark capture mode
+        # Camera settings
+        self.filename = None  # Image filename
+        self.lock = False  # A lock to temporarily block camera access
 
-        # Get default specs from parent class and any other attributes
+        # Get default specs from parent class and any other attributes, this needs to be
+        # after above as it will try to set things that depend on properties above
         super().__init__(filename)
 
         # Create empty image array after we have got pix_num_x/y from super()
-        self.image = np.array([self.pix_num_x, self.pix_num_y])  # Image array
+        self.image = np.array([self.pix_num_x, self.pix_num_y], dtype=np.uint16)
 
         # Initialise with manual capture
-        with open(FileLocator.RUN_STATUS_PI, 'w') as f:
-            f.write('manual')
+        set_capture_status(FileLocator.RUN_STATUS_PI, self.band, "manual")
 
     def __del__(self):
         """Whenever this object is deleted (such as end of script) the camera must be closed to free it up for next
         time"""
+        # print(f"{self.band} camera deconstructor")
         self.close()
 
-    @property
-    def analog_gain(self):
-        return self._analog_gain
-
-    @analog_gain.setter
+    @CameraSpecs.analog_gain.setter
     def analog_gain(self, ag):
         """Set camera analog gain"""
         self._analog_gain = ag
+
         while self.lock:
             pass
-        if self.camera_active:
-            self.cam.analog_gain = ag
 
-    def _q_check(self, q, q_type='capt'):
+        # set the analogue gain if the camera exists, retaining whatever state it was in
+        if self.cam:
+            was_started = self.cam.started
+            if was_started:
+                self.cam.stop()
+            self.cam.set_controls({"AnalogueGain": ag})
+            if was_started:
+                self.cam.start()
+        else:
+            print(f"No {self.band} camera to set analogue gain for")
+
+    def _q_check(
+        self, q: multiprocessing.queues.Queue | queue.Queue | None, q_type: str = "capt"
+    ) -> multiprocessing.queues.Queue | queue.Queue:
         """Checks type of queue object and returns queue (ret_q). Sets queue to default queue if none is provided"""
-        if isinstance(q, multiprocessing.managers.BaseProxy):
+        if isinstance(q, multiprocessing.queues.Queue):
             # print('Using multiprocessing queue')
             ret_q = q
         elif isinstance(q, queue.Queue):
@@ -100,9 +151,9 @@ class Camera(CameraSpecs):
             ret_q = q
         else:
             # print('Unrecognized queue object, reverting to default')
-            if q_type == 'capt':
+            if q_type == "capt":
                 ret_q = self.capture_q
-            elif q_type == 'img':
+            elif q_type == "img":
                 ret_q = self.img_q
             else:
                 ret_q = queue.Queue()
@@ -111,14 +162,61 @@ class Camera(CameraSpecs):
 
     def initialise(self):
         """Initialises PiCam by setting appropriate settings"""
-        # Set camera shutter speed if possible, if not raise error
-        if self.shutter_speed is None:
-            raise ValueError('Shutter speed must be defined before camera can be initialised')
-        else:
-            self.set_shutter_speed(self.shutter_speed)
 
-        # Turn exposure mode off, to prevent auto adjustments
-        self.cam.exposure_mode = 'off'
+        if self.cam is None:
+            print(f"No {self.band} camera to initialise")
+            return
+
+        # verify the camera supports the resolution
+        resolution = (self.raw_num_x, self.raw_num_y)
+        modes = self.cam.sensor_modes
+        mode_matches = [m for m in modes if m["size"] == resolution]
+        if len(mode_matches) == 0:
+            raise Exception(f"{self.band} camera does not support {resolution}")
+        if (
+            len([True for m in mode_matches if m["unpacked"] == self.raw_pixel_format])
+            == 0
+        ):
+            raise Exception(
+                f"{self.band} camera does not support {self.raw_pixel_format}"
+            )
+
+        # create a default configuration for the maximum camera resolution and raw pixel format
+        config = self.cam.create_still_configuration(
+            main={"size": resolution},
+            raw={"size": resolution, "format": self.raw_pixel_format},
+        )
+        # apply the configuration
+        self.cam.configure(config)  # pyright: ignore [reportArgumentType]
+
+        # Set camera shutter speed
+        self.shutter_speed = self._shutter_speed
+
+        # Turn auto exposure, etc., off to prevent auto adjustments
+        self.cam.set_controls(
+            {
+                # disable auto exposure
+                "AeEnable": False,
+                # gain applied by the sensor
+                # "AnalogueGain": 1,
+                # disable auto white balance
+                "AwbEnable": False,
+                # fixed brightness
+                "Brightness": 0.0,
+                # fixed contrast (1.0 is normal)
+                "Contrast": 1.0,
+                # exposure time in microseconds
+                # "ExposureTime": 10000,  # 1/100 s
+                # adjust the image up or down in 'stops' if AEC/AGC is enabled
+                "ExposureValue": 0.0,
+                # no HDR
+                "HdrMode": libcamera.controls.HdrModeEnum.Off,
+                # fixed saturation at normal
+                "Saturation": 1.0,
+                # fixed sharpness at normal
+                "Sharpness": 1.0,
+            }
+        )
 
         # Set analog gain (may want to think about most succinct way to hold/control this parameter)
         self.analog_gain = self._analog_gain
@@ -127,75 +225,44 @@ class Camera(CameraSpecs):
         self.cam_init = True
 
     def close(self):
-        """"Closes camera - may be required to free up camera for later use in other scripts"""
-        print('Closing camera')
-        self.cam.framerate = 1
-        self.cam.close()
+        """ "Closes camera - may be required to free up camera for later use in other scripts"""
+        print(f"Closing {self.band} camera")
+        if self.cam:
+            self.cam.close()
+            self.cam = None
 
-    def set_shutter_speed(self, ss, timeout=1.5):
+    @CameraSpecs.shutter_speed.setter
+    def shutter_speed(self, ss: int):
         """Sets camera shutter speed and will wait until exposure speed has settled close to requested shutter speed
 
         Parameters
         ----------
         ss: int
             Shutter speed (in microseconds)
-        timeout: float
-            Passed to check_exposure_speed (see usage therein)
         """
-        self.shutter_speed = ss
-
-        # Set framerate as this affects shutter speed
-        self.set_cam_framerate()
+        # call parent class shutter_speed setter to update self.shutter_speed and self.ss_inx
+        super(
+            Camera, type(self)
+        ).shutter_speed.fset(  # pyright: ignore[reportAttributeAccessIssue]
+            self, ss
+        )
 
         # Set shutter speed
         while self.lock:
             pass
-        self.cam.shutter_speed = ss
 
-        # Wait for camera exposure speed to settle on new value
-        self.exposure_speed = self.check_exposure_speed(timeout=timeout)
-        # print('Exposure speed set for ss {}: {}'.format(ss, self.exposure_speed))
+        # set the exposure time if the camera exists, retaining whatever state it was in
+        if self.cam:
+            was_started = self.cam.started
+            if was_started:
+                self.cam.stop()
+            self.cam.set_controls({"ExposureTime": ss})
+            if was_started:
+                self.cam.start()
+        else:
+            print(f"No {self.band} camera to set exposure time for")
 
-        # Set ss_idx
-        self.ss_idx = np.argmin(np.absolute(ss - self.ss_list))
-
-    def set_cam_framerate(self):
-        """Determines appropriate framerate based on current shutter speed (framerate limits shutter speed so must be
-        set appropriately)"""
-        # Denominator used to scale shutter speed. Ideally it would be 1000000 to convert ss 'us' to 's', but this makes
-        # the framerate too high as the camera doesn't work perfectly as expected. We therefore make the denominator a
-        # little lower so ss isn't perfectly scaled to seconds and gives a slightly larger number
-        # denominator = 990000.0
-        denominator = 850000.0
-        framerate = 1 / (self.shutter_speed / denominator)
-        if framerate > 20:
-            framerate = 20
-
-        while self.lock:
-            pass
-        self.cam.framerate = framerate
-
-    def check_exposure_speed(self, timeout=1.5):
-        """
-        Checks that exposure speed is within reasonable limits of shutter speed
-        :param timeout float    Length of time to wait for exposure_speed to adjust before just leaving it (stops
-                                everything locking up if exposure_speed can never be achieved.
-        """
-        start_time = time.time()
-        self.cam.shutter_speed = self.shutter_speed
-        while self.cam.exposure_speed < 0.93 * self.shutter_speed or self.cam.exposure_speed > self.shutter_speed:
-            time_taken = time.time() - start_time
-            self.cam.shutter_speed = self.shutter_speed
-            # print('Exposure speed: {}   Shutter speed: {}'.format(self.cam.exposure_speed, self.shutter_speed))
-            if time_taken > timeout:
-                print('check_exposure_speed timing out')
-                break
-            time.sleep(0.01)  # Sleep until camera exposure speed is set close enough to requested ss
-
-        # Return the camera's exact exposure speed
-        return '{}'.format(self.cam.exposure_speed)
-
-    def check_saturation(self):
+    def check_saturation(self) -> int:
         """
         Check image saturation of average of self.saturation_pixels largest values. It is recommended that saturation
         isn't checked on a single (max) pixel, as broken pixels may cause incorrect readings.
@@ -205,9 +272,9 @@ class Camera(CameraSpecs):
         """
         # Extract rows to be checked - lower rows may not want to be checked if snow is present
         if self.saturation_rows > 0:
-            sub_img = self.image[:self.saturation_rows, :]
+            sub_img = self.image[: self.saturation_rows, :]
         else:
-            sub_img = self.image[self.saturation_rows:, :]
+            sub_img = self.image[self.saturation_rows :, :]
 
         # Convert into 1D array
         sub_img = sub_img.ravel()
@@ -216,7 +283,7 @@ class Camera(CameraSpecs):
         indices = sub_img.argsort()
 
         # Get DN value of top X values
-        av_DN = np.mean(sub_img[indices[-self.saturation_pixels:]])
+        av_DN = np.mean(sub_img[indices[-self.saturation_pixels :]])
 
         saturation = av_DN / self._max_DN
 
@@ -227,7 +294,7 @@ class Camera(CameraSpecs):
         else:
             return 0
 
-    def generate_filename(self, time_str, img_type):
+    def generate_filename(self, time_str: str, img_type: str) -> str:
         """Generates the image filename
 
         Parameters
@@ -236,10 +303,11 @@ class Camera(CameraSpecs):
             Time string containing date and time
         img_type: str
             Type of image. Value should be retrieved from one of dictionary options in <self.file_type>"""
+        # TODO switch to using picture metadata (passed as an argument?)
         return time_str + '_' + \
                self.file_filterids[self.band] + '_' + \
                self.file_ag.format(str(int(self.analog_gain))) + '_' + \
-               self.file_ss.format(self.exposure_speed) + '_' + \
+               self.file_ss.format(self.shutter_speed) + '_' + \
                img_type + self.file_ext
 
     def capture(self):
@@ -339,11 +407,7 @@ class Camera(CameraSpecs):
 
             if 'ss' in command:
                 # Set shutter speed
-                self.set_shutter_speed(command['ss'])
-            # If we aren't updating shutter speed we should check/adjust the current exposure speed in case it starts
-            # to drop on its own
-            else:
-                self.exposure_speed = self.check_exposure_speed()
+                self.shutter_speed = command['ss']
 
             # Start a continous capture if requested
             if 'start_cont' in command:
@@ -370,6 +434,7 @@ class Camera(CameraSpecs):
 
                     # Capture image
                     self.capture()
+                    # TODO verify this capture matches the request?
 
                     # Generate filename
                     filename = self.generate_filename(time_str, command['type'])
@@ -389,8 +454,7 @@ class Camera(CameraSpecs):
             Camera controlled parameters are externally passed to this object and checked in this function"""
         self.continuous_capture = True
         # Update file saying we are in automated capture (for check_run.py)
-        with open(FileLocator.RUN_STATUS_PI, 'w') as f:
-            f.write('automated')
+        set_capture_status(FileLocator.RUN_STATUS_PI, self.band, 'automated')
 
         # Initialise camera if not already done
         if not self.cam_init:
@@ -401,7 +465,7 @@ class Camera(CameraSpecs):
         capt_q = self._q_check(capt_q, q_type='capt')   # Queue for controlling capture
 
         # Set shutter speed to start
-        self.set_shutter_speed(self.shutter_speed)
+        self.shutter_speed = self._shutter_speed
 
         # Get acquisition rate in seconds
         frame_rep = round(1 / self.framerate)
@@ -420,8 +484,7 @@ class Camera(CameraSpecs):
                     if mess['exit_cont']:
                         self.continuous_capture = False
                         # Update file saying we are no longer in automated capture (for check_run.py)
-                        with open(FileLocator.RUN_STATUS_PI, 'w') as f:
-                            f.write('manual')
+                        set_capture_status(FileLocator.RUN_STATUS_PI, self.band, 'manual')
                         return
 
                 if 'auto_ss' in mess:
@@ -434,11 +497,7 @@ class Camera(CameraSpecs):
                 # If we aren't using auto_ss, check for ss in message to set shutter speed
                 if not self.auto_ss:
                     if 'ss' in mess:
-                        self.set_shutter_speed(mess['ss'])
-                else:
-                    # If we aren't updating shutter speed we should check/adjust the current exposure speed in case it starts
-                    # to drop on its own
-                    self.exposure_speed = self.check_exposure_speed()
+                        self.shutter_speed = mess['ss']
 
                 if 'framerate' in mess:
                     # We readjust to requested framerate regardless of if auto_ss is True or False
@@ -459,6 +518,7 @@ class Camera(CameraSpecs):
 
                 # Acquire image
                 self.capture()
+                # TODO verify this capture matches the request?
 
                 # Generate filename
                 filename = self.generate_filename(time_str, self.file_type['meas'])
@@ -477,7 +537,7 @@ class Camera(CameraSpecs):
                         # idx error, so we catch this and continue with same ss if there are no higher/lower options
                         try:
                             self.ss_idx += adj_saturation
-                            self.set_shutter_speed(self.ss_list[self.ss_idx])
+                            self.shutter_speed = self.ss_list[self.ss_idx]
                         except IndexError:
                             pass
 
@@ -496,14 +556,15 @@ class Camera(CameraSpecs):
         # Loop through shutter speeds in ss_list
         for ss in self.ss_list:
 
-            # Set camera shutter speed with long timeout (should mean all exposure speeds are correctly set)
-            self.set_shutter_speed(ss, timeout=10)
+            # Set camera shutter speed
+            self.shutter_speed = ss
 
             # Get time for stamping
             time_str = format_time(datetime.datetime.now(), self.file_datestr)
 
             # Acquire image
             self.capture()
+            # TODO verify this capture matches the request?
 
             # Generate filename for image and save it
             # self.save_current_image(self.generate_filename(time_str, self.file_type['dark']))
@@ -525,6 +586,7 @@ class Spectrometer(SpecSpecs):
     :param ignore_device:   bool    Mainly for debugging. If this is True, we don't try to find device connection
     """
     def __init__(self, filename=None, ignore_device=False):
+        # Get default specs from parent class and any other attributes
         super().__init__(filename)
 
         self.capture_q = queue.Queue()      # Queue for requesting spectra
@@ -532,25 +594,29 @@ class Spectrometer(SpecSpecs):
         self.capture_thread = None          # Thread for interactive capture
 
         # Discover spectrometer devices
-        self.devices = None  # List of detected spectrometers
-        self.spec = None  # Holds spectrometer for interfacing via seabreeze
+        self.devices = None                 # List of detected spectrometers
+        self.spec = None                    # Holds spectrometer for interfacing via seabreeze
 
-        self.in_interactive_capture = False
-        self.continuous_capture = False     # Bool set to true when camera is in continuous capture mode
-        self.in_dark_capture = False        # Bool to flag when in dark capture mode
+        self.in_interactive_capture = False # Flag when in interactive capture
+        self.continuous_capture = False     # Flags when spectrometer is in continuous capture mode
+        self.in_dark_capture = False        # Flags when in dark capture mode
 
         # Attempt to find spectrometer, if we can't we either raise the error or ignore it depending on ignore_device
         try:
             self.find_device()
         except SpectrometerConnectionError:
             if ignore_device:
-                pass
+                print("Spectrometer unavailable")
             else:
                 raise
+
+        # Initialise with manual capture
+        set_capture_status(FileLocator.RUN_STATUS_PI, 'spec', 'manual')
 
     def __del__(self):
         """Whenever this object is deleted (such as end of script) the spectroemter must be closed to free it up for next
         time"""
+        # print("Spectrometer deconstructor")
         self.close()
 
     def find_device(self):
@@ -573,7 +639,7 @@ class Spectrometer(SpecSpecs):
 
     def _q_check(self, q, q_type='capt'):
         """Checks type of queue object and returns queue (ret_q). Sets queue to default queue if none is provided"""
-        if isinstance(q, multiprocessing.managers.BaseProxy):
+        if isinstance(q, multiprocessing.queues.Queue):
             # print('Using multiprocessing queue')
             ret_q = q
         elif isinstance(q, queue.Queue):
@@ -596,9 +662,10 @@ class Spectrometer(SpecSpecs):
 
     def close(self):
         """"Closes spectrometer - may be required to free up camera for later use in other scripts"""
-        # TODO
         # print('Closing spectrometer')
-        pass
+        if self.spec:
+            # TODO
+            self.spec = None
 
     @property
     def int_time(self):
@@ -828,6 +895,8 @@ class Spectrometer(SpecSpecs):
             Capture commands are passed to this object using its put() method
         """
         self.continuous_capture = True
+        # Update file saying we are in automated capture (for check_run.py)
+        set_capture_status(FileLocator.RUN_STATUS_PI, 'spec', 'automated')
 
         if self.int_time is None:
             raise ValueError('Cannot acquire sequence until initial integration time is correctly set')
@@ -850,6 +919,8 @@ class Spectrometer(SpecSpecs):
                 if 'exit_cont' in mess:
                     if mess['exit_cont']:
                         self.continuous_capture = False
+                        # Update file saying we are no longer in automated capture (for check_run.py)
+                        set_capture_status(FileLocator.RUN_STATUS_PI, 'spec', 'manual')
                         return
 
                 if 'auto_int' in mess:
