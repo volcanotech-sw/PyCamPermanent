@@ -11,6 +11,7 @@ import os
 import datetime
 from datetime import datetime as dt
 import time
+import json
 from tkinter import filedialog
 try:
     import RPi.GPIO as GPIO
@@ -29,7 +30,7 @@ except ModuleNotFoundError:
     print('OpenCV could not be imported, there may be some issues caused by this')
 from pandas import DataFrame
 
-def save_img(img, filename, ext='.png'):
+def save_img(img, filename, ext='.png', metadata=None):
     """Saves image
     img: np.array
         Image array to be saved
@@ -43,6 +44,11 @@ def save_img(img, filename, ext='.png'):
 
     # Save image
     cv2.imwrite(filename, img, [cv2.IMWRITE_PNG_COMPRESSION, 0])
+
+    # Save metadata
+    if metadata:
+        with open(filename.replace(ext, ".json"), "w") as f:
+            json.dump(metadata, f, indent=4)
 
     # Remove lock to free image for transfer
     os.remove(lock)

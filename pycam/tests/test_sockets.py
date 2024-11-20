@@ -93,10 +93,10 @@ class TestSockets:
         time_start = time.time()
 
         # Send image over socket
-        sock_cli.send_img(sock_cli.camera.filename, sock_cli.camera.image)
+        sock_cli.send_img(sock_cli.camera.filename, sock_cli.camera.image, sock_cli.camera.metadata)
 
         # Receive image on server
-        img_recv, filename = sock_serv.recv_img()
+        img_recv, filename, metadata = sock_serv.recv_img()
 
         print('Time taken to send and receive image: {:.6f}'.format(time.time() - time_start))
 
@@ -106,6 +106,7 @@ class TestSockets:
         # Compare the sent and received images
         assert img_path == filename
         assert np.array_equal(sock_cli.camera.image, img_recv)
+        assert sock_cli.camera.metadata == metadata
 
     def test_send_recv_spec(self):
         """Tests send and receive funcionality of PiSockets for spectrum and associated information"""

@@ -21,6 +21,7 @@ import pickle
 import subprocess
 import sys
 import os
+import json
 
 
 def read_network_file(filename):
@@ -78,6 +79,9 @@ class SendRecvSpecs:
 
     filename_start = b'FILENAME='
     filename_end = b'FILE_END'
+
+    metadata_start = b'METADATA='
+    metadata_end = b'META_END'
 
     pack_fmt = struct.Struct('I I f I I')     # Format of message for communication
     pack_info = ('ss', 'type', 'framerate', 'ppmm', 'auto_ss', 'exit')     # Format specifications of message
@@ -665,7 +669,7 @@ class PiSocketCam(SocketClient):
         else:
             self.id = {'IDN': 'CM2'}
 
-    def send_img(self, filename=None, image=None):
+    def send_img(self, filename=None, image=None, metadata=None):
         """Sends current image to server
 
         Parameters
@@ -680,6 +684,8 @@ class PiSocketCam(SocketClient):
             filename = self.camera.filename
         if image is None:
             image = self.camera.image
+        if metadata is None:
+            metadata = self.camera.metadata
 
         # Convert image to bytes for sending
         img_bytes = image.tobytes()
@@ -687,8 +693,12 @@ class PiSocketCam(SocketClient):
         # Encode filename
         filename_bytes = self.filename_start + bytes(filename, 'utf-8') + self.filename_end
 
+        # Encode metadata
+        metadata = json.dumps(metadata, indent=4)
+        metadata_bytes = self.metadata_start + bytes(metadata, 'utf-8') + self.metadata_end
+
         # Calculate size of message
-        msg_size = len(filename_bytes) + len(img_bytes) + self.len_end_str
+        msg_size = len(filename_bytes) + len(metadata_bytes) + len(img_bytes) + self.len_end_str
 
         # Format header containing length of message information
         header = self.generate_header(msg_size)
@@ -698,6 +708,7 @@ class PiSocketCam(SocketClient):
             self.sock.sendall(header)
             self.sock.sendall(filename_bytes)
             self.sock.sendall(img_bytes)
+            self.sock.sendall(metadata_bytes)
             self.sock.sendall(self.end_str)
         except:
             raise
@@ -1593,12 +1604,14 @@ class SocketServer(SocketMeths):
             Data from socket stream containing filename and img/spectrum data"""
         # Extract filename
         [file_buff, data_buff] = data_buff.split(self.filename_end)
+        [data_buff, meta_buff] = data_buff.split(self.metadata_start)
         filename = file_buff.split(self.filename_start)[1].decode()
+        metadata = meta_buff.split(self.metadata_start)[1].decode()
 
         # Extract data by removing end string from message
-        data = data_buff.split(self.end_str)[0]
+        data = data_buff.split(self.metadata_start)[0]
 
-        return filename, data
+        return filename, data, metadata
 
     def recv_img(self, connection=None):
         """Receives image from PiSocketCam socket"""
@@ -1614,12 +1627,12 @@ class SocketServer(SocketMeths):
             raise
 
         # Extract filename from the data
-        [filename, data] = self.extract_data(data_buff)
+        [filename, data, metadata] = self.extract_data(data_buff)
 
         # Reshape data into image array
         img = np.frombuffer(data, dtype='uint16').reshape(self.camera.pix_num_y, self.camera.pix_num_x)
 
-        return img, filename
+        return img, filename, metadata
 
     def recv_spectrum(self, connection=None):
         """Receives spectrum from PiSocketSpec"""
@@ -1843,12 +1856,12 @@ class ImgRecvConnection(Connection):
         while not self.event.is_set():
             try:
                 # Receive image from pi client
-                img, filename = self.sock.recv_img(self.connection)
+                img, filename, metadata = self.sock.recv_img(self.connection)
 
                 print('pycam_masterpi: Got new image file: {}'.format(filename))
 
                 # Save image
-                save_img(img, FileLocator.IMG_SPEC_PATH + filename)
+                save_img(img, FileLocator.IMG_SPEC_PATH + filename, metadata=metadata)
 
                 # Save image to backup drive
                 if self.backup:
@@ -1869,7 +1882,7 @@ class ImgRecvConnection(Connection):
                         os.mkdir(backup_path)
 
                     # Save image to backup location
-                    save_img(img, os.path.join(backup_path, filename))
+                    save_img(img, os.path.join(backup_path, filename), metadata=metadata)
 
             # Return if socket error is thrown (should signify that the connection has been closed)
             # Return if the header was not decodable, probably because of the socket being closed
@@ -1954,7 +1967,7 @@ class ImgSendConnection(Connection):
         while not self.event.is_set():
             try:
                 # Retreive image from queue
-                [filename, image] = self.q.get()
+                [filename, image, metedata] = self.q.get()
 
                 # Can close this thread by adding ['close', 1] to the queue - this is a work around the queue being
                 # blocking, so prevents us from getting stuck in the queue waiting to receive if the camera has
@@ -1963,7 +1976,7 @@ class ImgSendConnection(Connection):
                     break
 
                 # Send image over socket
-                self.sock.send_img(filename, image)
+                self.sock.send_img(filename, image, metedata)
 
             # Return if socket error is thrown (should signify that the connection has been closed)
             except socket.error:
@@ -2136,10 +2149,10 @@ def send_imgs(sock, img_q, event):
     while not event.is_set():
         try:
             # Retreive image from queue
-            [filename, image] = img_q.get()
+            [filename, image, metadata] = img_q.get()
 
             # Send image over socket
-            sock.send_img(filename, image)
+            sock.send_img(filename, image, metadata)
 
         # Return if socket error is thrown (should signify that the connection has been closed)
         except socket.error:
@@ -2184,10 +2197,10 @@ def recv_save_imgs(sock, connection, event):
     while not event.is_set():
         try:
             # Receive image from pi client
-            img, filename = sock.recv_img(connection)
+            img, filename, metadata = sock.recv_img(connection)
 
             # Save image
-            save_img(img, FileLocator.IMG_SPEC_PATH + filename)
+            save_img(img, FileLocator.IMG_SPEC_PATH + filename, metadata=metadata)
 
         # Return if socket error is thrown (should signify that the connection has been closed)
         # Return if the header was not decodable, probably because of the socket being closed

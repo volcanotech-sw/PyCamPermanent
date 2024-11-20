@@ -35,10 +35,10 @@ capt_thread.start()
 
 while True:
     # Get next image from camera queue
-    [filename, image] = cam.img_q.get()
+    [filename, image, metadata] = cam.img_q.get()
     # [filename, image] = q.get()
     print('Got image. Sending over socket...')
 
     # Send image over socket
-    cam_sock.send_img(filename, image)
+    cam_sock.send_img(filename, image, metadata)
     print('Image sent')

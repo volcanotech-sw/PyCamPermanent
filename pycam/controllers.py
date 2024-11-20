@@ -14,6 +14,7 @@ import datetime
 import numpy as np
 import numpy.typing
 import threading
+import json
 from typing import Any
 
 from .setupclasses import CameraSpecs, SpecSpecs, FileLocator
@@ -68,13 +69,14 @@ class Camera(CameraSpecs):
     filename: None | str
     lock: bool
 
+    metadata: dict
     image: numpy.typing.NDArray[np.uint16]
 
     def __init__(self, band="on", filename=None, ignore_device=False):
         # 'on' or 'off' band camera (band can be overwritten by file load)
         self.band = band
         self.capture_q = queue.Queue()  # Queue for requesting images
-        self.img_q = queue.Queue()  # Queue where images are put for extraction
+        self.img_q = queue.Queue()  # Queue where images are put for extraction ([filename, image, metadata])
         self.capture_thread = None  # Thread for running interactive capture
 
         self.cam = None  # Underlying camera object
@@ -108,6 +110,8 @@ class Camera(CameraSpecs):
         # after above as it will try to set things that depend on properties above
         super().__init__(filename)
 
+        # Metadata of the most recent image (actual exposure time, etc.)
+        self.metadata = {}
         # Create empty image array after we have got pix_num_x/y from super()
         self.image = np.array([self.pix_num_x, self.pix_num_y], dtype=np.uint16)
 
@@ -224,8 +228,11 @@ class Camera(CameraSpecs):
         # Flag that camera has been initialised
         self.cam_init = True
 
+        # Start the camera
+        self.cam.start()
+
     def close(self):
-        """ "Closes camera - may be required to free up camera for later use in other scripts"""
+        """Closes camera - may be required to free up camera for later use in other scripts"""
         print(f"Closing {self.band} camera")
         if self.cam:
             self.cam.close()
@@ -302,47 +309,61 @@ class Camera(CameraSpecs):
         time_str: str
             Time string containing date and time
         img_type: str
-            Type of image. Value should be retrieved from one of dictionary options in <self.file_type>"""
-        # TODO switch to using picture metadata (passed as an argument?)
-        return time_str + '_' + \
-               self.file_filterids[self.band] + '_' + \
-               self.file_ag.format(str(int(self.analog_gain))) + '_' + \
-               self.file_ss.format(self.shutter_speed) + '_' + \
-               img_type + self.file_ext
+            Type of image. Value should be retrieved from one of dictionary options in <self.file_type>
+        """
+
+        return (
+            time_str
+            + "_"
+            + self.file_filterids[self.band]
+            + "_"
+            + str(self.metadata["AnalogueGain"])
+            + "_"
+            + str(self.metadata["ExposureTime"])
+            + "_"
+            + img_type
+            + self.file_ext
+        )
+        #    self.file_ag.format(str(int(self.analog_gain))) + '_' + \
+        #    self.file_ss.format(self.shutter_speed) + '_' + \
 
     def capture(self):
         """Controls main capturing process on PiCam"""
 
-        # Set up bytes stream
-        with io.BytesIO() as stream:
+        if self.cam is None:
+            print(f"No {self.band} camera to capture with")
+            return
 
-            # Capture image to stream
-            self.lock = True            # Prevent access to camera parameters whilst capture is occurring
-            self.cam.capture(stream, format='jpeg', bayer=True)
-            self.lock = False
+        # We could self.cam.start() and self.cam.stop() around this?
 
-            # ====================
-            # RAW data extraction
-            # ====================
-            data = stream.getvalue()[-6404096:]
-            assert data[:4] == b'BRCM'
-            data = data[32768:]
-            data = np.fromstring(data, dtype=np.uint8)
+        # Prevent access to camera parameters whilst capture is occurring
+        self.lock = True
+        # Send a request for the next frame
+        job = self.cam.capture_request(wait=False)
+        # Block here until the frame is available
+        request = self.cam.wait(job)
+        # Re-allow access
+        self.lock = False
 
-            reshape, crop = (1952, 3264), (1944, 3240)
+        # This is the metadata for the captured image, includes actual exposure time, etc
+        self.metadata = request.get_metadata()
 
-            data = data.reshape(reshape)[:crop[0], :crop[1]]
+        # Get the pixel data
+        raw_pixels = request.make_array("raw").view(np.uint16)
 
-            data = data.astype(np.uint16) << 2
-            for byte in range(4):
-                data[:, byte::5] |= ((data[:, 4::5] >> ((4 - byte) * 2)) & 0b11)
-            data = np.delete(data, np.s_[4::5], 1)
-            # ====================
+        # Picamera 2 returns raw data as the high bits of 16-bit (1111 1111 1100 0000)
+        # This is not what we want, so bit shift it so that 1 raw intensity is 1 is 0 and not 64
+        raw_pixels = raw_pixels >> 6
 
-            # Resize image to requested size
-            self.image = cv2.resize(data, (self.pix_num_x, self.pix_num_y), interpolation=cv2.INTER_AREA)
+        # Resize image to requested size
+        self.image = cv2.resize(
+            raw_pixels, (self.pix_num_x, self.pix_num_y), interpolation=cv2.INTER_AREA
+        )
 
-    def save_current_image(self, filename):
+        # Return resources back to the camera system
+        request.release()
+
+    def save_current_image(self, filename: str):
         """Saves image
 
         Parameters
@@ -350,23 +371,37 @@ class Camera(CameraSpecs):
         filename: str
             Name of file to save image to"""
         # Generate lock file to prevent image from being accessed before capture has finished
-        lock = filename.replace(self.file_ext, '.lock')
-        open(lock, 'a').close()
+        lock = filename.replace(self.file_ext, ".lock")
+        open(lock, "a").close()
 
         # Save image
         cv2.imwrite(filename, self.image, [cv2.IMWRITE_PNG_COMPRESSION, 0])
         self.filename = filename
 
+        # Save metadata
+        with open(filename.replace(self.file_ext, ".json"), "w") as f:
+            json.dump(self.metadata, f, indent=4)
+
         # Remove lock to free image for transfer
         os.remove(lock)
 
-    def interactive_capture(self, img_q=None, capt_q=None):
+    def interactive_capture(
+        self,
+        img_q: multiprocessing.queues.Queue | queue.Queue | None = None,
+        capt_q: multiprocessing.queues.Queue | queue.Queue | None = None,
+    ):
         """Public access thread starter for _interactive_capture()"""
-        self.capture_thread = threading.Thread(target=self._interactive_capture, args=(img_q, capt_q,))
+        self.capture_thread = threading.Thread(
+            target=self._interactive_capture,
+            args=(
+                img_q,
+                capt_q,
+            ),
+        )
         self.capture_thread.daemon = True
         self.capture_thread.start()
 
-    def _interactive_capture(self, img_q=None, capt_q=None):
+    def _interactive_capture(self, img_q: multiprocessing.queues.Queue | queue.Queue | None=None, capt_q: multiprocessing.queues.Queue | queue.Queue | None=None):
         """Interactive capturing by requesting captures through capt_q
 
         Parameters
@@ -441,7 +476,7 @@ class Camera(CameraSpecs):
                     print('pycam_camera.py: Captured image: {}'.format(filename))
 
                     # Put filename and image in queue
-                    img_q.put([filename, self.image])
+                    img_q.put([filename, self.image, self.metadata])
 
     def capture_sequence(self, img_q=None, capt_q=None):
         """Main capturing sequence
@@ -527,7 +562,7 @@ class Camera(CameraSpecs):
                 # self.save_current_image(self.generate_filename(time_str, self.file_type['meas']))
 
                 # Put filename and image into q
-                img_q.put([filename, self.image])
+                img_q.put([filename, self.image, self.metadata])
 
                 # Check image saturation and adjust shutter speed if required
                 if self.auto_ss:
@@ -572,7 +607,7 @@ class Camera(CameraSpecs):
             print('Captured dark: {}'.format(filename))
 
             # Put images in q
-            self.img_q.put([filename, self.image])
+            self.img_q.put([filename, self.image, self.metadata])
 
         print('Dark capture time: {}'.format(time.time() - time_start))
         self.in_dark_capture = False

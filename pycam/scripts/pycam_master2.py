@@ -86,6 +86,9 @@ while running:
     try:
         # for now do nothing ourselves
         time.sleep(1)
+        # TODO get images and spectra from their respective queues and save them to disk
+        # see recv_spec, recv_img, io_py.save_spec, io_py.save_img
+        # TODO save/copy to backup location
     except KeyboardInterrupt:
         # and just try to quit nicely when ctrl-c'd
         print("Quitting")
