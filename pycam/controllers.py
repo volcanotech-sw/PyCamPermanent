@@ -48,7 +48,8 @@ except ModuleNotFoundError:
 
 
 class Camera(CameraSpecs):
-    """Main class for camera control
+    """
+    Main class for camera control
 
     subclass of: class: CameraSpecs
     """
@@ -57,7 +58,7 @@ class Camera(CameraSpecs):
     band: str
     capture_q: multiprocessing.queues.Queue | queue.Queue
     img_q: multiprocessing.queues.Queue | queue.Queue
-    capture_thread: threading.Thread
+    capture_thread: threading.Thread | None
 
     cam: None | Picamera2
     cam_init: bool
@@ -76,7 +77,8 @@ class Camera(CameraSpecs):
         # 'on' or 'off' band camera (band can be overwritten by file load)
         self.band = band
         self.capture_q = queue.Queue()  # Queue for requesting images
-        self.img_q = queue.Queue()  # Queue where images are put for extraction ([filename, image, metadata])
+        # Queue where images are put for extraction ([filename, image, metadata])
+        self.img_q = queue.Queue()
         self.capture_thread = None  # Thread for running interactive capture
 
         self.cam = None  # Underlying camera object
@@ -119,14 +121,23 @@ class Camera(CameraSpecs):
         set_capture_status(FileLocator.RUN_STATUS_PI, self.band, "manual")
 
     def __del__(self):
-        """Whenever this object is deleted (such as end of script) the camera must be closed to free it up for next
-        time"""
+        """
+        Whenever this object is deleted (such as end of script)
+        the camera must be closed to free it up for next time
+        """
         # print(f"{self.band} camera deconstructor")
         self.close()
 
     @CameraSpecs.analog_gain.setter
     def analog_gain(self, ag):
-        """Set camera analog gain"""
+        """
+        Set camera analog gain
+
+        Parameters
+        ----------
+        ag: float
+            Analogue gain (1 is no gain)
+        """
         self._analog_gain = ag
 
         while self.lock:
@@ -146,7 +157,9 @@ class Camera(CameraSpecs):
     def _q_check(
         self, q: multiprocessing.queues.Queue | queue.Queue | None, q_type: str = "capt"
     ) -> multiprocessing.queues.Queue | queue.Queue:
-        """Checks type of queue object and returns queue (ret_q). Sets queue to default queue if none is provided"""
+        """
+        Checks type of queue object and returns queue (ret_q). Sets queue to default queue if none is provided
+        """
         if isinstance(q, multiprocessing.queues.Queue):
             # print('Using multiprocessing queue')
             ret_q = q
@@ -165,11 +178,15 @@ class Camera(CameraSpecs):
         return ret_q
 
     def initialise(self):
-        """Initialises PiCam by setting appropriate settings"""
+        """
+        Initialises PiCam by setting appropriate settings
+        """
 
         if self.cam is None:
             print(f"No {self.band} camera to initialise")
             return
+        else:
+            print(f"Initialising {self.band} camera")
 
         # verify the camera supports the resolution
         resolution = (self.raw_num_x, self.raw_num_y)
@@ -232,7 +249,9 @@ class Camera(CameraSpecs):
         self.cam.start()
 
     def close(self):
-        """Closes camera - may be required to free up camera for later use in other scripts"""
+        """
+        Closes camera - may be required to free up camera for later use in other scripts
+        """
         print(f"Closing {self.band} camera")
         if self.cam:
             self.cam.close()
@@ -240,7 +259,8 @@ class Camera(CameraSpecs):
 
     @CameraSpecs.shutter_speed.setter
     def shutter_speed(self, ss: int):
-        """Sets camera shutter speed and will wait until exposure speed has settled close to requested shutter speed
+        """
+        Sets camera shutter speed and will wait until exposure speed has settled close to requested shutter speed
 
         Parameters
         ----------
@@ -302,7 +322,8 @@ class Camera(CameraSpecs):
             return 0
 
     def generate_filename(self, time_str: str, img_type: str) -> str:
-        """Generates the image filename
+        """
+        Generates the image filename
 
         Parameters
         ----------
@@ -328,7 +349,9 @@ class Camera(CameraSpecs):
         #    self.file_ss.format(self.shutter_speed) + '_' + \
 
     def capture(self):
-        """Controls main capturing process on PiCam"""
+        """
+        Controls main capturing process on PiCam
+        """
 
         if self.cam is None:
             print(f"No {self.band} camera to capture with")
@@ -364,12 +387,14 @@ class Camera(CameraSpecs):
         request.release()
 
     def save_current_image(self, filename: str):
-        """Saves image
+        """
+        Saves image
 
         Parameters
         ----------
         filename: str
-            Name of file to save image to"""
+            Name of file to save image to
+        """
         # Generate lock file to prevent image from being accessed before capture has finished
         lock = filename.replace(self.file_ext, ".lock")
         open(lock, "a").close()
@@ -390,7 +415,16 @@ class Camera(CameraSpecs):
         img_q: multiprocessing.queues.Queue | queue.Queue | None = None,
         capt_q: multiprocessing.queues.Queue | queue.Queue | None = None,
     ):
-        """Public access thread starter for _interactive_capture()"""
+        """
+        Public access thread starter for _interactive_capture()
+
+        Parameters
+        ---------
+        img_q: Queue-like object, such as <queue.Queue> or <multiprocessing.Queue>
+            Filenames and images are passed to this object using its put() method
+        capt_q: Queue-like object
+            Capture commands are passed to this object using its put() method
+        """
         self.capture_thread = threading.Thread(
             target=self._interactive_capture,
             args=(
@@ -401,8 +435,13 @@ class Camera(CameraSpecs):
         self.capture_thread.daemon = True
         self.capture_thread.start()
 
-    def _interactive_capture(self, img_q: multiprocessing.queues.Queue | queue.Queue | None=None, capt_q: multiprocessing.queues.Queue | queue.Queue | None=None):
-        """Interactive capturing by requesting captures through capt_q
+    def _interactive_capture(
+        self,
+        img_q: multiprocessing.queues.Queue | queue.Queue | None = None,
+        capt_q: multiprocessing.queues.Queue | queue.Queue | None = None,
+    ):
+        """
+        Interactive capturing by requesting captures through capt_q
 
         Parameters
         ---------
@@ -418,51 +457,57 @@ class Camera(CameraSpecs):
         if not self.cam_init:
             self.initialise()
 
+        print(f"{self.band} camera entering interactive capture")
+
         # Setup queue
-        capt_q = self._q_check(capt_q, q_type='capt')
-        img_q = self._q_check(img_q, q_type='img')
+        capt_q = self._q_check(capt_q, q_type="capt")
+        img_q = self._q_check(img_q, q_type="img")
 
         while True:
 
             # Wait for imaging command (expecting a dictionary containing information for acquisition)
             command = capt_q.get(block=True)
-            print('pycam_camera.py: Got message from camera capture queue: {}'.format(command))
+            print(
+                "pycam_camera.py: Got message from camera capture queue: {}".format(
+                    command
+                )
+            )
 
-            if 'exit' in command:
+            if "exit" in command:
                 # return if commanded to exit
-                if command['exit']:
+                if command["exit"]:
                     self.in_interactive_capture = False
                     return
 
             # # Extract img queue
-            # if 'img_q' not in command or command['img_q'] is None:
+            # if "img_q" not in command or command["img_q"] is None:
             #     img_q = self.img_q
             # else:
-            #     img_q = command['img_q']
+            #     img_q = command["img_q"]
 
-            if 'ss' in command:
+            if "ss" in command:
                 # Set shutter speed
-                self.shutter_speed = command['ss']
+                self.shutter_speed = command["ss"]
 
-            # Start a continous capture if requested
-            if 'start_cont' in command:
-                if command['start_cont']:
+            # Start a continuos capture if requested
+            if "start_cont" in command:
+                if command["start_cont"]:
                     # If we have been provided with a queue for images we pass this to capture_sequence()
-                    if 'img_q' in command:
-                        self.capture_sequence(img_q=command['img_q'], capt_q=capt_q)
+                    if "img_q" in command:
+                        self.capture_sequence(img_q=command["img_q"], capt_q=capt_q)
                     else:
                         self.capture_sequence(img_q=img_q, capt_q=capt_q)
                     # Function should now hold here until capture_sequence() returns, then interactive_capture can
                     # continue
 
             # Instigate capture of all dark images
-            elif 'dark_seq' in command:
-                if command['dark_seq']:
+            elif "dark_seq" in command:
+                if command["dark_seq"]:
                     self.capture_darks()
 
             # If continuous capture is not requested we check if any single image is requested
             else:
-                if 'type' in command:
+                if "type" in command:
                     # If a sequence isn't requested we take one typical image
                     # Get time and format
                     time_str = format_time(datetime.datetime.now(), self.file_datestr)
@@ -472,32 +517,41 @@ class Camera(CameraSpecs):
                     # TODO verify this capture matches the request?
 
                     # Generate filename
-                    filename = self.generate_filename(time_str, command['type'])
-                    print('pycam_camera.py: Captured image: {}'.format(filename))
+                    filename = self.generate_filename(time_str, command["type"])
+                    print("pycam_camera.py: Captured image: {}".format(filename))
 
                     # Put filename and image in queue
                     img_q.put([filename, self.image, self.metadata])
 
-    def capture_sequence(self, img_q=None, capt_q=None):
-        """Main capturing sequence
+    def capture_sequence(
+        self,
+        img_q: multiprocessing.queues.Queue | queue.Queue | None = None,
+        capt_q: multiprocessing.queues.Queue | queue.Queue | None = None,
+    ):
+        """
+        Main capturing sequence
 
         Parameters
         ----------
         img_q: Queue-like object, such as <queue.Queue> or <multiprocessing.Queue>
             Filenames and images are passed to this object using its put() method
         capt_q: Queue-like object, such as <queue.Queue> or <multiprocessing.Queue>
-            Camera controlled parameters are externally passed to this object and checked in this function"""
+            Camera controlled parameters are externally passed to this object and checked in this function
+        """
+        # Flag that we are in continuous capture mode
         self.continuous_capture = True
         # Update file saying we are in automated capture (for check_run.py)
-        set_capture_status(FileLocator.RUN_STATUS_PI, self.band, 'automated')
+        set_capture_status(FileLocator.RUN_STATUS_PI, self.band, "automated")
 
         # Initialise camera if not already done
         if not self.cam_init:
             self.initialise()
 
+        print(f"{self.band} camera entering capturing sequence")
+
         # Setup queues
-        img_q = self._q_check(img_q, q_type='img')      # Queue for placing images
-        capt_q = self._q_check(capt_q, q_type='capt')   # Queue for controlling capture
+        img_q = self._q_check(img_q, q_type="img")  # Queue for placing images
+        capt_q = self._q_check(capt_q, q_type="capt")  # Queue for controlling capture
 
         # Set shutter speed to start
         self.shutter_speed = self._shutter_speed
@@ -515,29 +569,31 @@ class Camera(CameraSpecs):
                 mess = capt_q.get(block=False)
 
                 # Exit if requested
-                if 'exit_cont' in mess:
-                    if mess['exit_cont']:
+                if "exit_cont" in mess:
+                    if mess["exit_cont"]:
                         self.continuous_capture = False
                         # Update file saying we are no longer in automated capture (for check_run.py)
-                        set_capture_status(FileLocator.RUN_STATUS_PI, self.band, 'manual')
+                        set_capture_status(
+                            FileLocator.RUN_STATUS_PI, self.band, "manual"
+                        )
                         return
 
-                if 'auto_ss' in mess:
+                if "auto_ss" in mess:
                     # If auto_ss is changed we need to readjust all parameters
-                    if not mess['auto_ss']:
+                    if not mess["auto_ss"]:
                         self.auto_ss = False
                     else:
                         self.auto_ss = True
 
                 # If we aren't using auto_ss, check for ss in message to set shutter speed
                 if not self.auto_ss:
-                    if 'ss' in mess:
-                        self.shutter_speed = mess['ss']
+                    if "ss" in mess:
+                        self.shutter_speed = mess["ss"]
 
-                if 'framerate' in mess:
+                if "framerate" in mess:
                     # We readjust to requested framerate regardless of if auto_ss is True or False
-                    self.framerate = mess['framerate']
-                    frame_rep = round(1 / mess['framerate'])
+                    self.framerate = mess["framerate"]
+                    frame_rep = round(1 / mess["framerate"])
 
             except queue.Empty:
                 pass
@@ -556,7 +612,7 @@ class Camera(CameraSpecs):
                 # TODO verify this capture matches the request?
 
                 # Generate filename
-                filename = self.generate_filename(time_str, self.file_type['meas'])
+                filename = self.generate_filename(time_str, self.file_type["meas"])
 
                 # Generate filename for image and save it
                 # self.save_current_image(self.generate_filename(time_str, self.file_type['meas']))
@@ -580,7 +636,9 @@ class Camera(CameraSpecs):
                 prev_sec = time_obj.second
 
     def capture_darks(self):
-        """Capture dark images from all shutter speeds in <self.ss_list>"""
+        """
+        Capture dark images from all shutter speeds in <self.ss_list>
+        """
         self.in_dark_capture = True
 
         # Initialise camera if not already done
@@ -603,13 +661,13 @@ class Camera(CameraSpecs):
 
             # Generate filename for image and save it
             # self.save_current_image(self.generate_filename(time_str, self.file_type['dark']))
-            filename = self.generate_filename(time_str, self.file_type['dark'])
-            print('Captured dark: {}'.format(filename))
+            filename = self.generate_filename(time_str, self.file_type["dark"])
+            print("Captured dark: {}".format(filename))
 
             # Put images in q
             self.img_q.put([filename, self.image, self.metadata])
 
-        print('Dark capture time: {}'.format(time.time() - time_start))
+        print("Dark capture time: {}".format(time.time() - time_start))
         self.in_dark_capture = False
 
 
