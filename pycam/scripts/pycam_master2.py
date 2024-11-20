@@ -23,11 +23,13 @@ import sys
 sys.path.append("/home/pi/")
 
 from pycam.controllers import Camera, Spectrometer
+from pycam.io_py import save_img, save_spectrum
 from pycam.setupclasses import FileLocator
 
-
-import time
 import atexit
+import time
+import queue
+
 
 # -----------------------------------------------------------------
 # Setup camera object
@@ -84,11 +86,40 @@ running = True
 while running:
 
     try:
-        # for now do nothing ourselves
-        time.sleep(1)
-        # TODO get images and spectra from their respective queues and save them to disk
-        # see recv_spec, recv_img, io_py.save_spec, io_py.save_img
-        # TODO save/copy to backup location
+
+        # -----------------------------------------------------------------
+        # Save images
+        for instrument in instruments:
+
+            # In general in this section, get the image/spectra from its respective
+            # queue, and then save it to disk
+
+            try:
+                if isinstance(instrument, Camera):
+                    [filename, image, metadata] = instrument.img_q.get(False)
+                    save_img(
+                        image, instrument.save_path + "/" + filename, metadata=metadata
+                    )
+
+                elif isinstance(instrument, Spectrometer):
+                    [filename, image] = instrument.spec_q.get(False)
+
+                    # TODO save spectrums
+                    # see recv_spec, io_py.save_spec
+
+                # TODO save/copy to backup location
+
+            except queue.Empty:
+                pass
+
+        # -----------------------------------------------------------------
+        # Handle communications
+
+        # TODO
+
+        # sleep for a short period and then check the lock again
+        time.sleep(0.005)
+
     except KeyboardInterrupt:
         # and just try to quit nicely when ctrl-c'd
         print("Quitting")

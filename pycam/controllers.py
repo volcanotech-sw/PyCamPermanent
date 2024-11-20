@@ -141,7 +141,8 @@ class Camera(CameraSpecs):
         self._analog_gain = ag
 
         while self.lock:
-            pass
+            # sleep for a short period and then check the lock again
+            time.sleep(0.005)
 
         # set the analogue gain if the camera exists, retaining whatever state it was in
         if self.cam:
@@ -204,8 +205,10 @@ class Camera(CameraSpecs):
 
         # create a default configuration for the maximum camera resolution and raw pixel format
         config = self.cam.create_still_configuration(
-            main={"size": resolution},
+            # main={"size": resolution},
             raw={"size": resolution, "format": self.raw_pixel_format},
+            queue=False,  # any still must come after the request
+            buffer_count=2,  # extra buffer to store images in case one is used elsewhere for a bit
         )
         # apply the configuration
         self.cam.configure(config)  # pyright: ignore [reportArgumentType]
@@ -232,6 +235,9 @@ class Camera(CameraSpecs):
                 "ExposureValue": 0.0,
                 # no HDR
                 "HdrMode": libcamera.controls.HdrModeEnum.Off,
+                # Noise applied - this is probably not applied to raw images
+                # https://github.com/raspberrypi/picamera2/issues/626 suggests it does not affect much
+                "NoiseReductionMode": libcamera.controls.draft.NoiseReductionModeEnum.Off,
                 # fixed saturation at normal
                 "Saturation": 1.0,
                 # fixed sharpness at normal
@@ -274,9 +280,9 @@ class Camera(CameraSpecs):
             self, ss
         )
 
-        # Set shutter speed
         while self.lock:
-            pass
+            # sleep for a short period and then check the lock again
+            time.sleep(0.005)
 
         # set the exposure time if the camera exists, retaining whatever state it was in
         if self.cam:
@@ -362,7 +368,7 @@ class Camera(CameraSpecs):
         # Prevent access to camera parameters whilst capture is occurring
         self.lock = True
         # Send a request for the next frame
-        job = self.cam.capture_request(wait=False)
+        job = self.cam.capture_request(wait=False, flush=True)
         # Block here until the frame is available
         request = self.cam.wait(job)
         # Re-allow access
@@ -370,6 +376,13 @@ class Camera(CameraSpecs):
 
         # This is the metadata for the captured image, includes actual exposure time, etc
         self.metadata = request.get_metadata()
+        # Note part of this metadata is AeLocked - it looks like this is just a report on whether
+        # the auto gain control algorithm thinks the exposure is locked, and is set irregardless
+        # of auto exposure being disabled
+        # https://github.com/raspberrypi/picamera2/issues/1168
+        # Similarly a DigitalGain is reported, which is not applied to the raw image, but otherwise
+        # is the ratio between the requested exposure and the actual exposure
+        # https://github.com/raspberrypi/picamera2/issues/425
 
         # Get the pixel data
         raw_pixels = request.make_array("raw").view(np.uint16)
