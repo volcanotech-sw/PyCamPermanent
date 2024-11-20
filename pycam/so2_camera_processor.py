@@ -2438,8 +2438,8 @@ class PyplisWorker:
             closest_index = self.calibration_series.index.get_indexer([self.img_A.meta['start_acq']], method='nearest')
 
             # Use index to retrieve calibration coeffients
-            intercept = self.calibration_series.iloc[closest_index]['coeff 0'][0]
-            grad = self.calibration_series.iloc[closest_index]['coeff 1'][0]
+            intercept = self.calibration_series.iloc[closest_index]['coeff 0'].iloc[0]
+            grad = self.calibration_series.iloc[closest_index]['coeff 1'].iloc[0]
 
             # Calibrate image
             cal_img = img * grad
