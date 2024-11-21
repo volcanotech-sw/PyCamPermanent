@@ -2420,6 +2420,17 @@ class PyplisWorker:
                 if self.doas_cal_adjust_offset:
                     cal_img.img = cal_img.img + self.calib_pears.y_offset
 
+                # The first time a calibration is available also calibrate the previous image,
+                # so an emission rate can be generated for it.
+                if not calib_buff and self.img_cal_prev is None:
+                    img_tau_prev = copy.deepcopy(self.img_tau_prev)
+                    cal_img_prev = self.calib_pears.calibrate(img_tau_prev)
+
+                    if self.doas_cal_adjust_offset:
+                        cal_img_prev.img = cal_img_prev.img + self.calib_pears.y_offset
+                    
+                    self.img_cal_prev = cal_img_prev
+
         elif self.cal_type_int == 0:
             if isinstance(img, pyplis.Img):
                 # cal_img = img * self.cell_fit[0]    # Just use cell gradient (not y axis intersect)
