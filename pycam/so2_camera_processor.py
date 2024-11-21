@@ -3763,7 +3763,7 @@ class PyplisWorker:
             # If time of image is before or equal to "after", we ignore it
             # If the results object already has emission rates for this time, we skip it if overwrite=False
             img_time = img_tau.meta['start_acq']
-            if img_time <= after:
+            if img_time < after:
                 continue
             if not overwrite:
                 velo_modes = [mode for mode in self.velo_modes if self.velo_modes[mode]]
