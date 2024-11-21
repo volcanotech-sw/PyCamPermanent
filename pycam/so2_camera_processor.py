@@ -2384,7 +2384,7 @@ class PyplisWorker:
             # TODO should include a tau vs cal flag check, to see whether the plot is displaying AA or ppmm
             self.fig_tau.update_plot(np.array(self.img_tau.img), img_cal=self.img_cal)
 
-    def calibrate_image(self, img, run_cal_doas=False, doas_update=True):
+    def calibrate_image(self, img, run_cal_doas=False, doas_update=True, calib_buff = False):
         """
         Takes tau image and calibrates it using correct calibration mode
         :param img: pyplis.Img or pyplis.ImgStack      Tau image
@@ -3788,7 +3788,7 @@ class PyplisWorker:
 
             # Calibrate image if it hasn't already been
             if not img_tau.is_calibrated:
-                img_cal = self.calibrate_image(img_tau, doas_update=False)
+                img_cal = self.calibrate_image(img_tau, doas_update=False, calib_buff=True)
 
                 # If the image hasn't already been calibrated we may want to save it if requested
                 if self.save_dict['img_cal']['save']:
