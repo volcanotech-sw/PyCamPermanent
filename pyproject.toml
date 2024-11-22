@@ -5,29 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pycam"
 version = "0.0.1"
-dependencies = [
-    "astropy",
-    "geonum",
-    "LatLon23",
-    "matplotlib",
-    "numpy",
-    "opencv-python",
-    "pandas",
-    "paramiko",
-#    "picamera",
-    "Pillow",
-#    "pyinotify",
-    "scipy",
-#    "seabreeze",
-    "Shapely",
-    "ttkthemes",
-    "scikit-image",
-    "srtm.py",
-    "watchdog",
-    "pydoas @ git+https://github.com/christopher-wild/pydoas.git@typing_updates",
-    "pyplis @ git+https://github.com/ubdbra001/pyplis.git@typing_update",
-    "iFit @ git+https://github.com/ubdbra001/iFit.git@make-pip-install",
-]
+dynamic = ["dependencies"]
 
 [tool.setuptools]
 packages = ["pycam"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ['requirements.txt']}

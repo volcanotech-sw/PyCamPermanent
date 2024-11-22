@@ -9,7 +9,7 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      - uses: agaroot-technologies/action-restrict-base-branch@v1.0.2
+      - uses: praha-inc/action-restrict-base-branch@v1.0.2
         with:
           rules: |
             master <- dev*
