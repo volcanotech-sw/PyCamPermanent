@@ -2022,6 +2022,10 @@ class PyplisWorker:
         for img in img_buff:
             stack.add_img(img['img_tau'], img['time'])
 
+        if self.img_tau_prev is not None:
+            stack.add_img(self.img_tau_prev, self.img_tau_prev.meta['start_acq'])
+            stack.add_img(self.img_tau, self.img_tau.meta['start_acq'])
+
         stack.img_prep['pyrlevel'] = 0
 
         return stack
