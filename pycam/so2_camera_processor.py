@@ -2022,6 +2022,10 @@ class PyplisWorker:
         for img in img_buff:
             stack.add_img(img['img_tau'], img['time'])
 
+        if self.img_tau_prev is not None:
+            stack.add_img(self.img_tau_prev, self.img_tau_prev.meta['start_acq'])
+            stack.add_img(self.img_tau, self.img_tau.meta['start_acq'])
+
         stack.img_prep['pyrlevel'] = 0
 
         return stack
@@ -2384,7 +2388,7 @@ class PyplisWorker:
             # TODO should include a tau vs cal flag check, to see whether the plot is displaying AA or ppmm
             self.fig_tau.update_plot(np.array(self.img_tau.img), img_cal=self.img_cal)
 
-    def calibrate_image(self, img, run_cal_doas=False, doas_update=True):
+    def calibrate_image(self, img, run_cal_doas=False, doas_update=True, calib_buff = False):
         """
         Takes tau image and calibrates it using correct calibration mode
         :param img: pyplis.Img or pyplis.ImgStack      Tau image
@@ -2419,6 +2423,17 @@ class PyplisWorker:
                 # If we want to adjust for the offset in the calibration curve we add y_offset back to the image here
                 if self.doas_cal_adjust_offset:
                     cal_img.img = cal_img.img + self.calib_pears.y_offset
+
+                # The first time a calibration is available also calibrate the previous image,
+                # so an emission rate can be generated for it.
+                if not calib_buff and self.img_cal_prev is None:
+                    img_tau_prev = copy.deepcopy(self.img_tau_prev)
+                    cal_img_prev = self.calib_pears.calibrate(img_tau_prev)
+
+                    if self.doas_cal_adjust_offset:
+                        cal_img_prev.img = cal_img_prev.img + self.calib_pears.y_offset
+                    
+                    self.img_cal_prev = cal_img_prev
 
         elif self.cal_type_int == 0:
             if isinstance(img, pyplis.Img):
@@ -3751,7 +3766,7 @@ class PyplisWorker:
         # I will be able to process it too. Otherwise I can only process all but the final image, since I will need to
         # generate the optical flow)
         if self.idx_current < self.img_buff_size:
-            num_buff = self.idx_current - 1
+            num_buff = self.idx_current
         else:
             num_buff = self.img_buff_size
 
@@ -3763,7 +3778,7 @@ class PyplisWorker:
             # If time of image is before or equal to "after", we ignore it
             # If the results object already has emission rates for this time, we skip it if overwrite=False
             img_time = img_tau.meta['start_acq']
-            if img_time <= after:
+            if img_time < after:
                 continue
             if not overwrite:
                 velo_modes = [mode for mode in self.velo_modes if self.velo_modes[mode]]
@@ -3777,7 +3792,7 @@ class PyplisWorker:
 
             # Calibrate image if it hasn't already been
             if not img_tau.is_calibrated:
-                img_cal = self.calibrate_image(img_tau, doas_update=False)
+                img_cal = self.calibrate_image(img_tau, doas_update=False, calib_buff=True)
 
                 # If the image hasn't already been calibrated we may want to save it if requested
                 if self.save_dict['img_cal']['save']:
