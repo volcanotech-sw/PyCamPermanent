@@ -2590,8 +2590,9 @@ class PyplisWorker:
         if (force_fov_cal or self.doas_fov_recal or not self.got_doas_fov) and not self.fix_fov:
             dt = datetime.timedelta(minutes=self.doas_fov_recal_mins)
             oldest_time = img_time - dt
-            with self.doas_worker.lock:
-                if oldest_time >= self.doas_last_fov_cal or force_fov_cal:
+            if oldest_time >= self.doas_last_fov_cal or force_fov_cal:
+                doas_result_avail = self.check_doas_result_avail(img_time)
+                with self.doas_worker.lock:
                     # Check we have some DOAS points
                     if len(self.doas_worker.results) < self.min_doas_points:
                         print('Require at least {} DOAS points to perform FOV CD-tau calibration. '
