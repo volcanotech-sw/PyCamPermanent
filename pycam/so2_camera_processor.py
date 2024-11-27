@@ -2628,6 +2628,9 @@ class PyplisWorker:
         # If we don't update fov search then we just update current cal object with new image (as long as we have
         # a doas calibration)
         elif self.got_doas_fov:
+            if self.in_processing or self.watching:
+                doas_result_avail = self.check_doas_result_avail(img_time)
+
             if len(self.doas_worker.results) < 1:
                 print('No DOAS data available for CD-tau calibration')
                 return
@@ -2640,31 +2643,13 @@ class PyplisWorker:
             tau = tau_fov.mean()
 
             try:
-                timeout = datetime.datetime.now() + datetime.timedelta(seconds = 30)
-                # Keep retrying to get the cd for current time until timeout
-                # Will also exit if a new value with a greater datetime is added
-                results = self.doas_worker.results
-                while (datetime.datetime.now() < timeout) and not np.any(img_time < self.doas_worker.results.index):
-                    with self.doas_worker.lock:
-                        # Get CD for current time
-                        cd = self.doas_worker.results.get(img_time)
-                        if cd is not None:
-                            # Get index for cd_err
-                            cd_err = self.doas_worker.results.fit_errs[
-                                np.where(self.doas_worker.results.index.array == img_time)[0][0]]
-                            break
-                    time.sleep(0.5)
-                else:
-                    # In case while loop immediately exits, because it has more recent data points, we need to try to
-                    # generate cd and cd_err (this may be for the first time). If cd is None we know there is no data
-                    # point for img_time, so we can raise the error which moves us onto the interpolation section.
+                if doas_result_avail:
                     with self.doas_worker.lock:
                         cd = self.doas_worker.results.get(img_time)
-                        if cd is None:
-                            raise KeyError(f"spectra for {img_time} not found")
-                        # Get index for cd_err
                         cd_err = self.doas_worker.results.fit_errs[
-                            np.where(self.doas_worker.results.index.array == img_time)[0][0]]
+                                np.where(self.doas_worker.results.index.array == img_time)[0][0]]
+                else:
+                    raise KeyError(f"spectra for {img_time} not found")
 
             except BaseException as e:
                 
