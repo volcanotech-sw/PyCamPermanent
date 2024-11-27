@@ -3761,7 +3761,6 @@ class PyplisWorker:
         if after is None:
             after = datetime.datetime(2000, 1, 1)
 
-        # TODO I may want to think about deciding how far to loop through the buffer here
         # Define number of images to loop through (I can try to go to last image, and if it contains optical flow data
         # I will be able to process it too. Otherwise I can only process all but the final image, since I will need to
         # generate the optical flow)
