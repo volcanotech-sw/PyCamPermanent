@@ -2526,6 +2526,32 @@ class PyplisWorker:
         self.got_doas_fov = True
         self.doas_last_fov_cal = self.img_A.meta['start_acq']
 
+    def check_doas_result_avail(self, img_time, retry_length = 10):
+        """ Check whether doas results for a particular time point are available
+
+        :param datetime img_time: Datetime for current image being processed
+        :param int retry_length: Time in seconds to retry getting results for, defaults to 10
+        :return boolean: Is there a result for this image datetime
+        """
+
+        timeout = datetime.datetime.now() + datetime.timedelta(seconds = retry_length)
+        while (datetime.datetime.now() < timeout):
+            with self.doas_worker.lock:
+                
+                # Check to see if img_time is in the results index, and return if it is
+                if np.any(img_time == self.doas_worker.results.index):
+                    return True 
+
+                # If there are newer results then the result is likely missing and so we can return
+                # sooner
+                if np.any(img_time < self.doas_worker.results.index):
+                    return False
+
+            # Pause for a bit to allow other threads to execute before trying again
+            time.sleep(0.5)
+        
+        return False
+
     def update_doas_calibration(self, img_tau=None, force_fov_cal=False):
         """
         Updates DOAS results to include more data, or FOV location is also updated if this is requested and in the
