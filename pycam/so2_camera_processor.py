@@ -2022,6 +2022,10 @@ class PyplisWorker:
         for img in img_buff:
             stack.add_img(img['img_tau'], img['time'])
 
+        if self.img_tau_prev is not None:
+            stack.add_img(self.img_tau_prev, self.img_tau_prev.meta['start_acq'])
+            stack.add_img(self.img_tau, self.img_tau.meta['start_acq'])
+
         stack.img_prep['pyrlevel'] = 0
 
         return stack
@@ -2384,7 +2388,7 @@ class PyplisWorker:
             # TODO should include a tau vs cal flag check, to see whether the plot is displaying AA or ppmm
             self.fig_tau.update_plot(np.array(self.img_tau.img), img_cal=self.img_cal)
 
-    def calibrate_image(self, img, run_cal_doas=False, doas_update=True):
+    def calibrate_image(self, img, run_cal_doas=False, doas_update=True, calib_buff = False):
         """
         Takes tau image and calibrates it using correct calibration mode
         :param img: pyplis.Img or pyplis.ImgStack      Tau image
@@ -2419,6 +2423,17 @@ class PyplisWorker:
                 # If we want to adjust for the offset in the calibration curve we add y_offset back to the image here
                 if self.doas_cal_adjust_offset:
                     cal_img.img = cal_img.img + self.calib_pears.y_offset
+
+                # The first time a calibration is available also calibrate the previous image,
+                # so an emission rate can be generated for it.
+                if not calib_buff and self.img_cal_prev is None:
+                    img_tau_prev = copy.deepcopy(self.img_tau_prev)
+                    cal_img_prev = self.calib_pears.calibrate(img_tau_prev)
+
+                    if self.doas_cal_adjust_offset:
+                        cal_img_prev.img = cal_img_prev.img + self.calib_pears.y_offset
+                    
+                    self.img_cal_prev = cal_img_prev
 
         elif self.cal_type_int == 0:
             if isinstance(img, pyplis.Img):
@@ -2511,6 +2526,32 @@ class PyplisWorker:
         self.got_doas_fov = True
         self.doas_last_fov_cal = self.img_A.meta['start_acq']
 
+    def check_doas_result_avail(self, img_time, retry_length = 10):
+        """ Check whether doas results for a particular time point are available
+
+        :param datetime img_time: Datetime for current image being processed
+        :param int retry_length: Time in seconds to retry getting results for, defaults to 10
+        :return boolean: Is there a result for this image datetime
+        """
+
+        timeout = datetime.datetime.now() + datetime.timedelta(seconds = retry_length)
+        while (datetime.datetime.now() < timeout):
+            with self.doas_worker.lock:
+                
+                # Check to see if img_time is in the results index, and return if it is
+                if np.any(img_time == self.doas_worker.results.index):
+                    return True 
+
+                # If there are newer results then the result is likely missing and so we can return
+                # sooner
+                if np.any(img_time < self.doas_worker.results.index):
+                    return False
+
+            # Pause for a bit to allow other threads to execute before trying again
+            time.sleep(0.5)
+        
+        return False
+
     def update_doas_calibration(self, img_tau=None, force_fov_cal=False):
         """
         Updates DOAS results to include more data, or FOV location is also updated if this is requested and in the
@@ -2549,8 +2590,9 @@ class PyplisWorker:
         if (force_fov_cal or self.doas_fov_recal or not self.got_doas_fov) and not self.fix_fov:
             dt = datetime.timedelta(minutes=self.doas_fov_recal_mins)
             oldest_time = img_time - dt
-            with self.doas_worker.lock:
-                if oldest_time >= self.doas_last_fov_cal or force_fov_cal:
+            if oldest_time >= self.doas_last_fov_cal or force_fov_cal:
+                doas_result_avail = self.check_doas_result_avail(img_time)
+                with self.doas_worker.lock:
                     # Check we have some DOAS points
                     if len(self.doas_worker.results) < self.min_doas_points:
                         print('Require at least {} DOAS points to perform FOV CD-tau calibration. '
@@ -2586,6 +2628,9 @@ class PyplisWorker:
         # If we don't update fov search then we just update current cal object with new image (as long as we have
         # a doas calibration)
         elif self.got_doas_fov:
+            if self.in_processing or self.watching:
+                doas_result_avail = self.check_doas_result_avail(img_time)
+
             if len(self.doas_worker.results) < 1:
                 print('No DOAS data available for CD-tau calibration')
                 return
@@ -2598,31 +2643,13 @@ class PyplisWorker:
             tau = tau_fov.mean()
 
             try:
-                timeout = datetime.datetime.now() + datetime.timedelta(seconds = 30)
-                # Keep retrying to get the cd for current time until timeout
-                # Will also exit if a new value with a greater datetime is added
-                results = self.doas_worker.results
-                while (datetime.datetime.now() < timeout) and not np.any(img_time < self.doas_worker.results.index):
-                    with self.doas_worker.lock:
-                        # Get CD for current time
-                        cd = self.doas_worker.results.get(img_time)
-                        if cd is not None:
-                            # Get index for cd_err
-                            cd_err = self.doas_worker.results.fit_errs[
-                                np.where(self.doas_worker.results.index.array == img_time)[0][0]]
-                            break
-                    time.sleep(0.5)
-                else:
-                    # In case while loop immediately exits, because it has more recent data points, we need to try to
-                    # generate cd and cd_err (this may be for the first time). If cd is None we know there is no data
-                    # point for img_time, so we can raise the error which moves us onto the interpolation section.
+                if doas_result_avail:
                     with self.doas_worker.lock:
                         cd = self.doas_worker.results.get(img_time)
-                        if cd is None:
-                            raise KeyError(f"spectra for {img_time} not found")
-                        # Get index for cd_err
                         cd_err = self.doas_worker.results.fit_errs[
-                            np.where(self.doas_worker.results.index.array == img_time)[0][0]]
+                                np.where(self.doas_worker.results.index.array == img_time)[0][0]]
+                else:
+                    raise KeyError(f"spectra for {img_time} not found")
 
             except BaseException as e:
                 
@@ -3746,12 +3773,11 @@ class PyplisWorker:
         if after is None:
             after = datetime.datetime(2000, 1, 1)
 
-        # TODO I may want to think about deciding how far to loop through the buffer here
         # Define number of images to loop through (I can try to go to last image, and if it contains optical flow data
         # I will be able to process it too. Otherwise I can only process all but the final image, since I will need to
         # generate the optical flow)
         if self.idx_current < self.img_buff_size:
-            num_buff = self.idx_current - 1
+            num_buff = self.idx_current
         else:
             num_buff = self.img_buff_size
 
@@ -3763,7 +3789,7 @@ class PyplisWorker:
             # If time of image is before or equal to "after", we ignore it
             # If the results object already has emission rates for this time, we skip it if overwrite=False
             img_time = img_tau.meta['start_acq']
-            if img_time <= after:
+            if img_time < after:
                 continue
             if not overwrite:
                 velo_modes = [mode for mode in self.velo_modes if self.velo_modes[mode]]
@@ -3777,7 +3803,7 @@ class PyplisWorker:
 
             # Calibrate image if it hasn't already been
             if not img_tau.is_calibrated:
-                img_cal = self.calibrate_image(img_tau, doas_update=False)
+                img_cal = self.calibrate_image(img_tau, doas_update=False, calib_buff=True)
 
                 # If the image hasn't already been calibrated we may want to save it if requested
                 if self.save_dict['img_cal']['save']:
