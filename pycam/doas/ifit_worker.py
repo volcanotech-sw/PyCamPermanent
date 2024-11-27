@@ -7,6 +7,7 @@ critical for getting the gradient of AA vs ppm.m in camera calibration.
 This work may also allow light dilution correction following Varnam 2021
 """
 
+import argparse
 import os
 import time
 import queue
@@ -1378,16 +1379,27 @@ class IFitWorker(SpecWorker):
 
         self.ldf_best = ldf
         return fit0, fit1
+    
+    @staticmethod
+    def get_args():
+        parser = argparse.ArgumentParser(description='Process spectra using iFit')
+        parser.add_argument('--spec_dir', type=str, help='Directory containing spectra to process')
+        parser.add_argument('--dark_dir', type=str, help='Directory containing dark spectra', default=None)
+        parser.add_argument('--ils_path', type=str, help='Path to ILS file', default='./pycam/doas/calibration/2019-07-03_302nm_ILS.txt')
+        parser.add_argument('--frs_path', type=str, help='Path to FRS file', default='./pycam/doas/calibration/sao2010.txt')
+        parser.add_argument('--doas_out_dir', type=str, help='Directory to save DOAS results', default='./pycam/doas/results/')
+        return parser.parse_args()
 
 if __name__ == '__main__':
+    args = IFitWorker.get_args()
+    
     # Calibration paths
-    ils_path = './pycam/doas/calibration/2019-07-03_302nm_ILS.txt'
     # ils_path = './calibration/2019-07-03_313nm_ILS.txt'
-    frs_path = './pycam/doas/calibration/sao2010.txt'
     ref_paths = {'SO2': {'path': './pycam/doas/calibration/SO2_295K.txt', 'value': 1.0e16},  # Value is the inital estimation of CD
                  'O3': {'path': './pycam/doas/calibration/O3_223K.txt', 'value': 1.0e19},
                  'Ring': {'path': './pycam/doas/calibration/Ring.txt', 'value': 0.1}
                  }
+    
 
     # ref_paths = {'SO2': {'path': 'C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\PyCamPermanent\\pycam\\doas\\calibration\\Vandaele (2009) x-section in wavelength.txt', 'value': 1.0e16},
     # 'O3': {'path':     'C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\PyCamPermanent\\pycam\\doas\\calibration\\Serdyuchenko_O3_223K.txt', 'value': 1.0e19},
@@ -1396,55 +1408,54 @@ if __name__ == '__main__':
 
     # Spectra path
     spec_path = './pycam/tests/test_data/test_spectra/'
-
     # Create ifit object
-    ifit_worker = IFitWorker(frs_path=frs_path, species=ref_paths, dark_dir=spec_path)
-    ifit_worker.load_ils(ils_path)  # Load ILS
-
+    ifit_worker = IFitWorker(frs_path=args.frs_path, species=ref_paths, dark_dir=args.dark_dir)
+    ifit_worker.load_ils(args.ils_path)  # Load ILS
+    ifit_worker.doas_filepath = args.doas_out_dir
     # Update fit wavelengths
     ifit_worker.start_fit_wave = 312
     ifit_worker.end_fit_wave = 320
 
     # Process directory
-    ifit_worker.process_dir(spec_dir=spec_path)
+    ifit_worker.start_processing_threadless(spec_dir=args.spec_dir)
     # ifit_worker.start_processing_threadless(spec_dir=spec_path)
 
-    # ------------
-    # Plotting
-    # ------------
-    # Make the figure and define the subplot grid
-    fig = plt.figure(figsize=[10, 6.4])
-    gs = GridSpec(2, 2)
+    # # ------------
+    # # Plotting
+    # # ------------
+    # # Make the figure and define the subplot grid
+    # fig = plt.figure(figsize=[10, 6.4])
+    # gs = GridSpec(2, 2)
 
-    # Define axes
-    ax0 = fig.add_subplot(gs[0, 0])
-    ax1 = fig.add_subplot(gs[1, 0])
-    ax2 = fig.add_subplot(gs[0, 1])
-    ax3 = fig.add_subplot(gs[1, 1])
+    # # Define axes
+    # ax0 = fig.add_subplot(gs[0, 0])
+    # ax1 = fig.add_subplot(gs[1, 0])
+    # ax2 = fig.add_subplot(gs[0, 1])
+    # ax3 = fig.add_subplot(gs[1, 1])
 
-    # Define plot lines
-    l0, = ax0.plot([], [], 'C0x-')  # Measured spectrum
-    l1, = ax0.plot([], [], 'C1-')   # Model fit
+    # # Define plot lines
+    # l0, = ax0.plot([], [], 'C0x-')  # Measured spectrum
+    # l1, = ax0.plot([], [], 'C1-')   # Model fit
 
-    l2, = ax1.plot([], [], 'C0x-')  # Residual
+    # l2, = ax1.plot([], [], 'C0x-')  # Residual
 
-    l3, = ax2.plot([], [], 'C0x-')  # Measured OD
-    l4, = ax2.plot([], [], 'C1-')   # Fit OD
+    # l3, = ax2.plot([], [], 'C0x-')  # Measured OD
+    # l4, = ax2.plot([], [], 'C1-')   # Fit OD
 
-    l5, = ax3.plot([], [], '-')  # Spectrum
+    # l5, = ax3.plot([], [], '-')  # Spectrum
 
-    #
-    l0.set_data(ifit_worker.fit.grid, ifit_worker.fit.spec)
-    l1.set_data(ifit_worker.fit.grid, ifit_worker.fit.fit)
-    l2.set_data(ifit_worker.fit.grid, ifit_worker.fit.resid)
-    l3.set_data(ifit_worker.fit.grid, ifit_worker.fit.meas_od['SO2'])
-    l4.set_data(ifit_worker.fit.grid, ifit_worker.fit.synth_od['SO2'])
-    l5.set_data(ifit_worker.wavelengths, ifit_worker.plume_spec_corr)
+    # #
+    # l0.set_data(ifit_worker.fit.grid, ifit_worker.fit.spec)
+    # l1.set_data(ifit_worker.fit.grid, ifit_worker.fit.fit)
+    # l2.set_data(ifit_worker.fit.grid, ifit_worker.fit.resid)
+    # l3.set_data(ifit_worker.fit.grid, ifit_worker.fit.meas_od['SO2'])
+    # l4.set_data(ifit_worker.fit.grid, ifit_worker.fit.synth_od['SO2'])
+    # l5.set_data(ifit_worker.wavelengths, ifit_worker.plume_spec_corr)
 
-    for ax in [ax0, ax1, ax2, ax3]:
-        ax.relim()
-        ax.autoscale_view()
+    # for ax in [ax0, ax1, ax2, ax3]:
+    #     ax.relim()
+    #     ax.autoscale_view()
 
-    plt.pause(0.01)
-    plt.tight_layout()
-    plt.show()
+    # plt.pause(0.01)
+    # plt.tight_layout()
+    # plt.show()
