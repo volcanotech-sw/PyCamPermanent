@@ -10,6 +10,7 @@ import queue
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.integrate as integrate
+from pathlib import Path
 from itertools import compress
 from scipy import signal
 from scipy.optimize import curve_fit, OptimizeWarning
@@ -34,7 +35,7 @@ class DOASWorker(SpecWorker):
 
     :param q_doas: queue.Queue   Queue where final processed dictionary is placed (should be a PyplisWorker.q_doas)
     """
-    def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir='C:\\', dark_dir=None,
+    def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir=None, dark_dir=None,
                  q_doas=queue.Queue()):
         super().__init__(routine, species, spec_specs, spec_dir, dark_dir, q_doas)
         
@@ -104,7 +105,7 @@ class DOASWorker(SpecWorker):
             spec_dir = filedialog.askdirectory(title='Select spectrum sequence directory', initialdir=self.spec_dir)
 
             if len(spec_dir) > 0 and os.path.exists(spec_dir):
-                self.spec_dir = spec_dir
+                self.spec_dir = Path(spec_dir)
             else:
                 raise ValueError('Spectrum directory not recognised: {}'.format(spec_dir))
         else:
@@ -121,9 +122,9 @@ class DOASWorker(SpecWorker):
 
         # Set current spectra to first in lists
         if len(self.spec_dict['clear']) > 0:
-            self.wavelengths, self.clear_spec_raw = load_spectrum(self.spec_dir + self.spec_dict['clear'][0])
+            self.wavelengths, self.clear_spec_raw = load_spectrum(str(self.spec_dir) + self.spec_dict['clear'][0])
         if len(self.spec_dict['plume']) > 0:
-            self.wavelengths, self.plume_spec_raw = load_spectrum(self.spec_dir + self.spec_dict['plume'][0])
+            self.wavelengths, self.plume_spec_raw = load_spectrum(str(self.spec_dir) + self.spec_dict['plume'][0])
         if len(self.spec_dict['dark']) > 0:
             ss_id = self.spec_specs.file_ss.replace('{}', '')
             ss = self.spec_dict['plume'][0].split('_')[self.spec_specs.file_ss_loc].replace(ss_id, '')
@@ -466,7 +467,7 @@ class DOASWorker(SpecWorker):
         self.reset_self()
 
         # Get all files
-        spec_files = [f for f in os.listdir(self.spec_dir) if '.npy' in f]
+        spec_files = self.spec_dir.glob('*.npy')
 
         # Sort files alphabetically (which will sort them by time due to file format)
         spec_files.sort()
@@ -477,9 +478,9 @@ class DOASWorker(SpecWorker):
 
         # Loop through all files and add them to queue
         for file in clear_spec:
-            self.q_spec.put(self.spec_dir + file)
+            self.q_spec.put(self.spec_dir / file)
         for file in plume_spec:
-            self.q_spec.put(self.spec_dir + file)
+            self.q_spec.put(self.spec_dir / file)
 
         # Add the exit flag at the end, to ensure that the process_loop doesn't get stuck waiting on the queue forever
         self.q_spec.put('exit')
