@@ -737,7 +737,7 @@ class IFitWorker(SpecWorker):
                 
                 # I think I only need to do this if not continuous_save
                 if not continuous_save:
-                    self.save_results()
+                    self.save_results(pathname=self.doas_outdir)
 
                 break
 
@@ -1411,7 +1411,7 @@ if __name__ == '__main__':
     # Create ifit object
     ifit_worker = IFitWorker(frs_path=args.frs_path, species=ref_paths, dark_dir=args.dark_dir)
     ifit_worker.load_ils(args.ils_path)  # Load ILS
-    ifit_worker.doas_filepath = args.doas_out_dir
+    ifit_worker.doas_outdir = args.doas_out_dir
     # Update fit wavelengths
     ifit_worker.start_fit_wave = 312
     ifit_worker.end_fit_wave = 320
