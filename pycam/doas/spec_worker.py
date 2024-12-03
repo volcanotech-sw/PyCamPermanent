@@ -6,6 +6,7 @@ import os
 import threading
 import numpy as np
 import pandas as pd
+from pathlib import Path
 from astropy.convolution import convolve
 from pycam.setupclasses import SpecSpecs
 from pydoas.analysis import DoasResults
@@ -20,7 +21,7 @@ class SpecWorker:
     """
     Parent class for IfitWorker and DoasWorker
     """
-    def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir='C:\\', dark_dir=None,
+    def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir=None, dark_dir=None,
                  q_doas=queue.Queue()):
         self.routine = routine          # Defines routine to be used, either (1) Polynomial or (2) Digital Filtering
         self.spec_specs = spec_specs    # Spectrometer specifications
@@ -117,7 +118,10 @@ class SpecWorker:
 
         self._dark_dir = None
         self.dark_dir = dark_dir        # Directory where dark images are stored
-        self.spec_dir = spec_dir        # Directory where plume spectra are stored
+        if spec_dir:
+            self.spec_dir = Path(spec_dir)        # Directory where plume spectra are stored
+        else:
+            self.spec_dir = None
         self.spec_dict = {}             # Dictionary containing all spectrum files from current spec_dir
 
         # Figures
