@@ -9,7 +9,7 @@ from tkinter import messagebox
 import tkinter.ttk as ttk
 
 from PIL import ImageTk, Image
-import os
+import time
 import socket
 
 
@@ -142,7 +142,14 @@ class Indicator:
         if not self.connected:
             messagebox.showerror('Connection Error', 'No connection was present to disconnect from.')
 
+        # Tell the server we are disconnecting and wait a moment for it to receive the message
+        cfg.send_comms.q.put({'GBY': 1})
+        time.sleep(0.1)
+
         self.sock.close_socket()
+        # Raise the flags to break out of the threads
+        cfg.recv_comms.event.set()
+        cfg.send_comms.event.set()
 
         # Set indicator to off
         self.indicator_off()

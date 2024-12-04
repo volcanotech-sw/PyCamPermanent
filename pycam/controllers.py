@@ -74,8 +74,6 @@ class Camera(CameraSpecs):
     image: numpy.typing.NDArray[np.uint16]
 
     def __init__(self, band="on", filename=None, ignore_device=False):
-        # 'on' or 'off' band camera (band can be overwritten by file load)
-        self.band = band
         self.capture_q = queue.Queue()  # Queue for requesting images
         # Queue where images are put for extraction ([filename, image, metadata])
         self.img_q = queue.Queue()
@@ -90,9 +88,9 @@ class Camera(CameraSpecs):
 
         # Attempt to create a Picamera2 object. If we can't we flag that no camera is active.
         try:
-            if self.band == "on":
+            if band == "on":
                 num = 0
-            elif self.band == "off":
+            elif band == "off":
                 num = 1
             else:
                 raise Exception(f"Unknown band: {band}")
@@ -111,6 +109,9 @@ class Camera(CameraSpecs):
         # Get default specs from parent class and any other attributes, this needs to be
         # after above as it will try to set things that depend on properties above
         super().__init__(filename)
+        # 'on' or 'off' band camera (band can be overwritten by file load)
+        # This is after the specs init as band is also a spec...
+        self.band = band
 
         # Metadata of the most recent image (actual exposure time, etc.)
         self.metadata = {}
@@ -129,7 +130,7 @@ class Camera(CameraSpecs):
         self.close()
 
     @CameraSpecs.analog_gain.setter
-    def analog_gain(self, ag):
+    def analog_gain(self, ag: float):
         """
         Set camera analog gain
 
@@ -481,12 +482,14 @@ class Camera(CameraSpecs):
             # Wait for imaging command (expecting a dictionary containing information for acquisition)
             command = capt_q.get(block=True)
             print(
-                "pycam_camera.py: Got message from camera capture queue: {}".format(
+                "{}: Got message from camera capture queue: {}".format(
+                    __file__,
                     command
                 )
             )
 
             if "exit" in command:
+                print("Exiting camera capture thread")
                 # return if commanded to exit
                 if command["exit"]:
                     self.in_interactive_capture = False
@@ -531,7 +534,7 @@ class Camera(CameraSpecs):
 
                     # Generate filename
                     filename = self.generate_filename(time_str, command["type"])
-                    print("pycam_camera.py: Captured image: {}".format(filename))
+                    print("{}: Captured image: {}".format(__file__, filename))
 
                     # Put filename and image in queue
                     img_q.put([filename, self.image, self.metadata])
@@ -951,6 +954,7 @@ class Spectrometer(SpecSpecs):
             command = capt_q.get(block=True)
 
             if 'exit' in command:
+                print("Exiting spectrometer capture thread")
                 # return if commanded to exit
                 if command['exit']:
                     self.in_interactive_capture = False

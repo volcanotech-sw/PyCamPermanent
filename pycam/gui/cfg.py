@@ -36,11 +36,6 @@ current_dir_spec = CurrentDirectories(root=config[ConfigInfo.local_data_dir], sp
 ftp_client = FTPClient(img_dir=current_dir_img, spec_dir=current_dir_spec, network_info=config,
                        storage_mount=StorageMount())
 
-# FTP client for 2nd pi
-config_2 = copy.deepcopy(config)
-config_2[ConfigInfo.host_ip] = config_2[ConfigInfo.pi_ip].split(',')[0]
-# ftp_client_2 = FTPClient(img_dir=current_dir_img, spec_dir=current_dir_spec, network_info=config_2)
-ftp_client_2 = None
 # ======================================================================================================================
 
 # ==============================

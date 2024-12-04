@@ -44,9 +44,8 @@ class FileLocator:
 
     NET_PORTS_FILE = CONF_DIR + 'network_ports.txt'             # Network file containing port options
     NET_PORTS_FILE_WINDOWS = CONF_DIR_WINDOWS + 'network_ports.txt' # Network file containing port options
-    NET_COMM_FILE = CONF_DIR + 'network_comm.txt'               # Network file for communicating acquisitions
-    NET_TRANSFER_FILE = CONF_DIR + 'network_transfer.txt'       # Network file for transferring data
-    NET_EXT_FILE = CONF_DIR + 'network_external.txt'            # Network file for transferring data
+    NET_EXT_FILE = CONF_DIR + 'network_external.txt'            # Network file for external comms
+    NET_EXT_FILE_WINDOWS = CONF_DIR_WINDOWS + 'network_external.txt'  # Network file for external comms
 
     DAT_DIR_WINDOWS = PYCAM_ROOT_WINDOWS + '/Data/'
     IMG_SPEC_PATH = PYCAM_ROOT_PI + '/Images/'                  # Image and spectra path on main Pi
@@ -111,11 +110,8 @@ class FileLocator:
 class ConfigInfo:
     """Defines important attributes related to config files, allowing references to link to this file rather than being
     explicitly coded elsewhere"""
-    pi_ip = 'pi_ip'                 # Tag for remote pi ip addresses in config file
-    host_ip = 'host_ip'
-    local_ip = 'local_ip'           # Tag for local ip address in config file
-    port_transfer = 'port_transfer'
-    port_comm = 'port_comm'
+    listen_ip = 'listen_ip'
+    host_ip = 'host_ip'      # Tag for remote pi ip addresses in config file
     port_ext = 'port_ext'
 
     start_script = 'start_script'
@@ -286,6 +282,10 @@ class CameraSpecs:
     @property
     def analog_gain(self) -> float:
         return self._analog_gain
+
+    @analog_gain.setter
+    def analog_gain(self, ag: float):
+        self._analog_gain = ag
 
     @property
     def shutter_speed(self) -> int:

@@ -3,6 +3,4 @@
 # pycam_spectrometer are started up they connect to the correct port
 # This should prevent issues of "Socket already in use" which is an error we sometimes hit
 
-comm_ports=12345,12348,12349
-transfer_ports=12346,12350,12351
 ext_ports=12347,12352,12353

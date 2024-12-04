@@ -59,7 +59,7 @@ if spec.spec is not None:
 # Read config file
 config = read_file(FileLocator.CONFIG)
 host_ip = config[ConfigInfo.host_ip]
-port = read_network_file(FileLocator.NET_TRANSFER_FILE)
+_, port = read_network_file(FileLocator.NET_TRANSFER_FILE)
 sock_trf = PiSocketSpec(host_ip, port, spectrometer=spec)
 sock_trf.connect_socket()
 
@@ -76,7 +76,7 @@ trf_conn.thread_func()
 
 # ----------------------------------------------------------------
 # Setup comms socket
-port = read_network_file(FileLocator.NET_COMM_FILE)
+_, port = read_network_file(FileLocator.NET_COMM_FILE)
 sock_comms = PiSocketSpecComms(host_ip, port, spectrometer=spec)
 sock_comms.connect_socket()
 

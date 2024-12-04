@@ -24,7 +24,7 @@ class TestSockets:
         write_file(filename, sock_data)
 
         # Read network file
-        port = read_network_file(filename)
+        _, port = read_network_file(filename)
 
         assert port == sock_data['port']
 

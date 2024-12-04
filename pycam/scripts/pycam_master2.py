@@ -15,6 +15,7 @@ This is intended to replace:
 - remote_pi_off.py
 - remote_pi_on.py
 - remote_pi_reboot.py
+- sync_time.py
 """
 
 # Update python path so that pycam module can be found
@@ -24,26 +25,31 @@ sys.path.append("/home/pi/")
 
 from pycam.controllers import Camera, Spectrometer
 from pycam.io_py import save_img, save_spectrum
-from pycam.networking.sockets import CommConnection, CommsFuncs, MasterComms, SocketNames, SocketServer
-from pycam.utils import read_file,write_file
-from pycam.setupclasses import ConfigInfo,FileLocator
-
-# from pycam.networking.sockets import SocketServer, CommsFuncs, recv_save_imgs, recv_save_spectra, recv_comms, \
-#     acc_connection, SaveSocketError, ImgRecvConnection, SpecRecvConnection, CommConnection, MasterComms, SocketNames
+from pycam.networking.sockets import (
+    SocketServer,
+    CommConnection,
+    CommsCommandHandler,
+    MasterComms,
+    CamComms,
+    SpecComms,
+)
+from pycam.utils import read_file, write_file
+from pycam.setupclasses import ConfigInfo, FileLocator
 
 import atexit
 import time
 import queue
+import socket
 
 
 # -----------------------------------------------------------------
 # Setup camera object
 
-cam1 = Camera(band="on", filename=FileLocator.CONFIG_CAM)
-# cam2 = Camera(band='off', filename=FileLocator.CONFIG_CAM)
+cam1 = Camera(band="on", filename=FileLocator.CONFIG_CAM)  # , ignore_device=True)
+cam2 = Camera(band="off", filename=FileLocator.CONFIG_CAM)
 # spec = Spectrometer(ignore_device=True, filename=FileLocator.CONFIG_SPEC)
 
-instruments = [cam1]
+instruments = [cam1, cam2]
 # instruments = [cam1, cam2, spec]
 
 # -----------------------------------------------------------------
@@ -86,50 +92,43 @@ for instrument in instruments:
 
 # Read configuration file which contains important information for various things
 config = read_file(FileLocator.CONFIG)
-host_ip = config[ConfigInfo.host_ip]
+listen_ip = config[ConfigInfo.listen_ip]
 
-# Open a listen socket
-sock_serv_ext = SocketServer(host_ip, None)
+# Open a listen socket - there should only ever be one of these.
+sock_serv_ext = SocketServer(listen_ip, None)
 sock_serv_ext.get_port_list("ext_ports")
 sock_serv_ext.get_port()
 
 # Write port info to file
 write_file(
     FileLocator.NET_EXT_FILE,
-    {"ip_address": sock_serv_ext.host_ip, "port": sock_serv_ext.port},
+    {"ip_address": sock_serv_ext.listen_ip, "port": sock_serv_ext.port},
 )
 
 # Setup external communication port
 sock_serv_ext.open_socket(bind=False)
-# while True:
-#     try:
-#         sock_serv_ext.open_socket()
-#         break
-#     except OSError:
-#         print('Address already in use: {}, {}. Sleeping and reattempting to open socket'.format(host_ip, port_transfer))
-#         sock_serv_ext.close_connection()
-#         time.sleep(1)
 
-# Create objects for accepting and controlling 2 new connections (one may be local computer conn, other may be wireless)
-ext_connections = {'1': CommConnection(sock_serv_ext, acc_conn=True), '2': CommConnection(sock_serv_ext, acc_conn=True)}
-# ----------------------------------
-
-
-# Set up socket dictionary - the classes are mutable so the dictionary should carry any changes to the servers made
-# through time
-sock_dict = {SocketNames.ext: sock_serv_ext}
-
-
-# Dictionary holding the connection for internal communications (not external comms)
-comms_connections = {}
-# maybe needed?
-#comms_connections = {"CM1": cam1.capture_q, "CM2": cam2.capture_q, "SP": spec.capture_q}
+# Create objects for handling connections - each active connection needs its own object
+# (one may be local computer conn, other may be wireless)
+ext_connections = {
+    "1": CommConnection(sock_serv_ext, acc_conn=True),
+    # "2": CommConnection(sock_serv_ext, acc_conn=True),
+}
 
 # Setup masterpi comms function implementer
-master_comms_funcs = MasterComms(config, sock_dict, comms_connections, {}, ext_connections)
+comms_funcs: list[CommsCommandHandler] = [MasterComms(sock_serv_ext, ext_connections)]
 
-# Instantiate CommsFuncs that contains the list of commands we can accept
-comms_funcs = CommsFuncs()
+# Attach communications to each instrument
+for instrument in instruments:
+    if isinstance(instrument, Camera):
+        comms_funcs.append(CamComms(sock_serv_ext, instrument))
+    elif isinstance(instrument, Spectrometer):
+        comms_funcs.append(SpecComms(sock_serv_ext, instrument))
+
+# Thread to handle passing commands to things that run commands
+for funcs in comms_funcs:
+    funcs.handle_commands()
+
 
 # -----------------------------------------------------------------
 # Handle communications/main loop
@@ -169,7 +168,46 @@ while running:
         # -----------------------------------------------------------------
         # Handle communications
 
-        # TODO - see pycam_masterpy.py after FINAL LOOP
+        # If a CommConnection object is neither waiting to accept a connection or recieving data from a connection, we
+        # must have lost that connection, so we close that connection just to make sure, and then setup the object
+        # to accept a new connection
+        for conn in ext_connections:
+            if (
+                not ext_connections[conn].working
+                and not ext_connections[conn].accepting
+            ):
+                # Connection has probably already been closed, but try closing it anyway
+                try:
+                    sock_serv_ext.close_connection(ip=ext_connections[conn].ip)
+                except socket.error:
+                    pass
+
+                # This causes a horrible loop if we're trying to quit
+                ext_connections[conn].acc_connection()
+
+        # Check message queue in each comm port
+        for conn in ext_connections:
+            try:
+                # Check message queue (taken from tuple at position [1])
+                comm_cmd = ext_connections[conn].q.get(block=False)
+                print(
+                    "Incoming command from {}: {}".format(
+                        ext_connections[conn].ip, comm_cmd
+                    )
+                )
+
+                if "EXT" in comm_cmd and comm_cmd["EXT"]:
+                    print("Exit command received")
+                    # Break out of the loop when exiting
+                    running = False
+
+                if comm_cmd:
+                    # We have received some valid commands, pass these on to the devices to carry out
+                    for funcs in comms_funcs:
+                        funcs.q.put(comm_cmd)
+
+            except queue.Empty:
+                pass
 
         # Sleep for a short period and then check the lock again
         time.sleep(0.005)
@@ -178,3 +216,9 @@ while running:
         # Try to quit nicely when ctrl-c'd
         print("Quitting")
         running = False
+
+# Give all the various threads and sockets a moment to finish...
+to_sleep = 5
+print(f"Sleeping {to_sleep} seconds to tidy up...")
+time.sleep(to_sleep)
+print("Exiting now")
