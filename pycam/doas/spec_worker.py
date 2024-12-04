@@ -389,7 +389,7 @@ class SpecWorker:
         sd = {}
 
         # Get all files into associated list/dictionary entry
-        sd['all'] = [f for f in os.listdir(self.spec_dir) if self.spec_specs.file_ext in f]
+        sd['all'] = [f for f in os.listdir(str(self.spec_dir)) if self.spec_specs.file_ext in f]
         sd['all'].sort()
         sd['plume'] = [f for f in sd['all']
                        if self.spec_specs.file_type['meas'] + self.spec_specs.file_ext in f]
@@ -438,7 +438,7 @@ class SpecWorker:
         subdir = 'Processed_spec_{}'
         process_time = datetime.datetime.now().strftime(self.save_date_fmt)
         # Save this as an attribute so we only have to generate it once
-        self.doas_outdir = os.path.join(path, subdir.format(process_time))
+        self.doas_outdir = str(Path(path) / subdir.format(process_time))
         if make_dir:
             os.mkdir(self.doas_outdir)
 

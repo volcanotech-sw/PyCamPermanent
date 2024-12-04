@@ -102,7 +102,7 @@ class DOASWorker(SpecWorker):
         :param: plot    bool    If true, the first spectra are plotted in the GUI"""
 
         if prompt:
-            spec_dir = filedialog.askdirectory(title='Select spectrum sequence directory', initialdir=self.spec_dir)
+            spec_dir = filedialog.askdirectory(title='Select spectrum sequence directory', initialdir=str(self.spec_dir))
 
             if len(spec_dir) > 0 and os.path.exists(spec_dir):
                 self.spec_dir = Path(spec_dir)
@@ -478,9 +478,9 @@ class DOASWorker(SpecWorker):
 
         # Loop through all files and add them to queue
         for file in clear_spec:
-            self.q_spec.put(self.spec_dir / file)
+            self.q_spec.put(str(self.spec_dir / file))
         for file in plume_spec:
-            self.q_spec.put(self.spec_dir / file)
+            self.q_spec.put(str(self.spec_dir / file))
 
         # Add the exit flag at the end, to ensure that the process_loop doesn't get stuck waiting on the queue forever
         self.q_spec.put('exit')
