@@ -18,9 +18,8 @@ Alternatively, you can run these commands in 'Powershell' once you have made `co
 ## Installation instructions
 
 1. If you have `git` installed then clone the PyCamPermanent repo and move into the PyCamPermanent directory:
-
-```sh
-git clone https://github.com/twVolc/PyCamPermanent.git
+```
+git clone https://github.com/volcanotech-sw/PyCamPermanent.git
 cd PyCamPermanent
 ```
 

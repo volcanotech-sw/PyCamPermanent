@@ -9,7 +9,7 @@ pandas
 paramiko
 Pillow
 scipy
-Shapely 
+Shapely
 ttkthemes
 scikit-image
 ruamel.yaml
@@ -18,6 +18,6 @@ watchdog
 parameterized
 dropbox
 pywin32
-pydoas @ git+https://github.com/christopher-wild/pydoas.git@typing_updates
-pyplis @ git+https://github.com/ubdbra001/pyplis.git@sources_fix_312
-iFit @ git+https://github.com/ubdbra001/iFit.git@make-pip-install
+pyplis @ git+https://github.com/volcanotech-sw/pyplis.git@sources_fix
+pydoas @ git+https://github.com/volcanotech-sw/pydoas.git
+iFit @ git+https://github.com/volcanotech-sw/iFit.git@make-pip-install

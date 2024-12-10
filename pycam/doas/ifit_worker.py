@@ -15,6 +15,7 @@ import datetime
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from pathlib import Path
 from itertools import compress
 from tkinter import filedialog
 from scipy.interpolate import griddata
@@ -309,19 +310,18 @@ class IFitWorker(SpecWorker):
         :param: plot    bool    If true, the first spectra are plotted in the GUI
         :param: process_first   bool    If True, the first spectrum is processed.
         """
-
         if spec_dir is not None:
-            self.spec_dir = spec_dir
+            self.spec_dir = Path(spec_dir)
         elif prompt:
-            spec_dir = filedialog.askdirectory(title='Select spectrum sequence directory', initialdir=self.spec_dir)
+            spec_dir = filedialog.askdirectory(title='Select spectrum sequence directory', initialdir=str(self.spec_dir))
 
             if len(spec_dir) > 0 and os.path.exists(spec_dir):
-                self.spec_dir = spec_dir
+                self.spec_dir = Path(spec_dir)
             else:
                 raise ValueError('Spectrum directory not recognised: {}'.format(spec_dir))
         else:
             if self.spec_dir is None:
-                raise ValueError('Spectrum directory not recognised: {}'.format(self.spec_dir))
+                raise ValueError('Spectrum directory not recognised: {}'.format(str(self.spec_dir)))
 
         # Update first_spec flag TODO possibly not used in DOASWorker, check
         self.first_spec = True
@@ -333,11 +333,9 @@ class IFitWorker(SpecWorker):
 
         # Set current spectra to first in lists
         if len(self.spec_dict['clear']) > 0:
-            self.wavelengths, self.clear_spec_raw = load_spectrum(os.path.join(self.spec_dir,
-                                                                               self.spec_dict['clear'][0]))
+            self.wavelengths, self.clear_spec_raw = load_spectrum(str(self.spec_dir / self.spec_dict['clear'][0]))
         if len(self.spec_dict['plume']) > 0:
-            self.wavelengths, self.plume_spec_raw = load_spectrum(os.path.join(self.spec_dir,
-                                                                               self.spec_dict['plume'][0]))
+            self.wavelengths, self.plume_spec_raw = load_spectrum(str(self.spec_dir / self.spec_dict['plume'][0]))
             self.spec_time = self.get_spec_time(self.spec_dict['plume'][0])
 
             # Get respective dark spectrum
@@ -522,8 +520,7 @@ class IFitWorker(SpecWorker):
         for i in range(len(self.spec_dict['plume'])):
             print('Processing spectrum {} of {}'.format(i+1, len(self.spec_dict['plume'])))
 
-            self.wavelengths, self.plume_spec_raw = load_spectrum(os.path.join(self.spec_dir,
-                                                                               self.spec_dict['plume'][i]))
+            self.wavelengths, self.plume_spec_raw = load_spectrum(str(self.spec_dir / self.spec_dict['plume'][i]))
             self.spec_time = self.get_spec_time(self.spec_dict['plume'][i])
 
             # Get dark spectrum
@@ -642,7 +639,7 @@ class IFitWorker(SpecWorker):
         """
         if filename is None:
             filename = filedialog.askopenfilename(title='Select DOAS results file',
-                                                  initialdir=self.spec_dir, filetypes=(('csv', '*.csv'),
+                                                  initialdir=str(self.spec_dir), filetypes=(('csv', '*.csv'),
                                                                                        ('All files', '*.*')))
             if not filename:
                 return
@@ -674,7 +671,7 @@ class IFitWorker(SpecWorker):
         function can update the plots wihtout going through the main thread in PyplisWorker
         """
         if spec_dir is not None:
-            self.spec_dir = spec_dir
+            self.spec_dir = Path(spec_dir)
 
         # Flag that we are running processing outside of thread
         self.processing_in_thread = False
@@ -694,9 +691,9 @@ class IFitWorker(SpecWorker):
 
         # Loop through all files and add them to queue
         for file in clear_spec:
-            self.q_spec.put(os.path.join(self.spec_dir, file))
+            self.q_spec.put(str(self.spec_dir / file))
         for file in plume_spec:
-            self.q_spec.put(os.path.join(self.spec_dir, file))
+            self.q_spec.put(str(self.spec_dir / file))
 
         # Add the exit flag at the end, to ensure that the process_loop doesn't get stuck waiting on the queue forever
         self.q_spec.put(self.STOP_FLAG)
@@ -748,7 +745,7 @@ class IFitWorker(SpecWorker):
                 #print('IFitWorker: processing spectrum: {}'.format(pathname))
                 # Extract filename and create datetime object of spectrum time
                 working_dir, filename = os.path.split(pathname)
-                self.spec_dir = working_dir     # Update working directory to where most recent file has come from
+                self.spec_dir = Path(working_dir)     # Update working directory to where most recent file has come from
 
                 spec_time = self.get_spec_time(filename)
 
@@ -1417,7 +1414,7 @@ if __name__ == '__main__':
     ifit_worker.end_fit_wave = 320
 
     # Process directory
-    ifit_worker.start_processing_threadless(spec_dir=args.spec_dir)
+    ifit_worker.start_processing_threadless(spec_dir=Path(args.spec_dir))
     # ifit_worker.start_processing_threadless(spec_dir=spec_path)
 
     # # ------------
