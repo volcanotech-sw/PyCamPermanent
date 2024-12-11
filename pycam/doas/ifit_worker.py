@@ -734,7 +734,7 @@ class IFitWorker(SpecWorker):
                 
                 # I think I only need to do this if not continuous_save
                 if not continuous_save:
-                    self.save_results(pathname=self.doas_outdir)
+                    self.save_results()
 
                 break
 
@@ -1384,7 +1384,7 @@ class IFitWorker(SpecWorker):
         parser.add_argument('--dark_dir', type=str, help='Directory containing dark spectra', default=None)
         parser.add_argument('--ils_path', type=str, help='Path to ILS file', default='./pycam/doas/calibration/2019-07-03_302nm_ILS.txt')
         parser.add_argument('--frs_path', type=str, help='Path to FRS file', default='./pycam/doas/calibration/sao2010.txt')
-        parser.add_argument('--doas_out_dir', type=str, help='Directory to save DOAS results', default='./pycam/doas/results/')
+        parser.add_argument('--doas_out_dir', type=str, help='Directory to save DOAS results', default=None)
         return parser.parse_args()
 
 if __name__ == '__main__':
@@ -1404,10 +1404,10 @@ if __name__ == '__main__':
     # }
 
     # Spectra path
-    spec_path = './pycam/tests/test_data/test_spectra/'
     # Create ifit object
     ifit_worker = IFitWorker(frs_path=args.frs_path, species=ref_paths, dark_dir=args.dark_dir)
     ifit_worker.load_ils(args.ils_path)  # Load ILS
+    ifit_worker.load_dir(args.spec_dir, plot=False)  # Load spectra directory
     ifit_worker.doas_outdir = args.doas_out_dir
     # Update fit wavelengths
     ifit_worker.start_fit_wave = 312
