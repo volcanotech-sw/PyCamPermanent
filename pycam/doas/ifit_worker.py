@@ -1401,6 +1401,8 @@ if __name__ == '__main__':
     ifit_worker = IFitWorker(frs_path=args.frs_path, species=ref_paths, dark_dir=config['dark_img_dir'])
     ifit_worker.load_ils(config['ILS_path'])  # Load ILS
     ifit_worker.load_dir(config['spec_dir'], plot=False)  # Load spectra directory
+    ifit_worker.get_wavelengths(config)
+    ifit_worker.get_shift(config)
     ifit_worker.doas_outdir = args.doas_out_dir
     # Update fit wavelengths
     ifit_worker.start_fit_wave = 312
