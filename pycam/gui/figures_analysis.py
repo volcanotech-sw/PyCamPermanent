@@ -4693,8 +4693,9 @@ class NadeauFlowSettings(LoadSaveProcessingSettings):
         row += 1
         lab = ttk.Label(auto_frame, text='ICA line:')
         lab.grid(row=row, column=0, padx=self.pdx, pady=self.pdy, sticky='w')
+        max_lines = len([line for line in self.pyplis_worker.PCS_lines_all if line is not None])
         pcs_spin = ttk.Spinbox(auto_frame, textvariable=self._auto_nadeau_pcs,
-                               from_=1, to=len(self.pyplis_worker.PCS_lines_all), command=self.run_nadeau_line)
+                               from_=1, to=max_lines, command=self.run_nadeau_line)
         pcs_spin.grid(row=row, column=1, sticky='ew', padx=self.pdx, pady=self.pdy)
 
         # -------------------------------------------
