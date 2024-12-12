@@ -4697,6 +4697,8 @@ class NadeauFlowSettings(LoadSaveProcessingSettings):
         pcs_spin = ttk.Spinbox(auto_frame, textvariable=self._auto_nadeau_pcs,
                                from_=1, to=max_lines, command=self.run_nadeau_line)
         pcs_spin.grid(row=row, column=1, sticky='ew', padx=self.pdx, pady=self.pdy)
+        pcs_spin.bind('<FocusOut>', self.run_nadeau_line)
+        pcs_spin.bind('<Return>', self.run_nadeau_line)
 
         # -------------------------------------------
         # Build figure displaying cross-correlation
@@ -4957,7 +4959,7 @@ class NadeauFlowSettings(LoadSaveProcessingSettings):
         if draw:
             self.q.put(1)
 
-    def run_nadeau_line(self):
+    def run_nadeau_line(self, event = None):
         """Instigates automatic generation of the Nadeau line and plots current line pased on this"""
         # Update pyplis_worker config
         self.gather_vars(update_pyplis=True)
