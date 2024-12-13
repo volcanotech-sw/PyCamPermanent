@@ -1404,8 +1404,5 @@ if __name__ == '__main__':
     ifit_worker.get_wavelengths(config)
     ifit_worker.get_shift(config)
     ifit_worker.doas_outdir = args.doas_out_dir
-    # Update fit wavelengths
-    ifit_worker.start_fit_wave = 312
-    ifit_worker.end_fit_wave = 320
     # Process directory
     ifit_worker.start_processing_threadless(Path(config['spec_dir']))
