@@ -303,12 +303,13 @@ class StorageMount:
     Basic class to control the handling of mounting external memory and storing details of mounted drive
     """
     mount_path = '/mnt/pycam/'
+    data_path = '/mnt/pycam/data/'
 
     def __init__(self, mount_path=None, dev_path=None):
         self.dev_path = dev_path
         if mount_path:
             self.mount_path = mount_path
-        self.data_path = os.path.join(self.mount_path, 'data')
+            self.data_path = os.path.join(self.mount_path, 'data')
         self.lock = threading.Lock()
 
         if self.dev_path is None:

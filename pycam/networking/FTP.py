@@ -305,7 +305,7 @@ class FTPClient:
     :param network_info:    dict                Contains network parameters defining information for FTP transfer
     """
 
-    def __init__(self, img_dir, spec_dir, network_info=None, storage_mount_data_path=StorageMount.mount_path):
+    def __init__(self, img_dir, spec_dir, network_info=None, storage_mount_data_path=StorageMount.data_path):
         # TODO Need a way of changing the IP address this connects to - this should be linked to sock ip somehow
 
         self.refresh_time = 1   # Length of time directory watcher sleeps before listing server images again
