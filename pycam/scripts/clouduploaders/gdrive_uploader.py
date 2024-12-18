@@ -149,8 +149,8 @@ class GoogleDriveUploader:
 
 if __name__ == '__main__':
 
-    # upload_file_list = ['C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\PyCamPermanent\\pycam\\tests\\test_data\\2019-09-18T074335_fltrA_1ag_999904ss_Plume.png',
-    #                     'C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\PyCamPermanent\\pycam\\tests\\test_data\\temp_io_test.txt']
+    # upload_file_list = ['C:/Users/tw9616/Documents/PostDoc/Permanent Camera/PyCamPermanent/pycam/tests/test_data/2019-09-18T074335_fltrA_1ag_999904ss_Plume.png',
+    #                     'C:/Users/tw9616/Documents/PostDoc/Permanent Camera/PyCamPermanent/pycam/tests/test_data/temp_io_test.txt']
 
     upload_file_list = ['/home/pi/pycam/Images/2022-10-17T144122_fltrB_1ag_99980ss_Test.png']
 

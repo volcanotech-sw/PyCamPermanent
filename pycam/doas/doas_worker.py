@@ -34,7 +34,7 @@ class DOASWorker(SpecWorker):
 
     :param q_doas: queue.Queue   Queue where final processed dictionary is placed (should be a PyplisWorker.q_doas)
     """
-    def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir='C:\\', dark_dir=None,
+    def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir='C:/', dark_dir=None,
                  q_doas=queue.Queue()):
         super().__init__(routine, species, spec_specs, spec_dir, dark_dir, q_doas)
         

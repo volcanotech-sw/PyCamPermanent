@@ -20,7 +20,7 @@ class SpecWorker:
     """
     Parent class for IfitWorker and DoasWorker
     """
-    def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir='C:\\', dark_dir=None,
+    def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir='C:/', dark_dir=None,
                  q_doas=queue.Queue()):
         self.routine = routine          # Defines routine to be used, either (1) Polynomial or (2) Digital Filtering
         self.spec_specs = spec_specs    # Spectrometer specifications
