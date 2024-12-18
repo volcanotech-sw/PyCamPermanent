@@ -305,13 +305,13 @@ class FTPClient:
     :param network_info:    dict                Contains network parameters defining information for FTP transfer
     """
 
-    def __init__(self, img_dir, spec_dir, network_info=None, storage_mount=StorageMount()):
+    def __init__(self, img_dir, spec_dir, network_info=None, storage_mount_data_path=StorageMount.data_path):
         # TODO Need a way of changing the IP address this connects to - this should be linked to sock ip somehow
 
         self.refresh_time = 1   # Length of time directory watcher sleeps before listing server images again
         self.cam_specs = CameraSpecs()
         self.spec_specs = SpecSpecs()
-        self.storage_mount = storage_mount
+        self.storage_mount_data_path = storage_mount_data_path
         self.watch_q = queue.Queue()
         self.thread = None
         self.watching_dir = False
@@ -655,12 +655,12 @@ class FTPClient:
 
         # Change working directory to mounted SSD device
         try:
-            self.connection.cwd(self.storage_mount.data_path)
+            self.connection.cwd(self.storage_mount_data_path)
         except BaseException as e:
             messagebox.showerror('Error in data download',
                                  'The following error was thrown when attempting to find data on SSD ({}): {}\n'
                                  'Please ensure that the device is mounted '
-                                 'on the R-Pi.'.format(self.storage_mount.data_path, e))
+                                 'on the R-Pi.'.format(self.storage_mount_data_path, e))
             return
 
         # List directories
@@ -693,7 +693,7 @@ class FTPClient:
         num_files = 0
         for dir_num, date_dir in enumerate(dir_list):
             # Set directory
-            current_dir = self.storage_mount.data_path + '/' + date_dir
+            current_dir = self.storage_mount_data_path + '/' + date_dir
             print('Getting data from date: {}'.format(date_dir))
 
             # Change working directory to date directory with data in
@@ -724,7 +724,7 @@ class FTPClient:
             frame.update()
 
             # Change working directory back to starting point
-            self.connection.cwd(self.storage_mount.data_path)
+            self.connection.cwd(self.storage_mount_data_path)
 
         # Close loading widget
         frame.destroy()
