@@ -18,7 +18,7 @@ class About:
     def __init__(self):
         info = ['PyCam v{}'.format(pycam_details['version']),
                 'Built on {}'.format(pycam_details['date']),
-                '\nSubmit issues to: \nhttps://github.com/twVolc/PyCamPermanent/',
+                '\nSubmit issues to: \n{}'.format(pycam_details['repo_url']),
                 '\nGeneral information: \nhttps://www.volcanotech.org/'
                 ]
 
