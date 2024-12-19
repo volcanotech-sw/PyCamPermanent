@@ -16,7 +16,7 @@ import subprocess
 from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator, ConfigInfo
 from pycam.networking.sockets import SocketClient, ExternalSendConnection, ExternalRecvConnection
 from pycam.networking.ssh import open_ssh, close_ssh, ssh_cmd
-from pycam.io_py import read_script_crontab, write_script_crontab, reboot_remote_pi
+from pycam.io_py import read_script_crontab, write_script_crontab
 from pycam.utils import read_file, StorageMount
 
 
@@ -216,31 +216,3 @@ except ConnectionError:
 except BaseException as e:
     with open(FileLocator.ERROR_LOG_PI, 'a') as f:
         f.write('check_run.py: Error {}.\n'.format(e))
-
-
-# Reboot remote pi. Then start the remote_picam start script on that pi, then reboot master_pi
-slave_ip = cfg[ConfigInfo.pi_ip]
-reboot_remote_pi(pi_ip=[slave_ip])
-
-# Start slave pi's reboot script which starts both the check_run.py script and the pycam_masterpi.py script
-# We loop through rebooting the pi as sometimes SSH doesn't work on start-up, no idea why....
-while True:
-    try:
-        ssh_cli = open_ssh(slave_ip)
-
-        stdin, stdout, stderr = ssh_cmd(ssh_cli, 'python3 ' + FileLocator.REMOTE_PI_RUN_PYCAM)
-
-        close_ssh(ssh_cli)
-
-        break
-    except Exception:
-        reboot_remote_pi(pi_ip=[slave_ip])
-
-
-
-
-
-
-
-
-

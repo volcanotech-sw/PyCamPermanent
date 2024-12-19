@@ -110,6 +110,47 @@ def read_file(filename, separator='=', ignore='#'):
     return data
 
 
+def set_capture_status(filename, device, status):
+    """
+    Updates the capture status file with the capture status of the current device
+    Writes to filename a line that is device:status
+
+    Parameters
+    ----------
+    filename: str
+        file name to be written to
+    device: str
+        an identifier for the device/class reporting its status
+    status: str
+        the status being set for the device
+    """
+
+    # what we want to make sure is in filename - needs trailing newline!
+    update_line = f"{device}:{status}\n"
+    # print(update_line, end="")
+
+    # special case creating fresh
+    if not os.path.isfile(filename):
+        with open(filename, 'w') as f:
+            f.writelines(update_line)
+    else:
+        # open r+ to minimise the chance something else slips
+        # in and changes the file while we work on it
+        with open(filename, 'r+') as f:
+            lines = f.readlines()
+            row = [k for k,v in enumerate(lines) if device in v]
+            if row:
+                # already exists, update
+                lines[row[0]] = update_line
+            else:
+                # doesn't exist, add to file
+                lines.append(update_line)
+            # go back to the beginning of the file & overwrite
+            f.seek(0)
+            f.truncate() # clear data after file pointer
+            f.writelines(lines)
+
+
 def format_time(time_obj, fmt):
     """Formats datetime object to string for use in filenames
 
