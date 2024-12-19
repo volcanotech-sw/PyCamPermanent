@@ -1,1 +1,1 @@
-.\pycam\conf\processing_setting_defaults.yml
+./pycam/conf/processing_setting_defaults.yml

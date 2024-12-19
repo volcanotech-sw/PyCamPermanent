@@ -10,9 +10,9 @@ import datetime
 import numpy as np
 
 # Directory of specific emission rate line you wish to plot
-# line_dir = "C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\PyCamPermanent\\pycam\\Data\\Images\\2022-05-20\\Seq_2\\Processed_7\\line_0\\"
-line_dir = "C:\\Users\\tw9616\\Documents\\PostDoc\\Hawaii\\Camera data\\Silver\\2022-07-26\\_AM\\later processing\\Processed_1\\line_0"
-# line_dir = "C:\\Users\\tw9616\\Documents\\PostDoc\\Hawaii\\Camera data\\Gold\\2022-07-27\\Seq_1\\Processed_2"
+# line_dir = "C:/Users/tw9616/Documents/PostDoc/Permanent Camera/PyCamPermanent/pycam/Data/Images/2022-05-20/Seq_2/Processed_7/line_0/"
+line_dir = "C:/Users/tw9616/Documents/PostDoc/Hawaii/Camera data/Silver/2022-07-26/_AM/later processing/Processed_1/line_0"
+# line_dir = "C:/Users/tw9616/Documents/PostDoc/Hawaii/Camera data/Gold/2022-07-27/Seq_1/Processed_2"
 
 
 
@@ -57,7 +57,7 @@ markers = ['.', 'x', '+', '2']
 
 # =========================================================
 # # LOAD non-LD-corrected data too
-# line_dir_no_LD = "C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\PyCamPermanent\\pycam\\Data\\Images\\2022-05-20\\Seq_2\\Processed_5\\line_0\\"
+# line_dir_no_LD = "C:/Users/tw9616/Documents/PostDoc/Permanent Camera/PyCamPermanent/pycam/Data/Images/2022-05-20/Seq_2/Processed_5/line_0/"
 # flow_types_no_LD = [x for x in os.listdir(line_dir_no_LD) if os.path.isdir(os.path.join(line_dir_no_LD, x))]
 # flow_dir = os.path.join(line_dir_no_LD, 'flow_glob')
 # # Find all data files

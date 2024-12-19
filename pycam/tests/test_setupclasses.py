@@ -8,7 +8,7 @@ from pycam.setupclasses import CameraSpecs
 import numpy as np
 
 class TestSpecs:
-    filename = '.\\test_data\\temp_io_test.txt'
+    filename = './test_data/temp_io_test.txt'
     def test_cam_specs_io(self):
         """Test basic IO functionality of the CameraSpecs object"""
         # Instantiate CameraSpecs object

@@ -4,7 +4,7 @@
 pycam_masterpi.py needs to be running on external host pi"""
 
 import sys
-sys.path.append('C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\PyCamPermanent\\')
+sys.path.append('C:/Users/tw9616/Documents/PostDoc/Permanent Camera/PyCamPermanent/')
 
 from pycam.networking.sockets import SocketClient, recv_comms
 from pycam.utils import read_file
@@ -15,7 +15,7 @@ import time
 import json
 
 # Read configuration file which contains important information for various things
-config = read_file('C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\PyCamPermanent\\pycam\\conf\\config.txt')
+config = read_file('C:/Users/tw9616/Documents/PostDoc/Permanent Camera/PyCamPermanent/pycam/conf/config.txt')
 
 host_ip = config[ConfigInfo.host_ip]
 port = int(config[ConfigInfo.port_ext])
