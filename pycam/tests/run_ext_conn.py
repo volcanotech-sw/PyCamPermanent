@@ -1,9 +1,12 @@
 # -*- coding:utf-8 -*-
 
 """Script to test running an external connection to pycam and passing it commands
-pycam_masterpi.py needs to be running on external host pi"""
+pycam_masterpi2.py needs to be running on external host pi"""
 
-PYCAM_PATH = "/home/fcs/Desktop/work/volcanoes/PyCamPermanent/"
+import os
+
+# PYCAM_PATH = os.path.expanduser("~")  # e.g., /home/pi on the pi
+PYCAM_PATH = os.path.expanduser("~/Desktop/work/volcanoes/PyCamPermanent/")
 
 import sys
 
@@ -20,10 +23,9 @@ import threading
 import queue
 import time
 import json
-import os
 
 # Read configuration file which contains important information for various things
-config = read_file(PYCAM_PATH + "/pycam/conf/config.txt")
+config = read_file(FileLocator.CONFIG_WINDOWS)
 
 ip_addr, port = read_network_file(FileLocator.NET_EXT_FILE_WINDOWS)
 
