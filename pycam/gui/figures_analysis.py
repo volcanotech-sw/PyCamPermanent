@@ -909,6 +909,13 @@ class ImageSO2(LoadSaveProcessingSettings):
         # Once removed, set the line to None
         self.PCS_lines_list[line_num] = None
 
+        if pyplis_worker.auto_nadeau_line and pyplis_worker.auto_nadeau_pcs == line_num:
+            pyplis_worker.config['auto_nadeau_pcs'] = 0
+            messagebox.showwarning(
+                "Reverting ICA line used for Nadeau line autogeneration",
+                "ICA line used for Nadeau line autogeneration removed\n"
+                "Reverting to ICA line 1 for Nadeau line autogeneration")
+
         if update_all:
             # Gather variables
             self.gather_vars()
@@ -4693,9 +4700,12 @@ class NadeauFlowSettings(LoadSaveProcessingSettings):
         row += 1
         lab = ttk.Label(auto_frame, text='ICA line:')
         lab.grid(row=row, column=0, padx=self.pdx, pady=self.pdy, sticky='w')
+        max_lines = len([line for line in self.pyplis_worker.PCS_lines_all if line is not None])
         pcs_spin = ttk.Spinbox(auto_frame, textvariable=self._auto_nadeau_pcs,
-                               from_=1, to=len(self.pyplis_worker.PCS_lines_all), command=self.run_nadeau_line)
+                               from_=1, to=max_lines, command=self.run_nadeau_line)
         pcs_spin.grid(row=row, column=1, sticky='ew', padx=self.pdx, pady=self.pdy)
+        pcs_spin.bind('<FocusOut>', self.run_nadeau_line)
+        pcs_spin.bind('<Return>', self.run_nadeau_line)
 
         # -------------------------------------------
         # Build figure displaying cross-correlation
@@ -4956,7 +4966,7 @@ class NadeauFlowSettings(LoadSaveProcessingSettings):
         if draw:
             self.q.put(1)
 
-    def run_nadeau_line(self):
+    def run_nadeau_line(self, event = None):
         """Instigates automatic generation of the Nadeau line and plots current line pased on this"""
         # Update pyplis_worker config
         self.gather_vars(update_pyplis=True)
