@@ -1392,7 +1392,7 @@ if __name__ == '__main__':
     with open(args.config, "r") as file:
         config = yaml.safe_load(file)
 
-    ref_paths = {'SO2': {'path': './pycam/doas/calibration/SO2_295K.txt', 'value': 1.0e16},  # Value is the inital estimation of CD
+    ref_paths = {'SO2': {'path': './pycam/doas/calibration/SO2_293K.txt', 'value': 1.0e16},  # Value is the inital estimation of CD
                  'O3': {'path': './pycam/doas/calibration/O3_223K.txt', 'value': 1.0e19},
                  'Ring': {'path': './pycam/doas/calibration/Ring.txt', 'value': 0.1}
                  }
