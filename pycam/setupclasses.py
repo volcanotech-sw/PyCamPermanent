@@ -51,10 +51,10 @@ class MetaFileLocator(type):
         if attr.endswith("_PI") and not running_on_pi():
             # this should be a _WINDOWS instead
             attr = attr[:-3] + "_WINDOWS"
-            print(f"Using instead to {attr}")
+            print(f"Using instead {attr}")
         elif attr.endswith("_WINDOWS") and running_on_pi():
             # this should be a _PI instead
-            print(f"Using instead to {attr}")
+            print(f"Using instead {attr}")
             attr = attr[:-8] + "_PI"
 
         try:

@@ -166,7 +166,7 @@ def format_time(time_obj, fmt):
     # return time_obj.isoformat().replace(':', '')
 
 
-def kill_process(process='pycam_camera'):
+def kill_process(process='pycam_master2'):
     """Kills process on raspberry pi machine
 
     Parameters

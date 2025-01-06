@@ -4,13 +4,9 @@
 pycam_masterpi2.py needs to be running on external host pi"""
 
 import os
-
-# PYCAM_PATH = os.path.expanduser("~")  # e.g., /home/pi on the pi
-PYCAM_PATH = os.path.expanduser("~/Desktop/work/volcanoes/PyCamPermanent/")
-
 import sys
 
-sys.path.append(PYCAM_PATH)
+sys.path.append(os.path.expanduser("~"))  # e.g., /home/pi on the pi
 
 from pycam.networking.sockets import (
     SocketClient,

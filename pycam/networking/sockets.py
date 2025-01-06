@@ -452,7 +452,7 @@ class SocketMeths(CommsFuncs):
 
                 # Sockets are blocking, so if we receive no data it means the socket has been closed - so raise error
                 if len(received) == 0:
-                    raise socket.error
+                    raise ConnectionResetError("No data received")
 
                 self.data_buff += received
 
@@ -526,8 +526,8 @@ class SocketClient(SocketMeths):
                 self.send_handshake()
 
         except Exception as e:
-            with open(FileLocator.LOG_PATH_PI + 'client_socket_error.log', 'a') as f:
-                f.write('ERROR: ' + str(e) + '\n')
+            with open(FileLocator.ERROR_LOG_PI, 'a') as f:
+                f.write(time.strftime("%Y-%m-%dT%H:%M:%S%z", time.gmtime()) + ' ERROR: ' + str(e) + '\n')
         return
 
     def connect_socket_timeout(self, timeout=None):
@@ -552,7 +552,7 @@ class SocketClient(SocketMeths):
         event.set()
 
         # If we get to allotted time and no connection has been made we raise a connection error
-        raise ConnectionError
+        raise ConnectionError("Timed out trying to connect")
 
     def connect_socket_try_all(self, timeout=None, port_list=None):
         """Trys all possible socket ports form a list of port numbers"""
@@ -1395,18 +1395,6 @@ class SocketServer(SocketMeths):
                 )
                 self.close_connection(conn)
 
-
-# ====================================================================
-# Socket error classes
-class HeaderMessageError(Exception):
-    """Error raised if we have an error in decoding the header"""
-    pass
-
-
-class SaveSocketError(Exception):
-    """Error raised if we have an error in decoding the header"""
-    pass
-# =====================================================================
 
 # ======================================================================
 # CONNECTION CLASSES
