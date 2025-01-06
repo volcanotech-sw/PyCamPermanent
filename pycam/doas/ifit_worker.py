@@ -415,7 +415,7 @@ class IFitWorker(SpecWorker):
         if self._start_stray_pix is None or self._end_stray_pix is None:
             self.start_stray_wave = self.start_stray_wave
             self.end_stray_wave = self.end_stray_wave
-
+        print(f'DARK CORRECTED STATUS: {self.dark_corrected_plume}')
         if not self.dark_corrected_plume:
             if self.dark_spec is None:
                 print('Warning! No dark spectrum present, processing without dark subtraction')
@@ -1398,11 +1398,13 @@ if __name__ == '__main__':
                  }
 
     # Create ifit object
-    ifit_worker = IFitWorker(frs_path=args.frs_path, species=ref_paths, dark_dir=config['dark_img_dir'])
+    ifit_worker = IFitWorker(species=ref_paths, dark_dir=config['dark_img_dir'])
     ifit_worker.load_ils(config['ILS_path'])  # Load ILS
+    ifit_worker.load_ld_lookup(config['ld_lookup_1'], fit_num=0)
+    ifit_worker.load_ld_lookup(config['ld_lookup_2'], fit_num=1)
+    ifit_worker.corr_light_dilution = 0.0
     ifit_worker.load_dir(config['spec_dir'], plot=False)  # Load spectra directory
     ifit_worker.get_wavelengths(config)
     ifit_worker.get_shift(config)
-    ifit_worker.doas_outdir = args.doas_out_dir
     # Process directory
     ifit_worker.start_processing_threadless(Path(config['spec_dir']))
