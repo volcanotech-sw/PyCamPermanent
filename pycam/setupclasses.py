@@ -8,6 +8,8 @@ Setup classes for defining default parameters or loading in parameters from file
 import warnings
 import numpy as np
 import numpy.typing
+import os
+import platform
 from .utils import check_filename
 
 
@@ -18,7 +20,63 @@ pycam_details = {
     }
 
 
-class FileLocator:
+def running_on_pi() -> bool:
+    if not platform.machine() == 'aarch64':
+        return False
+
+    if not platform.system() == 'Linux':
+        return False
+
+    # should be arm and Linux at this point, now check for the pi-specific stock kernel
+    if 'rpt' in os.uname()[3]:
+        return True
+
+    return False
+
+
+class MetaFileLocator(type):
+    pass
+
+    def __getattribute__(cls, attr):
+        """
+        Intercept calls for attributes
+        If on the pi return the _PI version
+        If on anything else return the _WINDOWS version
+        If neither exist return the version with out anything if it exists
+        Otherwise raise an AttributeError
+        """
+
+        # check for architecture (this will probably fail on mac)
+
+        if attr.endswith("_PI") and not running_on_pi():
+            # this should be a _WINDOWS instead
+            attr = attr[:-3] + "_WINDOWS"
+            print(f"Using instead to {attr}")
+        elif attr.endswith("_WINDOWS") and running_on_pi():
+            # this should be a _PI instead
+            print(f"Using instead to {attr}")
+            attr = attr[:-8] + "_PI"
+
+        try:
+            return super().__getattribute__(attr)
+        except AttributeError:
+            # that attribute name didn't work, instead try for the base name
+            print(f"Failed to find attribute {attr}", end="")
+            if not attr.endswith("_PI") and not attr.endswith("_WINDOWS"):
+                # try the attribute with the current os appended
+                if running_on_pi():
+                    attr = attr + "_PI"
+                else:
+                    attr = attr + "_WINDOWS"
+            else:
+                # try the attribute without the os appended
+                attr = "_".join(attr.split("_")[:-1])
+            print(f", trying {attr} instead")
+
+        return super().__getattribute__(attr)
+
+
+class FileLocator(metaclass=MetaFileLocator):
     """Defines locations of important files"""
     PYCAM_ROOT_PI = '/home/pi/pycam'                               # Root to pycam on Pis from home directory
     # PYCAM_ROOT_WINDOWS = 'C:/Users/tw9616/Documents/PostDoc/Permanent Camera/PyCamPermanent/pycam'  # Root to pycam on Windows machine
