@@ -61,7 +61,7 @@ class PyMenu:
         self.menus[tab] = tk.Menu(self.frame, tearoff=0)
 
         # Load options
-        self.load_frame = LoadFrame(self.parent, pyplis_work=pyplis_worker, doas_work=doas_worker)
+        self.load_frame = LoadFrame(self.parent, pyplis_work=pyplis_worker, doas_work=self.doas_worker)
         self.submenu_load = tk.Menu(self.frame, tearoff=0)
         self.menus[tab].add_cascade(label='Load', menu=self.submenu_load)
         self.submenu_load.add_command(label='Load config file', command=self.load_frame.load_config_file)
@@ -206,8 +206,8 @@ class PyMenu:
         keys.append(tab)
         self.menus[tab] = tk.Menu(self.frame, tearoff=0)
 
-        self.menus[tab].add_command(label='Load DOAS Results', command=doas_worker.load_results)
-        self.menus[tab].add_command(label='Load DOAS Directory', command=doas_worker.load_dir)
+        self.menus[tab].add_command(label='Load DOAS Results', command=self.doas_worker.load_results)
+        self.menus[tab].add_command(label='Load DOAS Directory', command=self.doas_worker.load_dir)
         self.menus[tab].add_command(label='Process DOAS', command=self.thread_doas_processing)
         self.menus[tab].add_separator()
 
@@ -245,7 +245,7 @@ class PyMenu:
 
     def thread_doas_processing(self):
         """Threads DOAS processsing so gui frees up"""
-        thread = threading.Thread(target=doas_worker.start_processing_threadless, args=())
+        thread = threading.Thread(target=self.doas_worker.start_processing_threadless, args=())
         thread.daemon = True
         thread.start()
 
@@ -380,7 +380,7 @@ class PyMenu:
     def stop_sequence_processing(self):
         """Stops sequence processing of SO2 camera and DOAS"""
         pyplis_worker.stop_sequence_processing()
-        doas_worker.stop_sequence_processing()
+        self.doas_worker.stop_sequence_processing()
 
     def start_watching_dir(self):
         try:
