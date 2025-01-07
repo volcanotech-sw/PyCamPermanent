@@ -24,9 +24,11 @@ def run_pycam(ip, auto_capt=1):
                                              "Running this on a machine which already has the script running could cause issues"):
         print('Running pycam_masterpi on {}'.format(ip))
 
-        # Path to executable
-        # pycam_path = FileLocator.SCRIPTS + 'pycam_masterpi.py'
-        pycam_path = FileLocator.SCRIPTS + 'start_pycam.sh'
+        # Read configuration file which contains important information for various things
+        config = read_file(FileLocator.CONFIG_WINDOWS)
+
+        # Path to start_script executable
+        pycam_path = config[ConfigInfo.start_script]
 
         try:
             # Open ssh connection
@@ -37,12 +39,10 @@ def run_pycam(ip, auto_capt=1):
             return
 
         # Run ssh command
-        # stdin, stderr, stdout = ssh_cmd(connection, 'python3 {} {}'.format(pycam_path, auto_capt), background=True)
-        stdin, stderr, stdout = ssh_cmd(connection, '{} {}'.format(pycam_path, auto_capt), background=True)
+        _, stderr, stdout = ssh_cmd(connection, 'nohup /usr/bin/python3 {} {} > /dev/null 2>&1 &'.format(pycam_path, auto_capt), background=False)
 
-        # print('STDIN: {}'.format(stdin))
-        # print('STDERR: {}'.format(stderr))
-        # print('STDOUT: {}'.format(stdout))
+        # print('STDERR: {}'.format(stderr.read().decode()))
+        # print('STDOUT: {}'.format(stdout.read().decode()))
 
         # Close ssh connection
         close_ssh(connection)

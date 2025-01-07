@@ -339,6 +339,11 @@ def truncate_path(path: str, max_length: int) -> str:
     else:
         return path
 
+def append_to_log_file(log_file: str, s: str):
+    print(s)
+    with open(log_file, "a", newline="\n") as f:
+        f.write(s + "\n")
+
 class StorageMount:
     """
     Basic class to control the handling of mounting external memory and storing details of mounted drive

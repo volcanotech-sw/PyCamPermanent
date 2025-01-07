@@ -50,12 +50,14 @@ class MetaFileLocator(type):
 
         if attr.endswith("_PI") and not running_on_pi():
             # this should be a _WINDOWS instead
-            attr = attr[:-3] + "_WINDOWS"
-            print(f"Using instead {attr}")
+            attr_new = attr[:-3] + "_WINDOWS"
+            print(f"Using {attr_new} instead of {attr}")
+            attr = attr_new
         elif attr.endswith("_WINDOWS") and running_on_pi():
             # this should be a _PI instead
-            print(f"Using instead {attr}")
-            attr = attr[:-8] + "_PI"
+            attr_new = attr[:-8] + "_PI"
+            print(f"Using {attr_new} instead of {attr}")
+            attr = attr_new
 
         try:
             return super().__getattribute__(attr)
@@ -112,9 +114,7 @@ class FileLocator(metaclass=MetaFileLocator):
     SPEC_PATH_WINDOWS = DAT_DIR_WINDOWS + 'Spectra/'
 
     SCRIPTS = PYCAM_ROOT_PI + '/scripts/'
-    START_PYCAM = SCRIPTS + 'start_pycam.sh'
     CHECK_RUN = SCRIPTS + 'check_run.py'
-    REMOTE_PI_RUN_PYCAM = SCRIPTS + 'remote_pi_run_pycam.py'
     MOUNT_SSD_SCRIPT = SCRIPTS + 'mount_ssd.py'
     UNMOUNT_SSD_SCRIPT = SCRIPTS + 'unmount_ssd.py'
     CLEAR_SSD_SCRIPT = SCRIPTS + 'clear_ssd.py'
@@ -176,14 +176,10 @@ class ConfigInfo:
     start_script = 'start_script'
     stop_script = 'stop_script'
     master_script = 'master_script'
-    remote_scripts = 'remote_scripts'
-    local_scripts = 'local_scripts'
-    cam_script = 'cam_script'       # Tag for defining camera script to be run on pi
-    spec_script = 'spec_script'
-    cam_specs = 'cam_specs'
     dark_script = 'dark_script'
     temp_log = 'temp_log'
     disk_space_script = 'disk_space_script'
+    cam_specs = 'cam_specs'
 
     local_data_dir = 'local_data_dir'
 

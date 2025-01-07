@@ -29,5 +29,4 @@ do
 done
 
 # Write temperature to log file
-echo "$temperature" >> "$log_file"
-echo "$temperature"
+echo "$temperature" | tee -a "$log_file"
