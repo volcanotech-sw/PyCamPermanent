@@ -387,8 +387,6 @@ class PyplisWorker:
             # Value could be a string or list of strings, we want to do the same thing to both
             # but iterate over the list of strings.
             # Not the most elegent way to do this, but it'll do for now.
-            if config_value == "species_paths":
-                print("hello")
             if type(config_value) is str:
                 new_value = self.expand_check_path(config_value, config_dir, path_param)
                 raw_config[path_param] = new_value
