@@ -798,7 +798,9 @@ class LoadFrame(LoadSaveProcessingSettings):
         self.doas_worker.get_shift(pyplis_worker.config)
         self.main_gui.spec_wind.spec_frame.update_all()
         self.main_gui.spec_wind.doas_frame.update_vals()
-
+        species_paths = self.pyplis_worker.species_paths
+        for species in species_paths:
+            self.doas_worker.load_ref_spec(species_paths[species]['path'], species, value=species_paths[species]['value'], update=True)
         if pyplis_worker.missing_path_param_warn is not None:
             messagebox.showwarning("Missing path params not updated",
                                    pyplis_worker.missing_path_param_warn)
