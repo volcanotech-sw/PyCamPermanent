@@ -75,6 +75,17 @@ end_fit_wave: 318
 start_fit_wave_ld: 312
 end_fit_wave_ld: 322
 shift: 0
+species_paths:
+  SO2:
+    path: ./pycam/doas/calibration/SO2_293K.txt
+    value: 1.0e16
+  O3:
+    path: ./pycam/doas/calibration/O3_223K.txt
+    value: 1.0e19
+  Ring:
+    path: ./pycam/doas/calibration/Ring.txt
+    value: 0.1
+
 
 # Plume speed algorithms
 flow_raw: 1
