@@ -13,8 +13,19 @@ try:
 except ImportError:
     msg = 'seatease module not found, unable to use virtual spectrometer'
     logging.debug(msg)
-    
-import seabreeze.spectrometers as sb
+
+try:
+    import seabreeze
+
+    seabreeze.use("pyseabreeze")
+    import seabreeze.spectrometers as sb
+except ModuleNotFoundError:
+    warnings.warn("Working on machine without seabreeze, trying avaspecvolc")
+
+    try:
+        import avaspecvolc.avaspecvolc as sb
+    except ModuleNotFoundError:
+        warnings.warn("Working on machine without seabreeze or ")
 
 class Spectrometer():
     

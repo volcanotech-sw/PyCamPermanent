@@ -20,8 +20,9 @@ This is intended to replace:
 
 # Update python path so that pycam module can be found
 import sys
+import os
 
-sys.path.append("/home/pi/")
+sys.path.append(os.path.expanduser("~"))  # e.g., /home/pi on the pi
 
 from pycam.controllers import Camera, Spectrometer
 from pycam.io_py import save_img, save_spectrum
@@ -47,10 +48,9 @@ import socket
 
 cam1 = Camera(band="on", filename=FileLocator.CONFIG_CAM)  # , ignore_device=True)
 cam2 = Camera(band="off", filename=FileLocator.CONFIG_CAM)
-# spec = Spectrometer(ignore_device=True, filename=FileLocator.CONFIG_SPEC)
+spec = Spectrometer(filename=FileLocator.CONFIG_SPEC)
 
-instruments = [cam1, cam2]
-# instruments = [cam1, cam2, spec]
+instruments = [cam1, cam2, spec]
 
 # -----------------------------------------------------------------
 # Setup shutdown procedure
@@ -74,7 +74,9 @@ else:
 
 for instrument in instruments:
     # Initialise camera (may need to set shutter speed first?)
-    instrument.initialise()
+    # Spectrometer is initialised inside its object creation
+    if isinstance(instrument, Camera):
+        instrument.initialise()
 
     # Setup thread for controlling camera capture
     instrument.interactive_capture()
@@ -103,6 +105,7 @@ sock_serv_ext.get_port()
 write_file(
     FileLocator.NET_EXT_FILE,
     {"ip_address": sock_serv_ext.listen_ip, "port": sock_serv_ext.port},
+    description="File holding network information for external communications"
 )
 
 # Setup external communication port
@@ -155,10 +158,8 @@ while running:
                     )
 
                 elif isinstance(instrument, Spectrometer):
-                    [filename, image] = instrument.spec_q.get(False)
-
-                    # TODO save spectrums
-                    # see recv_spec, io_py.save_spec
+                    [filename, spectrum] = instrument.spec_q.get(False)
+                    save_spectrum(instrument.wavelengths, spectrum, filename)
 
                 # TODO save/copy to backup location
 

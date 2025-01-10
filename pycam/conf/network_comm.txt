@@ -1,5 +1,0 @@
-# -*- coding: utf-8 -*-
-# File holding network information for communications
-
-ip_address=169.254.10.180       # IP address of server pi (server pi runs the spectrometer)
-port=12345                      # Port number for communications

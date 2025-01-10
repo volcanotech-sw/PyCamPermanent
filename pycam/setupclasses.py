@@ -5,12 +5,13 @@ Setup classes for defining default parameters or loading in parameters from file
 > PiCam attributes
 > Spectrometer attributes
 """
+from pycam.utils import check_filename
+
 import warnings
 import numpy as np
 import numpy.typing
 import os
 import platform
-from .utils import check_filename
 
 
 pycam_details = {
@@ -184,7 +185,177 @@ class ConfigInfo:
     local_data_dir = 'local_data_dir'
 
 
-class CameraSpecs:
+class SpecsBase:
+    """
+    Shared parts of the CameraSpecs and SpecSpecs classes
+    """
+
+    filename: None | str
+    instrument_type: str
+    default_filename: str
+
+    attr_to_io: dict[str, list[str]]
+    save_attrs: list
+
+    _bit_depth: int
+    _max_DN: int
+
+    @property
+    def bit_depth(self) -> int:
+        return self._bit_depth
+
+    @bit_depth.setter
+    def bit_depth(self, value: int):
+        """Update _max_DN when bit_depth is defined (two are intrinsically linked)"""
+        self._bit_depth = value
+        self._max_DN = (2**self.bit_depth) - 1
+
+    def extract_info(self, line: str) -> str:
+        """Extracts information from line of text based on typical text format for picam files"""
+        return line.split("=")[1].split()[0]
+
+    def load_specs(self, filename: str):
+        """Load specifications from file
+
+        Parameters
+        ----------
+        filename : str
+            path to configuration (*.txt) file
+        """
+        # Run check to ensure filename is as expected
+        check_filename(filename, "txt")
+
+        self.filename = filename
+
+        with open(self.filename, "r") as f:
+            # Flag for if we are currently reading in a dictionary
+            dict_open = False
+
+            # Loop through every line of the file to check for keywords
+            for line in f:
+
+                # Ignore lines beginning with #
+                if line[0] == "#":
+                    continue
+
+                # Dictionary reading (works for string values only)
+                if "DICT=" in line:
+
+                    # Extract dictionary attribute name and start clean dictionary
+                    dict_attr = self.extract_info(line)
+                    setattr(self, dict_attr, dict())
+
+                    # Flag that a dictionary is now open
+                    dict_open = True
+
+                    continue  # Don't attempt to read any more of line
+
+                if dict_open:
+
+                    # Finish reading of dictionary
+                    if "DICT_END" in line:
+                        dict_open = False
+
+                    # Extract dictionary key and set it to the specified value
+                    else:
+                        vals = line.split("=")
+                        getattr(self, dict_attr)[vals[0]] = vals[1].split()[0]
+
+                else:
+                    # Extract attribute name
+                    attr = line.split("=")[0]
+
+                    # Check name against attributes stored in attr_to_io and correctly assign value
+                    # (test for hidden variables too)
+                    if (
+                        attr in self.attr_to_io["int"]
+                        or ("_" + attr) in self.attr_to_io["int"]
+                    ):
+                        setattr(self, attr, int(self.extract_info(line)))
+
+                    elif (
+                        attr in self.attr_to_io["float"]
+                        or ("_" + attr) in self.attr_to_io["float"]
+                    ):
+                        setattr(self, attr, float(self.extract_info(line)))
+
+                    elif (
+                        attr in self.attr_to_io["str"]
+                        or ("_" + attr) in self.attr_to_io["str"]
+                    ):
+                        setattr(self, attr, self.extract_info(line))
+
+                    elif (
+                        attr in self.attr_to_io["bool"]
+                        or ("_" + attr) in self.attr_to_io["bool"]
+                    ):
+                        val = self.extract_info(line)
+                        if val == "True" or val == "1":
+                            setattr(self, attr, True)
+                        elif val == "False" or val == "0":
+                            setattr(self, attr, False)
+                        else:
+                            default_val = getattr(self.__class__(), "attr")
+                            warnings.warn(
+                                "Unexpected value for {}: {}. Setting to default {}".format(
+                                    attr, val, default_val
+                                )
+                            )
+                            setattr(self, attr, default_val)
+
+    def save_specs(self, filename: str | None = None):
+        """Save specifications to file
+
+        Parameters
+        ----------
+        filename : str
+            path to configuration (*.txt) file
+        """
+        if filename is None:
+            filename = self.default_filename
+
+        # Run check to ensure filename is as expected
+        check_filename(filename, "txt")
+
+        self.filename = filename
+
+        with open(filename, "w") as f:
+            # Write header
+            f.write("# -*- coding: utf-8 -*-\n")
+            f.write(f"# File holding {self.instrument_type} specifications\n")
+
+            # Loop through object attributes and save them if they aren't None
+            for attr in self.save_attrs:
+                # If we are saving a hidden variable (due to property decorator) remove the preceding underscore
+                if attr[0] == "_":
+                    attr = attr[1:]
+
+                # Get attribute from object
+                attr_val = getattr(self, attr)
+
+                # Attribute is ignored if set to None
+                if attr_val is None:
+                    pass
+
+                # If the attribute is a dictionary we need to loop through the dict and save each value
+                elif isinstance(attr_val, dict):
+
+                    # Write attribute name to file
+                    f.write("DICT={}\n".format(attr))
+
+                    # Loop through dictionary and keys and values to file
+                    for key in attr_val:
+                        f.write("{}={}\n".format(key, attr_val[key]))
+
+                    # End dictionary write with this
+                    f.write("DICT_END\n")
+
+                # Save everything else in simple format
+                else:
+                    f.write("{}={}\n".format(attr, attr_val))
+
+
+class CameraSpecs(SpecsBase):
     """Object containing information on camera setup and acquisition settings
 
     Parameters
@@ -194,19 +365,14 @@ class CameraSpecs:
         are use
     """
 
-    filename: None | str
-
-    _bit_depth: int
-    _max_DN: int
     _analog_gain: float
     _shutter_speed: int
     _ss_idx: int
 
-    attr_to_io: dict
-    save_attrs: list
-
     def __init__(self, filename=None):
         self.filename = filename    # Filename for loading specifications
+        self.instrument_type = "camera"
+        self.default_filename = FileLocator.CONFIG_CAM
 
         # Hidden variables
         self._bit_depth = 0  # Hidden bit depth holder
@@ -214,6 +380,7 @@ class CameraSpecs:
         self._analog_gain = 1
         self._shutter_speed = 1000
         self._ss_idx = 0
+        # note the ss_idx here should match the shutter speed against the ss_list set later
 
         self.attr_to_io = {'int': ['pix_num_x', 'pix_num_y', '_bit_depth', '_shutter_speed', 'raw_num_x', 'raw_num_y'],
                            'float': ['pix_size_x', 'pix_size_y', 'fov_x', 'fov_y', 'framerate', '_analog_gain',
@@ -258,7 +425,7 @@ class CameraSpecs:
     file_ss_loc: int
     file_type_loc: int
 
-    ss_list:  numpy.typing.NDArray[np.integer]
+    ss_list: numpy.typing.NDArray[np.integer]
 
     framerate: float
     auto_ss: bool
@@ -325,16 +492,6 @@ class CameraSpecs:
         self.saturation_rows = int(self.pix_num_y / 2)   # rows to extract for saturation check (don't want to check lower rows as snow may be present (if negative, rows start from bottom and work up, postive -top-down)
 
     @property
-    def bit_depth(self) -> int:
-        return self._bit_depth
-
-    @bit_depth.setter
-    def bit_depth(self, value: int):
-        """Update _max_DN when bit_depth is defined (two are intrinsically linked)"""
-        self._bit_depth = value
-        self._max_DN = (2 ** self.bit_depth) - 1
-
-    @property
     def analog_gain(self) -> float:
         return self._analog_gain
 
@@ -350,7 +507,7 @@ class CameraSpecs:
     def shutter_speed(self, ss: int):
         """Update ss_idx to nearest shutter_speed value in ss_list"""
         self._shutter_speed = ss
-        self._ss_idx = np.argmin(np.abs(self.ss_list - ss))
+        self._ss_idx = int(np.argmin(np.abs(self.ss_list - ss)))
 
     @property
     def ss_idx(self) -> int:
@@ -359,7 +516,8 @@ class CameraSpecs:
     @ss_idx.setter
     def ss_idx(self, value: int):
         """Update shutter speed to value in ss_list defined by ss_idx when ss_idx is changed
-        Accesses hidden variable _shutter_speed directly to avoid causing property method being called"""
+        Accesses hidden variable _shutter_speed directly to avoid causing property method being called
+        """
         # Check that we have been passed a valid index, if not we adjust it appropriately
         if value < 0:
             value = 0
@@ -373,144 +531,25 @@ class CameraSpecs:
         Calculates focal length from FOV and detector dimensions
         Returns: focal length (m)
         """
-        fl_x = (float(self.pix_num_x * self.pix_size_x) / 2.0) / np.tan(np.deg2rad(self.fov_x / 2.0))
-        fl_y = (float(self.pix_num_y * self.pix_size_y) / 2.0) / np.tan(np.deg2rad(self.fov_y / 2.0))
+        fl_x = (float(self.pix_num_x * self.pix_size_x) / 2.0) / np.tan(
+            np.deg2rad(self.fov_x / 2.0)
+        )
+        fl_y = (float(self.pix_num_y * self.pix_size_y) / 2.0) / np.tan(
+            np.deg2rad(self.fov_y / 2.0)
+        )
 
         # Check focal lengths calculated from 2 dimensions are roughly equal (within 5%)
         if fl_x < 0.95 * fl_y or fl_x > 1.05 * fl_y:
-            raise ValueError('Focal lengths calculated from x and y dimensions do not agree within a reasonable range')
+            raise ValueError(
+                "Focal lengths calculated from x and y dimensions do not agree within a reasonable range"
+            )
         else:
             # Calculate average focal length and return
             fl = (fl_x + fl_y) / 2.0
             return fl
 
-    def extract_info(self, line: str) -> str:
-        """Extracts information from line of text based on typical text format for picam files"""
-        return line.split('=')[1].split()[0]
 
-    def load_specs(self, filename: str):
-        """Load camera specifications from file
-
-        Parameters
-        ----------
-        filename : str
-            path to configuration (*.txt) file
-        """
-        # Run check to ensure filename is as expected
-        check_filename(filename, 'txt')
-
-        self.filename = filename
-
-        with open(self.filename, 'r') as f:
-            # Flag for if we are currently reading in a dictionary
-            dict_open = False
-
-            # Loop through every line of the file to check for keywords
-            for line in f:
-
-                # Ignore lines beginning with #
-                if line[0] == '#':
-                    continue
-
-                # Dictionary reading (works for string values only)
-                if 'DICT=' in line:
-
-                    # Extract dictionary attribute name and start clean dictionary
-                    dict_attr = self.extract_info(line)
-                    setattr(self, dict_attr, dict())
-
-                    # Flag that a dictionary is now open
-                    dict_open = True
-
-                    continue    # Don't attempt to read any more of line
-
-                if dict_open:
-
-                    # Finish reading of dictionary
-                    if 'DICT_END' in line:
-                        dict_open = False
-
-                    # Extract dictionary key and set it to the specified value
-                    else:
-                        vals = line.split('=')
-                        getattr(self, dict_attr)[vals[0]] = vals[1].split()[0]
-
-                else:
-                    # Extract attribute name
-                    attr = line.split('=')[0]
-
-                    # Check name against attributes stored in attr_to_io and correctly assign value
-                    # (test for hidden variables too)
-                    if attr in self.attr_to_io['int'] or ('_' + attr) in self.attr_to_io['int']:
-                        setattr(self, attr, int(self.extract_info(line)))
-
-                    elif attr in self.attr_to_io['float'] or ('_' + attr) in self.attr_to_io['float']:
-                        setattr(self, attr, float(self.extract_info(line)))
-
-                    elif attr in self.attr_to_io['str'] or ('_' + attr) in self.attr_to_io['str']:
-                        setattr(self, attr, self.extract_info(line))
-
-                    elif attr in self.attr_to_io['bool'] or ('_' + attr) in self.attr_to_io['bool']:
-                        val = self.extract_info(line)
-                        if val == 'True' or val == '1':
-                            setattr(self, attr, True)
-                        elif val == 'False' or val == '0':
-                            setattr(self, attr, False)
-                        else:
-                            warnings.warn('Unexpected value for {}: {}. Setting to default {}'
-                                          .format(attr, val, getattr(CameraSpecs(), attr)))
-                            setattr(self, attr, getattr(CameraSpecs(), attr))
-
-    def save_specs(self, filename: str = FileLocator.CONFIG_CAM):
-        """Save camera specifications to file
-
-        Parameters
-        ----------
-        filename : str
-            path to save configuration (*.txt) file
-        """
-        # Run check to ensure filename is as expected
-        check_filename(filename, 'txt')
-
-        self.filename = filename
-
-        with open(filename, 'w') as f:
-            # Write header
-            f.write('# -*- coding: utf-8 -*-\n')
-            f.write('# File holding camera specifications\n')
-
-            # Loop through object attributes and save them if they aren't None
-            for attr in self.save_attrs:
-                # If we are saving a hidden variable (due to property decorator) remove the preceding underscore
-                if attr[0] == '_':
-                    attr = attr[1:]
-
-                # Get attribute from object
-                attr_val = getattr(self, attr)
-
-                # Attribute is ignored if set to None
-                if attr_val is None:
-                    pass
-
-                # If the attribute is a dictionary we need to loop through the dict and save each value
-                elif isinstance(attr_val, dict):
-
-                    # Write attribute name to file
-                    f.write('DICT={}\n'.format(attr))
-
-                    # Loop through dictionary and keys and values to file
-                    for key in attr_val:
-                        f.write('{}={}\n'.format(key, attr_val[key]))
-
-                    # End dictionary write with this
-                    f.write('DICT_END\n')
-
-                # Save everything else in simple format
-                else:
-                    f.write('{}={}\n'.format(attr, attr_val))
-
-
-class SpecSpecs:
+class SpecSpecs(SpecsBase):
     """Object containing information on spectrometer setup and acquisition settings
 
     Parameters
@@ -519,29 +558,82 @@ class SpecSpecs:
         path to configuration file (*.txt) to read in camera parameters. If no file is provided the internal defaults
         are use
     """
+
+    _int_time: int
+    _int_time_idx: int
+
     def __init__(self, filename=None):
-        self.filename = filename    # Filename for loading specifications
+        self.filename = filename  # Filename for loading specifications
+        self.instrument_type = "spectrometer"
+        self.default_filename = FileLocator.CONFIG_SPEC
 
         # Hidden variables
-        self._bit_depth = None  # Hidden bit depth holder
-        self._max_DN = None     # Maximum digital number of images (associated with bit depth)
-        self._int_time_idx = None
+        self._bit_depth = 0  # Hidden bit depth holder
+        self._max_DN = 0  # Maximum digital number of images (associated with bit depth)
+        self._int_time = 6
+        self._int_time_idx = 0
+        # note the int_time_idx here should match the in time against the int_list set later
 
         # Attributes for spectrometer specifications IO to/from file
-        self.attr_to_io = {'int': ['pix_num', 'coadd', '_bit_depth', 'saturation_pixels'],
-                           'float': ['fov', 'framerate', 'int_time', 'wavelength_min', 'wavelength_max',
-                                     'min_saturation', 'max_saturation', 'file_int_units'],
-                           'str': ['save_path', 'file_ext', 'file_datestr', 'file_ss'],
-                           'dict': ['file_type'],
-                           'bool': ['auto_int']
-                           }
-        self.save_attrs = [x for a in self.attr_to_io.values() for x in a]      # Unpacking dict vals into flat list
+        self.attr_to_io = {
+            "int": ["pix_num", "coadd", "_bit_depth", "saturation_pixels", "int_time"],
+            "float": [
+                "fov",
+                "framerate",
+                "wavelength_min",
+                "wavelength_max",
+                "min_saturation",
+                "max_saturation",
+                "file_int_units",
+            ],
+            "str": ["save_path", "file_ext", "file_datestr", "file_ss"],
+            "dict": ["file_type"],
+            "bool": ["auto_int"],
+        }
+        self.save_attrs = [
+            x for a in self.attr_to_io.values() for x in a
+        ]  # Unpacking dict vals into flat list
 
-        self._default_specs()       # Load default specs to start
+        self._default_specs()  # Load default specs to start
 
         # Load configuration from text file if it is provided
         if isinstance(self.filename, str):
             self.load_specs(self.filename)
+
+    model: str
+    fov: float
+    ILS: None | numpy.typing.NDArray[np.double]
+    fibre_diameter: float
+    pix_num: int
+
+    save_path: str
+    file_ext: str
+    file_ss: str
+    file_type: dict
+    file_ag: str
+    file_datestr: str
+    file_coadd: str
+
+    file_date_loc: int
+    file_ss_loc: int
+    file_coadd_loc: int
+    file_type_loc: int
+
+    int_list: numpy.typing.NDArray[np.integer]
+
+    _int_limit_lower: int
+    _int_limit_upper: int
+    file_int_units: float
+    min_coadd: int
+    max_coadd: int
+    _coadd: int
+    framerate: float
+
+    auto_int: bool
+    min_saturation: float
+    max_saturation: float
+    saturation_wavelength_range: list[float]
+    saturation_pixels: int
 
     def _default_specs(self):
         """Define spectrometer default specs > Flame-S"""
@@ -549,7 +641,7 @@ class SpecSpecs:
         self.model = "Flame-S"      # Spectrometer model
         self.fov = 1                # Field of view fo spectrometer (radius of FOV)
         self.ILS = None             # Number array holding instrument line shape (possibly don't hold this here?)
-        self.fiber_diameter = 1e-3  # Diameter of optical fiber
+        self.fibre_diameter = 1e-3  # Diameter of optical fibre
         self.pix_num = 2048         # Number of pixels
         self.bit_depth = 16         # Bit depth of spectrometer detector
 
@@ -566,27 +658,6 @@ class SpecSpecs:
         self.file_coadd_loc = 2     # Coadd location in filename
         self.file_type_loc = 3      # File type location in filename
 
-
-        # Acquisition settings
-        # Set integration time (ALL IN MICROSECONDS)
-        self._int_limit_lower = 100  # Lower integration time limit
-        self._int_limit_upper = 20000000  # Upper integration time limit
-        self._int_time = 1000000       # Starting integration time
-        self.file_int_units = 1e-3  # Shutter speed units relative to seconds
-        self.min_coadd = 1
-        self.max_coadd = 100
-        self.coadd = 1            # Number of spectra to coadd
-        self.framerate = 0.25           # Framerate of acquisitions (Hz)
-        self.wavelengths = None         # Wavelengths (nm)
-        self.spectrum = None            # Spectrum
-        self.spectrum_filename = None   # Filename for spectrum
-
-        self.auto_int = True        # Bool for requesting automated integration time adjustment
-        self.min_saturation = 0.7   # Minimum saturation accepted before adjusting shutter speed (if auto_ss is True)
-        self.max_saturation = 0.8   # Maximum saturation accepted before adjusting shutter speed (if auto_ss is True)
-        self.saturation_range = [300, 340]  # Range of wavelengths used in checking integration time
-        self.saturation_pixels = 2  # Number of pixels to check
-
         # Predefined list of integration times for automatic exposure adjustment
         # Range adjusted for SR4 compatibility in seabreeze (6ms - 10000ms; 6000us - 10000000us)
         self.int_list = np.concatenate((np.arange(6, 10, 1),
@@ -596,172 +667,126 @@ class SpecSpecs:
                                         np.arange(500, 1000, 100),
                                         np.arange(10 ** 3, 10 ** 4, 500)))
 
-    def estimate_focal_length(self):
+        # Acquisition settings
+        # Set integration time (ALL IN MICROSECONDS)
+        self._int_limit_lower = 100       # Lower integration time limit (us)
+        self._int_limit_upper = 20000000  # Upper integration time limit (us)
+        self.int_time = 1000              # Starting integration time (ms)
+        self.file_int_units = 1e-3        # Shutter speed units relative to seconds
+        self.min_coadd = 1
+        self.max_coadd = 100
+        self.coadd = 1            # Number of spectra to coadd
+        self.framerate = 0.25           # Framerate of acquisitions (Hz)
+
+        self.auto_int = True        # Bool for requesting automated integration time adjustment
+        self.min_saturation = 0.7   # Minimum saturation accepted before adjusting shutter speed (if auto_ss is True)
+        self.max_saturation = 0.8   # Maximum saturation accepted before adjusting shutter speed (if auto_ss is True)
+        self.saturation_wavelength_range = [300, 340]  # Range of wavelengths used in checking integration time
+        self.saturation_pixels = 2  # Number of pixels to check
+
+    @property
+    def coadd(self) -> int:
+        return self._coadd
+
+    @coadd.setter
+    def coadd(self, coadd: int):
+        """Set coadding property"""
+        if coadd < self.min_coadd:
+            coadd = self.min_coadd
+        elif coadd > self.max_coadd:
+            coadd = self.max_coadd
+        self._coadd = int(coadd)
+
+    @property
+    def int_time(self) -> int:
+        return self._int_time // 1000  # Return time in milliseconds
+
+    @int_time.setter
+    def int_time(self, int_time: int):
+        """Set integration time
+
+        Parameters
+        ----------
+        int_time: int
+            Integration time for spectrometer, provided in milliseconds
         """
-        Calculates focal length assuming a single round fiber of defined dimensions
+        # Adjust to work in microseconds (class takes time in milliseconds) and ensure we have an <int>
+        int_time = int(int_time * 1000)
+
+        # Check requested integration time is acceptable
+        if int_time < self._int_limit_lower:
+            raise ValueError(
+                "Integration time below {}}us is not possible. "
+                "Attempted {}us".format(self._int_limit_lower, int_time)
+            )
+        elif int_time > self._int_limit_upper:
+            raise ValueError(
+                "Integration time above {}us is not possible. "
+                "Attempted: {}us".format(self._int_limit_upper, int_time)
+            )
+
+        self._int_time = int_time
+
+        # Adjust _int_time_idx to reflect the closest integration time to the current int_time
+        self._int_time_idx = int(np.argmin(np.abs(self.int_list - int_time)))
+
+    @property
+    def int_time_idx(self) -> int:
+        return self._int_time_idx
+
+    @int_time_idx.setter
+    def int_time_idx(self, value: int):
+        """Update integration time to value in int_list defined by int_time_idx when int_time_idx is changed
+        Accesses hidden variable _shutter_speed directly to avoid causing property method being called
+        """
+        # If index exceeds list length then we set it to the maximum
+        if value < 0:
+            value = 0
+        elif value > len(self.int_list) - 1:
+            value = len(self.int_list) - 1
+        # Use the setter to update the idx and adjust the spectrometer
+        self._int_time_idx = value
+        self._int_time = self.int_list[self.int_time_idx]
+
+    def estimate_focal_length(self) -> float:
+        """
+        Calculates focal length assuming a single round fibre of defined dimensions
         Returns: focal length (m)
         """
-        fl = (self.fiber_diameter / 2) / np.tan(np.deg2rad(self.fov / 2))
+        fl = (self.fibre_diameter / 2) / np.tan(np.deg2rad(self.fov / 2))
 
         return fl
 
-    def extract_info(self, line):
-        """Extracts information from line of text based on typical text format for picam files"""
-        return line.split('=')[1].split()[0]
-
-    def load_specs(self, filename):
-        """Load spectrometer specifications from file
-
-        Parameters
-        ----------
-        filename : str
-            path to configuration (*.txt) file
-        """
-        # Run check to ensure filename is as expected
-        check_filename(filename, 'txt')
-
-        self.filename = filename
-
-        with open(self.filename, 'r') as f:
-            # Flag for if we are currently reading in a dictionary
-            dict_open = False
-
-            # Loop through every line of the file to check for keywords
-            for line in f:
-
-                # Ignore lines beginning with #
-                if line[0] == '#':
-                    continue
-
-                # Dictionary reading (works for string values only)
-                if 'DICT=' in line:
-
-                    # Extract dictionary attribute name and start clean dictionary
-                    dict_attr = self.extract_info(line)
-                    setattr(self, dict_attr, dict())
-
-                    # Flag that a dictionary is now open
-                    dict_open = True
-
-                    continue    # Don't attempt to read any more of line
-
-                if dict_open:
-
-                    # Finish reading of dictionary
-                    if 'DICT_END' in line:
-                        dict_open = False
-
-                    # Extract dictionary key and set it to the specified value
-                    else:
-                        vals = line.split('=')
-                        getattr(self, dict_attr)[vals[0]] = vals[1].split()[0]
-
-                else:
-                    # Extract attribute name
-                    attr = line.split('=')[0]
-
-                    # Check name against attributes stored in attr_to_io and correctly assign value
-                    # (test for hidden variables too)
-                    if attr in self.attr_to_io['int'] or ('_' + attr) in self.attr_to_io['int']:
-                        setattr(self, attr, int(self.extract_info(line)))
-
-                    elif attr in self.attr_to_io['float'] or ('_' + attr) in self.attr_to_io['float']:
-                        setattr(self, attr, float(self.extract_info(line)))
-
-                    elif attr in self.attr_to_io['str'] or ('_' + attr) in self.attr_to_io['str']:
-                        setattr(self, attr, self.extract_info(line))
-
-                    elif attr in self.attr_to_io['bool'] or ('_' + attr) in self.attr_to_io['bool']:
-                        val = self.extract_info(line)
-                        if val == 'True' or val == '1':
-                            setattr(self, attr, True)
-                        elif val == 'False' or val == '0':
-                            setattr(self, attr, False)
-                        else:
-                            warnings.warn('Unexpected value for {}: {}. Setting to default {}'
-                                          .format(attr, val, getattr(SpecSpecs(), attr)))
-                            setattr(self, attr, getattr(SpecSpecs(), attr))
-
-    def save_specs(self, filename=FileLocator.CONFIG_SPEC):
-        """Save spectrometer specifications to file
-
-        Parameters
-        ----------
-        filename : str
-            path to configuration (*.txt) file
-        """
-        # Run check to ensure filename is as expected
-        check_filename(filename, 'txt')
-
-        self.filename = filename
-
-        with open(filename, 'w') as f:
-            # Write header
-            f.write('# -*- coding: utf-8 -*-\n')
-            f.write('# File holding spectrometer specifications\n')
-
-            # Loop through object attributes and save them if they aren't None
-            for attr in self.save_attrs:
-                # If we are saving a hidden variable (due to property decorator) remove the preceding underscore
-                if attr[0] == '_':
-                    attr = attr[1:]
-
-                # Get attribute from object
-                attr_val = getattr(self, attr)
-
-                # Attribute is ignored if set to None
-                if attr_val is None:
-                    pass
-
-                # If the attribute is a dictionary we need to loop through the dict and save each value
-                elif isinstance(attr_val, dict):
-
-                    # Write attribute name to file
-                    f.write('DICT={}\n'.format(attr))
-
-                    # Loop through dictionary and keys and values to file
-                    for key in attr_val:
-                        f.write('{}={}\n'.format(key, attr_val[key]))
-
-                    # End dictionary write with this
-                    f.write('DICT_END\n')
-
-                # Save everything else in simple format
-                else:
-                    f.write('{}={}\n'.format(attr, attr_val))
-
     @property
-    def bit_depth(self):
-        return self._bit_depth
-
-    @bit_depth.setter
-    def bit_depth(self, value):
-        """Update _max_DN when bit_depth is defined (two are intrinsically linked)"""
-        self._bit_depth = value
-        self._max_DN = (2 ** self.bit_depth) - 1
-
-    @property
-    def wavelength_min(self):
+    def wavelength_min(self) -> float:
         """Return minimum wavelength of saturation region. Used in socket comms for logging spectrometer specs"""
-        return self.saturation_range[0]
+        return self.saturation_wavelength_range[0]
 
     @wavelength_min.setter
-    def wavelength_min(self, value):
-        if value > self.saturation_range[1]:
-            warnings.warn('Warning. Setting wavelength minimum for saturation evaluation, but the value {} is '
-                          'greater than the current maximum value {}. This may result in errors or '
-                          'unexpected performance.'.format(value, self.saturation_range[1]))
-        self.saturation_range[0] = value
+    def wavelength_min(self, value: float):
+        if value > self.saturation_wavelength_range[1]:
+            warnings.warn(
+                "Warning. Setting wavelength minimum for saturation evaluation, but the value {} is "
+                "greater than the current maximum value {}. This may result in errors or "
+                "unexpected performance.".format(
+                    value, self.saturation_wavelength_range[1]
+                )
+            )
+        self.saturation_wavelength_range[0] = value
 
     @property
-    def wavelength_max(self):
+    def wavelength_max(self) -> float:
         """Return minimum wavelength of saturation region. Used in socket comms for logging spectrometer specs"""
-        return self.saturation_range[1]
+        return self.saturation_wavelength_range[1]
 
     @wavelength_max.setter
-    def wavelength_max(self, value):
-        if value < self.saturation_range[0]:
-            warnings.warn('Warning. Setting wavelength maximum for saturation evaluation, but the value {} is '
-                          'lower than the current minimum value {}. This may result in errors or '
-                          'unexpected performance.'.format(value, self.saturation_range[0]))
-        self.saturation_range[1] = value
+    def wavelength_max(self, value: float):
+        if value < self.saturation_wavelength_range[0]:
+            warnings.warn(
+                "Warning. Setting wavelength maximum for saturation evaluation, but the value {} is "
+                "lower than the current minimum value {}. This may result in errors or "
+                "unexpected performance.".format(
+                    value, self.saturation_wavelength_range[0]
+                )
+            )
+        self.saturation_wavelength_range[1] = value

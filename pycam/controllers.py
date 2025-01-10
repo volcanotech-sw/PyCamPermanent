@@ -27,9 +27,14 @@ try:
     seabreeze.use("pyseabreeze")
     import seabreeze.spectrometers as sb
 except ModuleNotFoundError:
-    warnings.warn(
-        "Working on machine without seabreeze, functionality of some classes will be lost"
-    )
+    warnings.warn("Working on machine without seabreeze, trying avaspecvolc")
+
+    try:
+        import avaspecvolc.avaspecvolc as sb
+    except ModuleNotFoundError:
+        warnings.warn(
+            "Working on machine without seabreeze or avaspecvolc, functionality of some classes will be lost"
+        )
 
 try:
     import libcamera  # for constants
@@ -60,7 +65,7 @@ class Camera(CameraSpecs):
     img_q: multiprocessing.queues.Queue | queue.Queue
     capture_thread: threading.Thread | None
 
-    cam: None | Picamera2
+    cam: "None | Picamera2"
     cam_init: bool
 
     in_interactive_capture: bool
@@ -264,17 +269,32 @@ class Camera(CameraSpecs):
             self.cam.close()
             self.cam = None
 
+    @CameraSpecs.ss_idx.setter
+    def ss_idx(self, value: int):
+        """
+        Update the shutter speed index and corresponding shutter speed
+        Then apply that shutter speed to the camera
+        """
+        # call parent class shutter_speed setter to update self.shutter_speed and self.ss_idx
+        super(
+            Camera, type(self)
+        ).ss_idx.fset(  # pyright: ignore[reportAttributeAccessIssue]
+            self, value
+        )
+        # Apply the shutter speed to the camera
+        self.shutter_speed = self.shutter_speed
+
     @CameraSpecs.shutter_speed.setter
     def shutter_speed(self, ss: int):
         """
-        Sets camera shutter speed and will wait until exposure speed has settled close to requested shutter speed
+        Sets camera shutter speed
 
         Parameters
         ----------
         ss: int
             Shutter speed (in microseconds)
         """
-        # call parent class shutter_speed setter to update self.shutter_speed and self.ss_inx
+        # call parent class shutter_speed setter to update self.shutter_speed and self.ss_idx
         super(
             Camera, type(self)
         ).shutter_speed.fset(  # pyright: ignore[reportAttributeAccessIssue]
@@ -409,6 +429,7 @@ class Camera(CameraSpecs):
         filename: str
             Name of file to save image to
         """
+        # TODO replace with io.save_img?
         # Generate lock file to prevent image from being accessed before capture has finished
         lock = filename.replace(self.file_ext, ".lock")
         open(lock, "a").close()
@@ -524,7 +545,7 @@ class Camera(CameraSpecs):
             # If continuous capture is not requested we check if any single image is requested
             else:
                 if "type" in command:
-                    # If a sequence isn't requested we take one typical image
+                    # If a sequence isn't requested we take one typical image using the 'type' as the file ending
                     # Get time and format
                     time_str = format_time(datetime.datetime.now(), self.file_datestr)
 
@@ -643,8 +664,7 @@ class Camera(CameraSpecs):
                         # Adjust ss_idx, but if we have gone beyond the indices available in ss_list it will throw an
                         # idx error, so we catch this and continue with same ss if there are no higher/lower options
                         try:
-                            self.ss_idx += adj_saturation
-                            self.shutter_speed = self.ss_list[self.ss_idx]
+                            self.ss_idx += adj_saturation  # Adjusting this property automatically updates self.int_time
                         except IndexError:
                             pass
 
@@ -688,66 +708,91 @@ class Camera(CameraSpecs):
 
 
 class Spectrometer(SpecSpecs):
-    """Main class for spectrometer control
+    """
+    Main class for spectrometer control
 
     subclass of :class: SpecSpecs
 
     :param ignore_device:   bool    Mainly for debugging. If this is True, we don't try to find device connection
     """
+
+    capture_q: multiprocessing.queues.Queue | queue.Queue
+    spec_q: multiprocessing.queues.Queue | queue.Queue
+    capture_thread: threading.Thread | None
+
+    spec: "None | avaspecvolc.AvantesDevice | seabreeze.SeaBreezeDevice"
+
+    in_interactive_capture: bool
+    continuous_capture: bool
+    in_dark_capture: bool
+
+    wavelengths: numpy.typing.NDArray[numpy.double]
+    spectrum: numpy.typing.NDArray[numpy.double]
+
     def __init__(self, filename=None, ignore_device=False):
+        self.capture_q = queue.Queue()  # Queue for requesting spectra
+        self.spec_q = queue.Queue()  # Queue to put spectra in for access elsewhere
+        self.capture_thread = None  # Thread for interactive capture
+
+        self.spec = None  # Holds spectrometer for interfacing
+
         # Get default specs from parent class and any other attributes
+        # needs self.spec to be set first
         super().__init__(filename)
 
-        self.capture_q = queue.Queue()      # Queue for requesting spectra
-        self.spec_q = queue.Queue()         # Queue to put spectra in for access elsewhere
-        self.capture_thread = None          # Thread for interactive capture
+        self.continuous_capture = False  # Flag when in continuous capture mode
+        self.in_dark_capture = False  # Flag when in dark capture mode
 
-        # Discover spectrometer devices
-        self.devices = None                 # List of detected spectrometers
-        self.spec = None                    # Holds spectrometer for interfacing via seabreeze
-
-        self.in_interactive_capture = False # Flag when in interactive capture
-        self.continuous_capture = False     # Flags when spectrometer is in continuous capture mode
-        self.in_dark_capture = False        # Flags when in dark capture mode
+        # Create empty array that will contain the wavelengths the spectrometer can measure at (nm)
+        self.wavelengths = np.array(self.pix_num)
+        # The same for the most recently measured spectrum
+        self.spectrum = np.array(self.pix_num)
 
         # Attempt to find spectrometer, if we can't we either raise the error or ignore it depending on ignore_device
         try:
             self.find_device()
-        except SpectrometerConnectionError:
+        except ConnectionError:
             if ignore_device:
                 print("Spectrometer unavailable")
             else:
                 raise
 
         # Initialise with manual capture
-        set_capture_status(FileLocator.RUN_STATUS_PI, 'spec', 'manual')
+        set_capture_status(FileLocator.RUN_STATUS_PI, "spec", "manual")
 
     def __del__(self):
-        """Whenever this object is deleted (such as end of script) the spectroemter must be closed to free it up for next
-        time"""
+        """
+        Whenever this object is deleted (such as end of script)
+        the spectrometer must be closed to free it up for next time
+        """
         # print("Spectrometer deconstructor")
         self.close()
 
     def find_device(self):
-        """Function to search for devices"""
+        """
+        Function to search for an attached spectrometer and then initialise it
+        """
         try:
-            self.devices = sb.list_devices()
-            self.spec = sb.Spectrometer(self.devices[0])
-            self.spec.trigger_mode(0)
+            self.spec = sb.Spectrometer(sb.list_devices()[0])
+            if self.spec:
+                self.spec.trigger_mode(0)
 
             # If we have a spectrometer we then retrieve its wavelength calibration and store it as an attribute
             self.get_wavelengths()
 
-            # Set integration time of device
-            self.int_time = self.int_time      # Now that we have spectrometer we can update its integration time
+            # Now that we have spectrometer we can update its integration time
+            self.int_time = self.int_time
 
         except IndexError:
-            self.devices = None
             self.spec = None
-            raise SpectrometerConnectionError('No spectrometer found')
+            raise ConnectionError("No spectrometer found")
 
-    def _q_check(self, q, q_type='capt'):
-        """Checks type of queue object and returns queue (ret_q). Sets queue to default queue if none is provided"""
+    def _q_check(
+        self, q: multiprocessing.queues.Queue | queue.Queue | None, q_type: str = "capt"
+    ) -> multiprocessing.queues.Queue | queue.Queue:
+        """
+        Checks type of queue object and returns queue (ret_q). Sets queue to default queue if none is provided
+        """
         if isinstance(q, multiprocessing.queues.Queue):
             # print('Using multiprocessing queue')
             ret_q = q
@@ -756,129 +801,136 @@ class Spectrometer(SpecSpecs):
             ret_q = q
         else:
             # print('Unrecognized queue object, reverting to default')
-            if q_type == 'capt':
+            if q_type == "capt":
                 ret_q = self.capture_q
-            elif q_type == 'spec':
+            elif q_type == "spec":
                 ret_q = self.spec_q
             else:
                 ret_q = queue.Queue()
 
         return ret_q
 
-    def initialise(self):
-        """Initialises spectrometer by setting appropriate settings"""
-        # TODO
-
     def close(self):
-        """"Closes spectrometer - may be required to free up camera for later use in other scripts"""
-        # print('Closing spectrometer')
+        """
+        Closes spectrometer - may be required to free up camera for later use in other scripts
+        """
+        print('Closing spectrometer')
         if self.spec:
-            # TODO
+            del self.spec
             self.spec = None
 
-    @property
-    def int_time(self):
-        return self._int_time / 1000  # Return time in milliseconds
+    @SpecSpecs.int_time_idx.setter
+    def int_time_idx(self, value: int):
+        """
+        Update the integration time index and corresponding integration time
+        Then apply that integration time to the spectrometer
+        """
+        # call parent class int_time setter to update self.int_time and self.int_time_idx
+        super(
+            Spectrometer, type(self)
+        ).int_time_idx.fset(  # pyright: ignore[reportAttributeAccessIssue]
+            self, value
+        )
 
-    @int_time.setter
-    def int_time(self, int_time):
-        """Set integration time
+        # Set spectrometer integration time
+        if self.spec:
+            self.spec.integration_time_micros(self._int_time)
+
+    @SpecSpecs.int_time.setter
+    def int_time(self, int_time: int):
+        """
+        Sets spectrometer integration time
 
         Parameters
         ----------
         int_time: int
-            Integration time for spectrometer, provided in milliseconds
+            integration time (in milliseconds)
         """
-        # Adjust to work in microseconds (class takes time in milliseconds) and ensure we have an <int>
-        int_time = int(int_time * 1000)
-
-        # Check requested integration time is acceptable
-        if int_time < self._int_limit_lower:
-            raise ValueError('Integration time below {}}us is not possible. '
-                             'Attempted {}us'.format(self._int_limit_lower, int_time))
-        elif int_time > self._int_limit_upper:
-            raise ValueError('Integration time above {}us is not possible. '
-                             'Attempted: {}us'.format(self._int_limit_upper, int_time))
-
-        self._int_time = int_time
-
-        # Adjust _int_time_idx to reflect the closest integration time to the current int_time
-        self._int_time_idx = np.argmin(np.abs(self.int_list - self.int_time))
+        # call parent class int_time setter to update self.int_time and self.int_time_idx
+        super(
+            Spectrometer, type(self)
+        ).int_time.fset(  # pyright: ignore[reportAttributeAccessIssue]
+            self, int_time
+        )
 
         # Set spectrometer integration time
-        try:
-            self.spec.integration_time_micros(int_time)
-        except AttributeError:
-            print('No spectrometer yet, unable to set integration time')
+        if self.spec:
+            self.spec.integration_time_micros(self._int_time)
 
-    @property
-    def int_time_idx(self):
-        return self._int_time_idx
-
-    @int_time_idx.setter
-    def int_time_idx(self, value):
-        """Update integration time to value in int_list defined by int_time_idx when int_time_idx is changed"""
-        # If index exceeds list length then we set it to the maximum
-        if value < 0:
-            value = 0
-        elif value > len(self.int_list) - 1:
-            value = len(self.int_list) - 1
-        self._int_time_idx = value
-        self.int_time = self.int_list[self.int_time_idx]
-
-    @property
-    def coadd(self):
-        return self._coadd
-
-    @coadd.setter
-    def coadd(self, coadd):
-        """Set coadding property"""
-        if coadd < self.min_coadd:
-            coadd = self.min_coadd
-        elif coadd > self.max_coadd:
-            coadd = self.max_coadd
-        self._coadd = int(coadd)
-
-    def generate_filename(self, time_str, spec_type):
-        """Generates the spectrum filename
+    def generate_filename(self, time_str: str, spec_type: str) -> str:
+        """
+        Generates the spectrum filename
 
         Parameters
         ----------
         time_str: str
             Time string containing date and time
+        spec_type: str
+            Type of spectrum. Value should be retrieved from one of dictionary options in <self.file_type>
         """
-        return time_str + '_' + self.file_ss.format(int(self.int_time)) + '_' \
-               + str(self.coadd) + self.file_coadd + '_' + spec_type + self.file_ext
+        return (
+            time_str
+            + "_"
+            + self.file_ss.format(self.int_time)
+            + "_"
+            + str(self.coadd)
+            + self.file_coadd
+            + "_"
+            + spec_type
+            + self.file_ext
+        )
 
     def get_spec(self):
-        """Acquire spectrum from spectrometer"""
-        # TODO I realise I'm currently not discarding the first spectrum - this may mean integration time doesn't always
-        # TODO work perfectly
+        """
+        Acquire spectrum from spectrometer
+        Taking average intensity over coadd number of readings
+        """
+        # TODO I realise I'm currently not discarding the first spectrum - this may mean integration time doesn't always work perfectly
+        if self.spec is None:
+            print(f"No spectrometer to capture with")
+            return
+
         # Set array for coadding spectra
         coadded_spectrum = np.zeros(len(self.wavelengths))
 
-        # Loop through number of coadds
-        for i in range(self.coadd):
-            coadded_spectrum += self.spec.intensities()
+        try:
+            # Loop through number of coadds
+            for i in range(self.coadd):
+                coadded_spectrum += self.spec.intensities()
+        except Exception as e:
+            with open(FileLocator.ERROR_LOG_PI, "a") as f:
+                f.write("{}\n".format(e))
 
         # Correct for number of coadds to result in a spectrum with correct digital numbers for bit-depth of device
-        coadded_spectrum /= self.coadd
-        self.spectrum = coadded_spectrum
+        self.spectrum = coadded_spectrum / self.coadd
 
     def get_spec_now(self):
-        """Immediately acquire spectrum from spectrometer - does not discard first spectrum (probably never used)"""
-        self.spectrum = self.spec.intensities()
+        """
+        Immediately acquire spectrum from spectrometer - does not discard first spectrum (probably never used)
+        """
+        if self.spec:
+            try:
+                self.spectrum = self.spec.intensities()
+            except Exception as e:
+                with open(FileLocator.ERROR_LOG_PI, "a") as f:
+                    f.write("{}\n".format(e))
 
     def get_wavelengths(self):
-        """Returns wavelengths"""
-        self.wavelengths = self.spec.wavelengths()
+        """
+        Fetches the spectrometers wavelengths
+        """
+        if self.spec:
+            self.wavelengths = self.spec.wavelengths()
 
-    def extract_subspec(self, wavelengths):
-        """Extract and return wavelengths and spectrum data for subsection of spectrum defined by wavelengths
+    def extract_subspec(
+        self, wavelengths: list[float]
+    ) -> tuple[numpy.typing.NDArray[numpy.double], numpy.typing.NDArray[numpy.double]]:
+        """
+        Extract and return wavelengths and spectrum data for subsection of spectrum defined by wavelengths
 
         Parameters
         ----------
-        wavelengths: list, tuple
+        wavelengths: list[float]
 
         Returns
         -------
@@ -889,32 +941,36 @@ class Spectrometer(SpecSpecs):
         """
         # Check wavelengths have been provided correctly
         if len(wavelengths) != 2:
-            raise ValueError('Expected list or tuple of length 2')
+            raise ValueError("Expected list or tuple of length 2")
 
         # Determine indices of arrays where wavelengths are closest to requested extraction wavelengths
         min_idx = np.argmin(np.abs(wavelengths[0] - self.wavelengths))
         max_idx = np.argmin(np.abs(wavelengths[1] - self.wavelengths))
 
-        # Need a spectrum to extract values from - if object has just been loaded it won'thave a spectrum
+        # Need a spectrum to extract values from - if object has just been loaded it won't have a spectrum
         if self.spectrum is None:
             self.get_spec()
 
-        return self.wavelengths[min_idx:max_idx+1], self.spectrum[min_idx:max_idx+1]
+        return (
+            self.wavelengths[min_idx : max_idx + 1],
+            self.spectrum[min_idx : max_idx + 1],
+        )
 
-    def check_saturation(self):
-        """Check spectrum saturation
+    def check_saturation(self) -> int:
+        """
+        Check spectrum saturation
         return -1: if saturation exceeds the maximum allowed
         return 1:  if saturation is below minimum allowed
         return 0:  otherwise
         """
         # Extract spectrum in specific wavelength range to be checked
-        wavelengths, spectrum = self.extract_subspec(self.saturation_range)
+        _, spectrum = self.extract_subspec(self.saturation_wavelength_range)
 
         # Get indices of 10 largest numbers
         indices = spectrum.argsort()
 
         # Get DN value of top X values
-        av_DN = np.mean(spectrum[indices[-self.saturation_pixels:]])
+        av_DN = np.mean(spectrum[indices[-self.saturation_pixels :]])
 
         saturation = av_DN / self._max_DN
 
@@ -925,62 +981,94 @@ class Spectrometer(SpecSpecs):
         else:
             return 0
 
-    def interactive_capture(self, spec_q=None, capt_q=None):
-        """Public access thread starter for _interactive_capture()"""
-        self.capture_thread = threading.Thread(target=self._interactive_capture, args=(spec_q, capt_q,))
+    def interactive_capture(
+        self,
+        spec_q: multiprocessing.queues.Queue | queue.Queue | None = None,
+        capt_q: multiprocessing.queues.Queue | queue.Queue | None = None,
+    ):
+        """
+        Public access thread starter for _interactive_capture()
+
+        Parameters
+        ---------
+        img_q: Queue-like object, such as <queue.Queue> or <multiprocessing.Queue>
+            Filenames and images are passed to this object using its put() method
+        capt_q: Queue-like object
+            Capture commands are passed to this object using its put() method
+        """
+        self.capture_thread = threading.Thread(
+            target=self._interactive_capture,
+            args=(
+                spec_q,
+                capt_q,
+            ),
+        )
         self.capture_thread.daemon = True
         self.capture_thread.start()
 
-    def _interactive_capture(self, spec_q=None, capt_q=None):
-        """Interactive capturing by requesting captures through capt_q
+    def _interactive_capture(
+        self,
+        spec_q: multiprocessing.queues.Queue | queue.Queue | None = None,
+        capt_q: multiprocessing.queues.Queue | queue.Queue | None = None,
+    ):
+        """
+        Interactive capturing by requesting captures through capt_q
 
         Parameters
         ---------
         spec_q: Queue-like object
-            Spectra are passed to this queue once captured
+            Queue-like object, such as <queue.Queue> or <multiprocessing.Queue>
+            Filenames and images are passed to this object using its put() method
         capt_q: Queue-like object
             Capture commands are passed to this object using its put() method
         """
-        # Set in_interactive flag
+        # Flag that we are in interactive capture mode
         self.in_interactive_capture = True
 
         # Setup queue
-        capt_q = self._q_check(capt_q, q_type='capt')
-        spec_q = self._q_check(spec_q, q_type='spec')
+        capt_q = self._q_check(capt_q, q_type="capt")
+        spec_q = self._q_check(spec_q, q_type="spec")
 
         while True:
 
             # Wait for imaging command (expecting a dictionary containing information for acquisition)
             command = capt_q.get(block=True)
+            print(
+                "{}: Got message from spectrometer capture queue: {}".format(
+                    __file__, command
+                )
+            )
 
-            if 'exit' in command:
+            if "exit" in command:
                 print("Exiting spectrometer capture thread")
                 # return if commanded to exit
-                if command['exit']:
+                if command["exit"]:
                     self.in_interactive_capture = False
                     return
 
-            if 'int_time' in command:
-                # Set shutter speed
-                self.int_time = command['int_time']
+            if "int_time" in command:
+                # Set integration time
+                self.int_time = command["int_time"]
 
-            # Start a continous capture if requested
-            if 'start_cont' in command:
-                if command['start_cont']:
+            # Start a continuous capture if requested
+            if "start_cont" in command:
+                if command["start_cont"]:
                     # If we have been provided with a queue for images we pass this to capture_sequence()
-                    if 'spec_q' in command:
-                        self.capture_sequence(spec_q=command['spec_q'], capt_q=capt_q)
+                    if "spec_q" in command:
+                        self.capture_sequence(spec_q=command["spec_q"], capt_q=capt_q)
                     else:
                         self.capture_sequence(spec_q=spec_q, capt_q=capt_q)
+                    # Function should now hold here until capture_sequence() returns, then interactive_capture can
+                    # continue
 
             # Instigate capture of all dark images
-            elif 'dark_seq' in command:
-                if command['dark_seq']:
+            elif "dark_seq" in command:
+                if command["dark_seq"]:
                     self.capture_darks()
 
             # If continuous capture is not requested we check if any single image is requested
             else:
-                if 'type' in command:
+                if "type" in command:
                     # If a sequence isn't requested we take one typical image using the 'type' as the file ending
                     # Get time and format
                     time_str = format_time(datetime.datetime.now(), self.file_datestr)
@@ -989,31 +1077,41 @@ class Spectrometer(SpecSpecs):
                     self.get_spec()
 
                     # Generate filename
-                    filename = self.generate_filename(time_str, command['type'])
+                    filename = self.generate_filename(time_str, command["type"])
+                    print("{}: Captured spectrum: {}".format(__file__, filename))
 
                     # Put filename and spectrum in queue
                     spec_q.put([filename, self.spectrum])
 
-    def capture_sequence(self, spec_q=None, capt_q=None):
-        """Captures sequence of spectra
+    def capture_sequence(
+        self,
+        spec_q: multiprocessing.queues.Queue | queue.Queue | None = None,
+        capt_q: multiprocessing.queues.Queue | queue.Queue | None = None,
+    ):
+        """
+        Captures sequence of spectra
 
         Parameters
         ---------
-        spec_q: Queue-like object
-            Spectra are passed to this queue once captured
+        spec_q: Queue-like object, such as <queue.Queue> or <multiprocessing.Queue>
+            Filenames and images are passed to this object using its put() method once captured
         capt_q: Queue-like object
             Capture commands are passed to this object using its put() method
         """
+        # Flag that we are in continuous capture mode
         self.continuous_capture = True
         # Update file saying we are in automated capture (for check_run.py)
-        set_capture_status(FileLocator.RUN_STATUS_PI, 'spec', 'automated')
+        set_capture_status(FileLocator.RUN_STATUS_PI, "spec", "automated")
 
-        if self.int_time is None:
-            raise ValueError('Cannot acquire sequence until initial integration time is correctly set')
+        print(f"Spectrometer entering capturing sequence")
 
         # Setup queue
-        capt_q = self._q_check(capt_q, q_type='capt')
-        spec_q = self._q_check(spec_q, q_type='spec')
+        spec_q = self._q_check(spec_q, q_type="spec")  # Queue for placing spectrum
+        capt_q = self._q_check(capt_q, q_type="capt")  # Queue for controlling capture
+
+        # Make sure the spectrometer is at the set integration time
+        # (needs to go through milliseconds to microseconds conversion)
+        self.int_time = self._int_time // 1000
 
         # Get acquisition rate in seconds
         frame_rep = round(1 / self.framerate)
@@ -1023,36 +1121,39 @@ class Spectrometer(SpecSpecs):
 
         while True:
 
+            # Check capture queue for new commands (such as exiting acquisition or adjusting shutter speed)
             # Rethink this later - how to react perhaps depends on what is sent to the queue?
             try:
                 mess = capt_q.get(block=False)
-                if 'exit_cont' in mess:
-                    if mess['exit_cont']:
+
+                # Exit if requested
+                if "exit_cont" in mess:
+                    if mess["exit_cont"]:
                         self.continuous_capture = False
                         # Update file saying we are no longer in automated capture (for check_run.py)
-                        set_capture_status(FileLocator.RUN_STATUS_PI, 'spec', 'manual')
+                        set_capture_status(FileLocator.RUN_STATUS_PI, "spec", "manual")
                         return
 
-                if 'auto_int' in mess:
+                if "auto_int" in mess:
                     # If auto_int is changed we need to readjust all parameters
-                    if not mess['auto_int']:
+                    if not mess["auto_int"]:
                         self.auto_int = False
                     else:
                         self.auto_int = True
 
-                    # If we aren't using auto_int, check for ss in message to set shutter speed
+                # If we aren't using auto_int, check for ss in message to set shutter speed
                 if not self.auto_int:
-                    if 'int_time' in mess:
+                    if "int_time" in mess:
                         try:
-                            self.int_time = mess['int_time']
+                            self.int_time = mess["int_time"]
                         except Exception as e:
-                            with open(FileLocator.LOG_PATH_PI + 'spectrometer_log.log', 'a') as f:
-                                f.write('{}\n'.format(e))
+                            with open(FileLocator.ERROR_LOG_PI, "a") as f:
+                                f.write("{}\n".format(e))
 
-                if 'framerate' in mess:
+                if "framerate" in mess:
                     # We readjust to requested framerate regardless of if auto_int is True or False
-                    self.framerate = mess['framerate']
-                    frame_rep = round(1 / mess['framerate'])
+                    self.framerate = mess["framerate"]
+                    frame_rep = round(1 / mess["framerate"])
 
             except queue.Empty:
                 # If there is nothing in the queue telling us to stop then we continue with acquisitions
@@ -1061,67 +1162,60 @@ class Spectrometer(SpecSpecs):
             # Get current time
             time_obj = datetime.datetime.now()
 
-            try:
-                # Only capture an image if we are at the right time
-                if time_obj.second % frame_rep == 0 and time_obj.second != prev_sec:
+            # Only capture an image if we are at the right time
+            if time_obj.second % frame_rep == 0 and time_obj.second != prev_sec:
 
-                    # Generate time string
-                    time_str = format_time(time_obj, self.file_datestr)
+                # Generate time string
+                time_str = format_time(time_obj, self.file_datestr)
 
-                    # Acquire spectra
-                    self.get_spec()
+                # Acquire spectra
+                self.get_spec()
 
-                    # Generate filename
-                    filename = self.generate_filename(time_str, self.file_type['meas'])
+                # Generate filename
+                filename = self.generate_filename(time_str, self.file_type["meas"])
 
-                    # Add spectrum and filename to queue
-                    spec_q.put([filename, self.spectrum])
+                # Put filename and spectrum into q
+                spec_q.put([filename, self.spectrum])
 
-                    # Check image saturation and adjust shutter speed if required
-                    if self.auto_int:
-                        adj_saturation = self.check_saturation()
-                        if adj_saturation:
-                            # Adjust ss_idx, but if we have gone beyond the indices available in ss_list it will throw an
-                            # idx error, so we catch this and continue with same int if there are no higher/lower options
-                            try:
-                                self.int_time_idx += adj_saturation # Adjusting this property automatically updates self.int_time
-                            except IndexError:
-                                pass
+                # Check image saturation and adjust shutter speed if required
+                if self.auto_int:
+                    adj_saturation = self.check_saturation()
+                    if adj_saturation:
+                        # Adjust ss_idx, but if we have gone beyond the indices available in ss_list it will throw an
+                        # idx error, so we catch this and continue with same int if there are no higher/lower options
+                        try:
+                            self.int_time_idx += adj_saturation  # Adjusting this property automatically updates self.int_time
+                        except IndexError:
+                            pass
 
-                    # Set seconds value (used as check to prevent 2 images being acquired in same second)
-                    prev_sec = time_obj.second
-            except Exception as e:
-                with open(FileLocator.LOG_PATH_PI + 'spectrometer_log.log', 'a') as f:
-                    f.write('{}\n'.format(e))
+                # Set seconds value (used as check to prevent 2 images being acquired in same second)
+                prev_sec = time_obj.second
 
     def capture_darks(self):
-        """Capture dark images from all shutter speeds in <self.ss_list>"""
+        """
+        Capture dark images from all shutter speeds in <self.ss_list>
+        """
         self.in_dark_capture = True
 
+        time_start = time.time()
         # Loop through shutter speeds in ss_list
         for int_time in self.int_list:
 
-            # Set camera shutter speed
+            # Set spectrometer integration time
             self.int_time = int_time
 
             # Get time for stamping
             time_str = format_time(datetime.datetime.now(), self.file_datestr)
 
-            # Acquire image
+            # Acquire spectrum
             self.get_spec()
 
             # Generate filename for spectrum
-            filename = self.generate_filename(time_str, self.file_type['dark'])
-            print('Captured dark: {}'.format(filename))
+            filename = self.generate_filename(time_str, self.file_type["dark"])
+            print("Captured dark: {}".format(filename))
 
-            # Add data to queue
+            # Put spectra in q
             self.spec_q.put([filename, self.spectrum])
 
+        print("Dark spectrometer capture time: {}".format(time.time() - time_start))
         self.in_dark_capture = False
-
-
-class SpectrometerConnectionError(Exception):
-    """
-    Error raised if no spectrometer is detected
-    """
-    pass

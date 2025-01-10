@@ -81,7 +81,7 @@ class CommsFuncs(SendRecvSpecs):
         # character code as key, value as tuple (type, range of accepted values)
         # All values are converted to ASCII before being sent over the network
         self.cmd_dict = {
-            'IDN': (str, ['CM1', 'CM2', 'SPC', 'EXN', 'MAS']),  # Identity of message sender (EXT not used for external to avoid confusion with EXT exit command)
+            'IDN': (str, ['CM1', 'CM2', 'SPE', 'EXN', 'MAS']),  # Identity of message sender (EXT not used for external to avoid confusion with EXT exit command)
             'SSA': (int, [1, 6000001]),            # Shutter speed (us) camera A [min, max]
             'SSB': (int, [1, 6000001]),            # Shutter speed (us) camera B [min, max]
             'SSS': (int, [1, 10001]),            # Shutter speed (ms) spectrometer [min, max]
@@ -922,11 +922,11 @@ class SpecComms(CommsCommandHandler):
         super().__init__(socket)
 
         self.spectrometer = spectrometer  # Spectrometer object for interface/control
-        self.id = {'IDN': 'SPC'}
+        self.id = {'IDN': 'SPE'}
 
     def HLO(self, value):
         """For testing connection"""
-        print("Hello received by the master")
+        print("Hello received by the spectrometer")
         if value:
             # Send response if requested
             comm = {'HLS': False}
@@ -991,8 +991,8 @@ class SpecComms(CommsCommandHandler):
         value: int
             Value to set Wavelength minimum to"""
         # Check the new value is less than the maximum in the saturation range window
-        if value < self.spectrometer.saturation_range[1]:
-            self.spectrometer.saturation_range[0] = value
+        if value < self.spectrometer.wavelength_max:
+            self.spectrometer.wavelength_min = value
             comm = {'WMN': value}
         else:
             comm = {'ERR': 'WMN'}
@@ -1003,8 +1003,8 @@ class SpecComms(CommsCommandHandler):
     def WMX(self, value):
         """Acts on WMX command"""
         # Check the new value is more than the minimum in the saturation range window
-        if value > self.spectrometer.saturation_range[0]:
-            self.spectrometer.saturation_range[1] = value
+        if value > self.spectrometer.wavelength_min:
+            self.spectrometer.wavelength_max = value
             comm = {'WMX': value}
         else:
             comm = {'ERR': 'WMX'}

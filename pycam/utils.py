@@ -41,7 +41,7 @@ def check_filename(filename, ext):
     return
 
 
-def write_file(filename, my_dict):
+def write_file(filename, my_dict, description=None):
     """Writes all attributes of dictionary to file
 
     Parameters
@@ -58,11 +58,14 @@ def write_file(filename, my_dict):
         raise
 
     with open(filename, 'w') as f:
+        f.write('# -*- coding: utf-8 -*-\n')
+        if description:
+            f.write(f'# {description}\n')
+        f.write('\n')
         # Loop through dictionary and write to file
         for key in my_dict:
             string = '{}={}\n'.format(key, my_dict[key])
             f.write(string)
-    return
 
 
 def read_file(filename, separator='=', ignore='#'):
