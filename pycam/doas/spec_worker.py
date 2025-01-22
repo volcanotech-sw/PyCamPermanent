@@ -74,6 +74,7 @@ class SpecWorker:
         self.abs_spec_species = dict()  # Dictionary of absorbances isolated for individual species
         self.ILS_wavelengths = None     # Wavelengths for ILS
         self._ILS = None                 # Instrument line shape (will be a numpy array)
+        self.include_ils_fit = False    # Whether to include ILS as part of the fit parameters (if False, an ILS must be provided via file)
         self.processed_data = False     # Bool to define if object has processed DOAS yet - will become true once process_doas() is run
 
         self.start_ca = -2000  # Starting column amount for iterations
@@ -370,6 +371,15 @@ class SpecWorker:
         shift_val = config.get("shift")
         if shift_val is not None:
             setattr(self, "shift", shift_val)
+
+    def set_ils_fit(self, config):
+        """Sets whether ILS is part of the fit parameters or if a predefined ILS is used in the iFit retrieval"""
+        self.include_ils_fit = config.get("include_ils_fit")
+        # Attempt to update analyser with new setting. If using DOASWorker this won't be possible, so using try/except
+        try:
+            self.update_analyser()
+        except AttributeError:
+            pass
 
     def reset_stray_pix(self):
         self._start_stray_pix = None

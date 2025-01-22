@@ -516,6 +516,7 @@ class PyplisWorker:
             "spec_dir": "spec_dir",
             "dark_spec_dir": "dark_dir",
             "ILS_path": "ils_path",
+            "include_ils_fit": "include_ils_fit",
             "use_light_dilution_spec": "corr_light_dilution",
             "grid_max_ppmm": "grid_max_ppmm",
             "grid_increment_ppmm": "grid_increment_ppmm",

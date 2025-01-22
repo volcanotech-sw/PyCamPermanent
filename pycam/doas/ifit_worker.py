@@ -107,7 +107,6 @@ class IFitWorker(SpecWorker):
         # TODO perhaps the error is retrieved differently when these parameters are used, but I'm not sure why that would be...
         # TODO I have made a work around to pop these parameters from self.params if generating our own ILS
         # Add ILS parameters
-        self.include_ils_fit = True
         self.ils_params = {
             'fwem': 0.6,
             'k': 2.0,
