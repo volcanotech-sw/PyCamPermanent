@@ -106,6 +106,7 @@ class PyCam(ttk.Frame):
         geom_settings.initiate_variables(self)
         process_settings.initiate_variables(self)
         calibration_wind.add_gui(self)
+        calibration_wind.ils_frame.initiate_variables()
         plume_bg.initiate_variables(self)
         plume_bg.start_draw(self.root)
         doas_fov.start_draw(self.root)      # start drawing of frame

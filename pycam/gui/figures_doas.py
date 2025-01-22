@@ -1014,12 +1014,22 @@ class ILSFrame:
         if self.ILS_path is not None:
             self.load_ILS()
 
+    def initiate_variables(self):
+        """Sets up tkinter variables that are used by this frame"""
+        self._include_ils_fit = tk.BooleanVar()
+
+    def gather_vars(self):
+        """Gets current settings for relevant attributes"""
+        self.include_ils_fit = self.doas_worker.include_ils_fit
+
     def generate_frame(self, parent):
         """
         Creates widget
         :param parent:  tk.Frame    Parent frame to place widget in
         :return:
         """
+        self.gather_vars()
+
         self.parent = parent
         self.frame = ttk.Frame(self.parent)
         self.in_frame = True
@@ -1115,6 +1125,9 @@ class ILSFrame:
         self.frame_ILS_func = ttk.Frame(self.frame_ILS, relief=tk.GROOVE, borderwidth=5)
         self.frame_ILS_func.pack(side=tk.LEFT, anchor='n')
 
+        self.ils_fit_check = ttk.Checkbutton(self.frame_ILS_func, text='Make ILS a fitted parameter',
+                                             variable=self._include_ils_fit, command=self.set_ILS_fit)
+
         label1 = tk.Label(self.frame_ILS_func, text='Loaded ILS file:')
         self.ILS_load_label = tk.Label(self.frame_ILS_func, text='N/A', width=self.str_len_max)
         self.load_ILS_button = ttk.Button(self.frame_ILS_func, text='Load ILS', command=self.choose_ILS)
@@ -1123,13 +1136,18 @@ class ILSFrame:
         self.ILS_save_label = tk.Label(self.frame_ILS_func, text='N/A', width=self.str_len_max)
         self.save_ILS_button = ttk.Button(self.frame_ILS_func, text='Save ILS', command=self.save_ILS)
 
-        label1.grid(row=0, column=0, sticky='w', padx=5, pady=5)
-        self.ILS_load_label.grid(row=0, column=1, padx=5, pady=5)
-        self.load_ILS_button.grid(row=0, column=2, padx=5, pady=5)
+        row = 0
+        self.ils_fit_check.grid(row=row, column=0, columnspan=3, sticky='w', padx=5, pady=5)
 
-        label2.grid(row=1, column=0, sticky='w', padx=5, pady=5)
-        self.ILS_save_label.grid(row=1, column=1, padx=5, pady=5)
-        self.save_ILS_button.grid(row=1, column=2, padx=5, pady=5)
+        row += 1
+        label1.grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.ILS_load_label.grid(row=row, column=1, padx=5, pady=5)
+        self.load_ILS_button.grid(row=row, column=2, padx=5, pady=5)
+
+        row += 1
+        label2.grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.ILS_save_label.grid(row=row, column=1, padx=5, pady=5)
+        self.save_ILS_button.grid(row=row, column=2, padx=5, pady=5)
 
         # PLOT
         self.fig_ILS = plt.Figure(figsize=self.ILS_figsize, dpi=self.dpi)
@@ -1151,6 +1169,14 @@ class ILSFrame:
         # Update label and plot as the ILS should be preloaded on startup
         self.update_ILS_label()
         self.update_ILS_plot()
+
+    @property
+    def include_ils_fit(self):
+        return self._include_ils_fit.get()
+
+    @include_ils_fit.setter
+    def include_ils_fit(self, value):
+        self._include_ils_fit.set(value)
 
     def dark_capture(self):
         """Implements dark capture fom spectrometer"""
@@ -1278,3 +1304,6 @@ class ILSFrame:
         self.ax_ILS.lines[0].set_data(self.doas_worker.ILS_wavelengths, self.doas_worker.ILS)
         self.ax_ILS.set_xlim([0, self.doas_worker.ILS_wavelengths[-1]])
         self.canv_ILS.draw()
+
+    def set_ILS_fit(self):
+        self.doas_worker.include_ils_fit = self.include_ils_fit
