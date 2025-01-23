@@ -1258,11 +1258,13 @@ class PyplisWorker:
             print('Updating plot {}'.format(band))
             getattr(self, 'fig_{}'.format(band)).update_plot(img_path)
 
-    def find_dark_img(self, img_dir, ss, band='on'):
+    def find_dark_img(self, img_dir, ss, band='on', find_nearest=True):
         """
         Searches for suitable dark image in designated directory. First it filters the images for the correct filter,
         then searches for an image with the same shutter speed defined
         :param: ss  int,str     Shutter speed value to hunt for. Can be either int or str
+        :param: find_nearest  bool  If True, a dark image will always be returned, based on the nearest available
+                                    shutter speed.
         :returns: dark_img      Coadded dark image for this shutter speed
         :returns: dark_paths    List of strings representing paths to all dark images used to generate dark_img
         """
