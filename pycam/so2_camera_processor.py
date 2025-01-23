@@ -1122,8 +1122,11 @@ class PyplisWorker:
                 img.subtract_dark_image(dark_img)
                 img.img[img.img <= 0] = np.finfo(float).eps
             else:
-                warnings.warn('No dark image provided for background image.\n '
-                              'Background image has not been corrected for dark current.')
+                warnings.warn('No dark image found, for band {} background image.'
+                              'Note: Image will still be flagged as dark-corrected so processing can proceed.'.format(band))
+                img.subtract_dark_image(0)  # Just subtract 0. This ensures the image is flagged as dark-corr
+        else:
+            img.subtract_dark_image(0)  # Just subtract 0. This ensures the image is flagged as dark-corr
 
         # Set variables
         setattr(self, 'bg_{}'.format(band), img)
