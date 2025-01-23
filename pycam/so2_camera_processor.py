@@ -1292,6 +1292,16 @@ class PyplisWorker:
         ss_images = [int(f.split('_')[self.cam_specs.file_ss_loc].replace(ss_str, '')) for f in dark_list]
         ss_rounded_list = [round(f, -int(floor(log10(abs(f)))) + 1) for f in ss_images]
 
+        # Find nearest shutter speed that exists and allow for faster exit of function if it does
+        # This may seem slightly repetitive to above, but is necessary if we want the fastest possible look-up when
+        # find nearest is False. Otherwise we always not to create the ss_rounded_list before lookup
+        if find_nearest:
+            ss_rounded = min(ss_rounded_list, key=lambda x: abs(x - ss_rounded))
+            # Fast dictionary look up for preloaded dark images (using rounded ss value)
+            if str(ss_rounded) in self.dark_dict[band].keys():
+                dark_img = self.dark_dict[band][str(ss_rounded)]
+                return dark_img, None
+
         ss_idx = [i for i, x in enumerate(ss_rounded_list) if x == ss_rounded]
         ss_images = [dark_list[i] for i in ss_idx]
 
