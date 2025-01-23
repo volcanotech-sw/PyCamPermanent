@@ -1575,7 +1575,11 @@ class PyplisWorker:
 
             # Find associated dark image by extracting shutter speed, then subtract this image
             ss = meta['texp'] / self.cam_specs.file_ss_units
-            img_array_clear_A[:, :, i] -= self.find_dark_img(self.cell_cal_dir, ss=ss, band='A')[0]
+            try:
+                img_array_clear_A[:, :, i] -= self.find_dark_img(self.cell_cal_dir, ss=ss, band='A')[0]
+            except np.core._exceptions._UFuncOutputCastingError:
+                print('Unable to find dark image for cell calibration in '
+                              'band A exposure {}. Image will not be dark-subtracted'.format(ss))
 
             # Scale image to 1 second exposure (so that we can deal with images of different shutter speeds
             img_array_clear_A[:, :, i] *= (1 / meta['texp'])
@@ -1589,7 +1593,12 @@ class PyplisWorker:
 
             # Find associated dark image by extracting shutter speed, then subtract this image
             ss = meta['texp'] / self.cam_specs.file_ss_units
-            img_array_clear_B[:, :, i] -= self.find_dark_img(self.cell_cal_dir, ss=ss, band='B')[0]
+            try:
+                img_array_clear_B[:, :, i] -= self.find_dark_img(self.cell_cal_dir, ss=ss, band='B')[0]
+            except np.core._exceptions._UFuncOutputCastingError:
+                print('Unable to find dark image for cell calibration in '
+                              'band B exposure {}. Image will not be dark-subtracted'.format(ss))
+
 
             # Scale image to 1 second exposure (so that we can deal with images of different shutter speeds
             img_array_clear_B[:, :, i] *= (1 / meta['texp'])
@@ -1664,7 +1673,12 @@ class PyplisWorker:
 
                     # Find associated dark image by extracting shutter speed, then subtract this image
                     ss = meta['texp'] / self.cam_specs.file_ss_units
-                    cell_array[:, :, i] -= self.find_dark_img(self.cell_cal_dir, ss=ss, band=band)[0]
+                    try:
+                        cell_array[:, :, i] -= self.find_dark_img(self.cell_cal_dir, ss=ss, band=band)[0]
+                    except np.core._exceptions._UFuncOutputCastingError:
+                        print('Unable to find dark image for cell calibration in '
+                                      'band {} exposure {}. Image will not be dark-subtracted'.format(band, ss))
+
 
                     # Scale image to 1 second exposure (so that we can deal with images of different shutter speeds
                     cell_array[:, :, i] *= (1 / meta['texp'])
