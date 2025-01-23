@@ -767,7 +767,7 @@ class ImageSO2(LoadSaveProcessingSettings):
         ica_num = self.num_ica
         for ica in self.PCS_lines_list[self.num_ica:]:
             if ica is not None:
-                self.del_ica(ica_num)
+                self.del_ica(ica_num, permanent=True)
                 # self.PCS_lines_list[ica_num] = None   # I think this isn't required as it is done in del_ica
             ica_num += 1
 
@@ -876,7 +876,7 @@ class ImageSO2(LoadSaveProcessingSettings):
         else:
             print('Clicked outside axes bounds but inside plot window')
 
-    def del_ica(self, line_num, update_all=True):
+    def del_ica(self, line_num, update_all=True, permanent = False):
         """Searches axis for line object relating to pyplis line object and removes it
 
         Parameters
@@ -909,7 +909,7 @@ class ImageSO2(LoadSaveProcessingSettings):
         # Once removed, set the line to None
         self.PCS_lines_list[line_num] = None
 
-        if pyplis_worker.auto_nadeau_pcs == line_num:
+        if pyplis_worker.auto_nadeau_pcs == line_num and permanent:
             pyplis_worker.config['auto_nadeau_pcs'] = 0
             if pyplis_worker.auto_nadeau_line:
                 print("The ICA line selected for Nadeau line autogeneration was removed. "
