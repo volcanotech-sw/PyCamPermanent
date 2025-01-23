@@ -1258,11 +1258,13 @@ class PyplisWorker:
             print('Updating plot {}'.format(band))
             getattr(self, 'fig_{}'.format(band)).update_plot(img_path)
 
-    def find_dark_img(self, img_dir, ss, band='on'):
+    def find_dark_img(self, img_dir, ss, band='on', find_nearest=True):
         """
         Searches for suitable dark image in designated directory. First it filters the images for the correct filter,
         then searches for an image with the same shutter speed defined
         :param: ss  int,str     Shutter speed value to hunt for. Can be either int or str
+        :param: find_nearest  bool  If True, a dark image will always be returned, based on the nearest available
+                                    shutter speed.
         :returns: dark_img      Coadded dark image for this shutter speed
         :returns: dark_paths    List of strings representing paths to all dark images used to generate dark_img
         """
@@ -1289,6 +1291,16 @@ class PyplisWorker:
         ss_str = self.cam_specs.file_ss.replace('{}', '')
         ss_images = [int(f.split('_')[self.cam_specs.file_ss_loc].replace(ss_str, '')) for f in dark_list]
         ss_rounded_list = [round(f, -int(floor(log10(abs(f)))) + 1) for f in ss_images]
+
+        # Find nearest shutter speed that exists and allow for faster exit of function if it does
+        # This may seem slightly repetitive to above, but is necessary if we want the fastest possible look-up when
+        # find nearest is False. Otherwise we always not to create the ss_rounded_list before lookup
+        if find_nearest:
+            ss_rounded = min(ss_rounded_list, key=lambda x: abs(x - ss_rounded))
+            # Fast dictionary look up for preloaded dark images (using rounded ss value)
+            if str(ss_rounded) in self.dark_dict[band].keys():
+                dark_img = self.dark_dict[band][str(ss_rounded)]
+                return dark_img, None
 
         ss_idx = [i for i, x in enumerate(ss_rounded_list) if x == ss_rounded]
         ss_images = [dark_list[i] for i in ss_idx]
