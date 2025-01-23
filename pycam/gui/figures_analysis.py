@@ -912,10 +912,8 @@ class ImageSO2(LoadSaveProcessingSettings):
         if pyplis_worker.auto_nadeau_pcs == line_num:
             pyplis_worker.config['auto_nadeau_pcs'] = 0
             if pyplis_worker.auto_nadeau_line:
-                messagebox.showwarning(
-                    "Reverting ICA line used for Nadeau line autogeneration",
-                    "ICA line used for Nadeau line autogeneration removed\n"
-                    "Reverting to ICA line 1 for Nadeau line autogeneration")
+                print("The ICA line selected for Nadeau line autogeneration was removed. "
+                      "Reverting to ICA line 1 for Nadeau line autogeneration")
 
         if update_all:
             # Gather variables
