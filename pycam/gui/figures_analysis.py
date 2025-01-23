@@ -912,6 +912,7 @@ class ImageSO2(LoadSaveProcessingSettings):
         if pyplis_worker.auto_nadeau_pcs == line_num and permanent:
             pyplis_worker.config['auto_nadeau_pcs'] = 0
             if pyplis_worker.auto_nadeau_line:
+                self.root.after_idle(self.show_auto_nadeau_warn)
                 print("The ICA line selected for Nadeau line autogeneration was removed. "
                       "Reverting to ICA line 1 for Nadeau line autogeneration")
 
@@ -924,6 +925,13 @@ class ImageSO2(LoadSaveProcessingSettings):
 
             # Redraw canvas
             self.img_canvas.draw()
+
+    @staticmethod
+    def show_auto_nadeau_warn():
+        messagebox.showwarning(
+            "Reverting ICA line used for Nadeau line autogeneration",
+            "ICA line used for Nadeau line autogeneration removed\n"
+            "Reverting to ICA line 1 for Nadeau line autogeneration")
 
     def change_cmap(self, cmap):
         """Change colourmap of image"""
