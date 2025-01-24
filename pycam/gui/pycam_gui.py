@@ -106,6 +106,7 @@ class PyCam(ttk.Frame):
         geom_settings.initiate_variables(self)
         process_settings.initiate_variables(self)
         calibration_wind.add_gui(self)
+        calibration_wind.ils_frame.initiate_variables()
         plume_bg.initiate_variables(self)
         plume_bg.start_draw(self.root)
         doas_fov.start_draw(self.root)      # start drawing of frame
@@ -129,6 +130,7 @@ class PyCam(ttk.Frame):
         doas_worker.load_dir(prompt=False, plot=True)
         doas_worker.get_wavelengths(pyplis_worker.config)
         doas_worker.get_shift(pyplis_worker.config)
+        doas_worker.set_ils_fit(pyplis_worker.config)
         self.spec_wind.spec_frame.update_all()
         self.spec_wind.doas_frame.update_vals()
         doas_worker.process_doas(plot=True)
