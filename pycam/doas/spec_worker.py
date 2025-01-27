@@ -216,7 +216,7 @@ class SpecWorker:
         """If dark_dir is changed we need to reset the dark_dict which holds preloaded dark specs"""
         self.dark_dict = {}
         self._dark_dir = value
-        print('Dark spectra directory set: {}'.format(self.dark_dir))
+        self.SpecLogger.info(f'Dark spectra directory set: {self.dark_dir}')
 
     @property
     def clear_spec_raw(self):
@@ -318,7 +318,7 @@ class SpecWorker:
         after first interpolating to spectrometer wavelengths
         """
         if self.wavelengths is None:
-            print('No wavelength data to perform convolution')
+            self.SpecLogger.info('No wavelength data to perform convolution')
             return
 
         # Need an odd sized array for convolution, so if even we omit the last pixel
@@ -476,14 +476,14 @@ class SpecWorker:
             f.write('Light dilution correction used (on/off)={}\n'.format(self.corr_light_dilution))
             f.write('Light dilution recal time [mins]={}\n'.format(self.recal_ld_mins))
 
-        print('DOAS processing parameters saved: {}'.format(filepath))
+        self.SpecLogger.info(f'DOAS processing parameters saved: {filepath}')
 
     def save_results(self, pathname=None, start_time=None, end_time=None, save_last=False, header=True):
         """Saves doas results"""
 
         # Only continue if there are results to save
         if len(self.results) < 1:
-            print('No DOAS results to save')
+            self.SpecLogger.info('No DOAS results to save')
             return
 
         # Need to generate a filename if one doesn't already exist/isn't provided
@@ -526,7 +526,7 @@ class SpecWorker:
         df.to_csv(pathname, mode = 'a', header = header, index = False)
 
         # Not sure we want to print every time
-        print('DOAS results saved: {}'.format(pathname))
+        self.SpecLogger.info(f'DOAS results saved: {pathname}')
 
 
 class SpectraError(Exception):
