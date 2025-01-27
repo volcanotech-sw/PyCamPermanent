@@ -10,6 +10,7 @@ from astropy.convolution import convolve
 from pycam.setupclasses import SpecSpecs
 from pydoas.analysis import DoasResults
 from pycam.io_py import load_spectrum
+from pycam.logging.logging_tools import LoggerManager
 
 try:
     from scipy.constants import N_A
@@ -20,8 +21,12 @@ class SpecWorker:
     """
     Parent class for IfitWorker and DoasWorker
     """
+    SpecLogger = LoggerManager.add_logger("SpecWorker", "blue")
+    SpecDirWatchLogger = LoggerManager.add_logger("SpecDirWatcher", "purple")
+
     def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir='C:/', dark_dir=None,
                  q_doas=queue.Queue()):
+        self.SpecLogger.debug("Initialising SpecWorker")
         self.routine = routine          # Defines routine to be used, either (1) Polynomial or (2) Digital Filtering
         self.spec_specs = spec_specs    # Spectrometer specifications
 
