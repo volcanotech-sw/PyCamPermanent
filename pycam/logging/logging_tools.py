@@ -2,6 +2,15 @@ import logging
 from pathlib import Path
 from logging.handlers import TimedRotatingFileHandler
 
+def remove_stream_handler(logger):
+    """ Removes all stream handlers from logger provided.
+
+    :param logger logger: logger object to remove stream handler from
+    """
+    for handler in logger.handlers:
+        if isinstance(handler, logging.StreamHandler):
+            logger.removeHandler(handler)
+
 # Set up the root logger
 root_logger = logging.getLogger()
 
