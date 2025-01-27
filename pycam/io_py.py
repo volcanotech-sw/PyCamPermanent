@@ -29,6 +29,7 @@ try:
 except ModuleNotFoundError:
     print('OpenCV could not be imported, there may be some issues caused by this')
 from pandas import DataFrame
+from pathlib import Path
 
 def save_img(img, filename, ext='.png', metadata=None):
     """Saves image
@@ -39,6 +40,8 @@ def save_img(img, filename, ext='.png', metadata=None):
     ext: str
         File extension for saving, including "."
     """
+    Path(filename).parent.mkdir(parents=True, exist_ok=True)  # make sure the folder exists
+    # Create lock file to secure file until saving is complete
     lock = filename.replace(ext, '.lock')
     open(lock, 'a').close()
 
@@ -65,6 +68,7 @@ def save_spectrum(wavelengths, spectrum, filename, file_ext=None):
     filename: str
         File path for saving
     """
+    Path(filename).parent.mkdir(parents=True, exist_ok=True)  # make sure the folder exists
     # Create lock file to secure file until saving is complete
     if not file_ext:
         # read in config again to get extension if one's not provided

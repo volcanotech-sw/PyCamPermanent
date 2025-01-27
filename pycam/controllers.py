@@ -7,18 +7,15 @@ Main controller classes for the PiCam and OO Flame spectrometer
 import warnings
 import queue
 import multiprocessing.queues
-import io
-import os
 import time
 import datetime
 import numpy as np
 import numpy.typing
 import threading
-import json
-from typing import Any
 
 from .setupclasses import CameraSpecs, SpecSpecs, FileLocator
 from .utils import format_time, set_capture_status
+from .io_py import save_img, save_spectrum
 
 
 try:
@@ -360,8 +357,16 @@ class Camera(CameraSpecs):
             Type of image. Value should be retrieved from one of dictionary options in <self.file_type>
         """
 
+        if self.file_sort:
+            time_obj = datetime.datetime.now()
+            # this must have a trailing slash
+            prefix = f"{time_obj.year}/{time_obj.month:02}/{time_obj.day:02}/{time_obj.hour:02}/"
+        else:
+            prefix = ""
+
         return (
-            time_str
+            prefix
+            + time_str
             + "_"
             + self.file_filterids[self.band]
             + "_"
@@ -395,6 +400,8 @@ class Camera(CameraSpecs):
         # Re-allow access
         self.lock = False
 
+        # TODO verify this capture matches the request via comparison of specified shutter time to metadata
+
         # This is the metadata for the captured image, includes actual exposure time, etc
         self.metadata = request.get_metadata()
         # Note part of this metadata is AeLocked - it looks like this is just a report on whether
@@ -419,31 +426,6 @@ class Camera(CameraSpecs):
 
         # Return resources back to the camera system
         request.release()
-
-    def save_current_image(self, filename: str):
-        """
-        Saves image
-
-        Parameters
-        ----------
-        filename: str
-            Name of file to save image to
-        """
-        # TODO replace with io.save_img?
-        # Generate lock file to prevent image from being accessed before capture has finished
-        lock = filename.replace(self.file_ext, ".lock")
-        open(lock, "a").close()
-
-        # Save image
-        cv2.imwrite(filename, self.image, [cv2.IMWRITE_PNG_COMPRESSION, 0])
-        self.filename = filename
-
-        # Save metadata
-        with open(filename.replace(self.file_ext, ".json"), "w") as f:
-            json.dump(self.metadata, f, indent=4)
-
-        # Remove lock to free image for transfer
-        os.remove(lock)
 
     def interactive_capture(
         self,
@@ -550,7 +532,6 @@ class Camera(CameraSpecs):
 
                     # Capture image
                     self.capture()
-                    # TODO verify this capture matches the request?
 
                     # Generate filename
                     filename = self.generate_filename(time_str, command["type"])
@@ -646,13 +627,12 @@ class Camera(CameraSpecs):
 
                 # Acquire image
                 self.capture()
-                # TODO verify this capture matches the request?
 
                 # Generate filename
                 filename = self.generate_filename(time_str, self.file_type["meas"])
 
-                # Generate filename for image and save it
-                # self.save_current_image(self.generate_filename(time_str, self.file_type['meas']))
+                # Save image
+                # save_img(self.image, filename, metadata=self.metadata)
 
                 # Put filename and image into q
                 img_q.put([filename, self.image, self.metadata])
@@ -696,8 +676,8 @@ class Camera(CameraSpecs):
             # TODO verify this capture matches the request?
 
             # Generate filename for image and save it
-            # self.save_current_image(self.generate_filename(time_str, self.file_type['dark']))
             filename = self.generate_filename(time_str, self.file_type["dark"])
+            # save_img(self.image, filename, metadata=self.metadata)
             print("Captured dark: {}".format(filename))
 
             # Put images in q
@@ -869,8 +849,17 @@ class Spectrometer(SpecSpecs):
         spec_type: str
             Type of spectrum. Value should be retrieved from one of dictionary options in <self.file_type>
         """
+
+        if self.file_sort:
+            time_obj = datetime.datetime.now()
+            # this must have a trailing slash
+            prefix = f"{time_obj.year}/{time_obj.month:02}/{time_obj.day:02}/{time_obj.hour:02}/"
+        else:
+            prefix = ""
+
         return (
-            time_str
+            prefix
+            + time_str
             + "_"
             + self.file_ss.format(self.int_time)
             + "_"
@@ -1175,6 +1164,9 @@ class Spectrometer(SpecSpecs):
 
                 # Generate filename
                 filename = self.generate_filename(time_str, self.file_type["meas"])
+
+                # Save spectra
+                # save_spectrum(self.wavelengths, self.spectrum, filename)
 
                 # Put filename and spectrum into q
                 spec_q.put([filename, self.spectrum])

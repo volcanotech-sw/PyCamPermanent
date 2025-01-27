@@ -387,7 +387,7 @@ class CameraSpecs(SpecsBase):
                                      'min_saturation', 'max_saturation', 'file_ss_units'],
                            'str': ['save_path', 'file_ext', 'file_datestr', 'file_ss', 'band', 'raw_pixel_format'],
                            'dict': ['file_filterids', 'file_type'],
-                           'bool': ['auto_ss']
+                           'bool': ['auto_ss', 'file_sort']
                            }
         self.save_attrs = [x for a in self.attr_to_io.values() for x in a]      # Unpacking dict vals into flat list
 
@@ -424,6 +424,8 @@ class CameraSpecs(SpecsBase):
     file_gain_loc: int
     file_ss_loc: int
     file_type_loc: int
+
+    file_sort: bool
 
     ss_list: numpy.typing.NDArray[np.integer]
 
@@ -472,6 +474,7 @@ class CameraSpecs(SpecsBase):
         self.file_gain_loc = 2      # Location of gain string
         self.file_ss_loc = 3        # Shutter speed location in filename
         self.file_type_loc = 4      # Img type location in filename
+        self.file_sort = False      # Sort saved files into sub-folders
 
         # Pre-defined list of shutter speeds (used for auto shutter speed setting)
         self.ss_list = np.concatenate((np.arange(1000, 5000, 500),
@@ -483,7 +486,7 @@ class CameraSpecs(SpecsBase):
 
         # Acquisition settings
         self.shutter_speed = 10000  # Camera shutter speeds (us)
-        self.framerate = 0.2        # Camera framerate (Hz) - not actually FPS, but rather the frequency at which pictures can be captured
+        self.framerate = 0.25       # Camera framerate (Hz) - not actually FPS, but rather the frequency at which pictures can be captured
         self.analog_gain = 1        # Camera analog gain
         self.auto_ss = True         # Bool for requesting automated shutter speed adjustment
         self.min_saturation = 0.5   # Minimum saturation accepted before adjusting shutter speed (if auto_ss is True)
@@ -588,7 +591,7 @@ class SpecSpecs(SpecsBase):
             ],
             "str": ["save_path", "file_ext", "file_datestr", "file_ss"],
             "dict": ["file_type"],
-            "bool": ["auto_int"],
+            "bool": ["auto_int", "file_sort"],
         }
         self.save_attrs = [
             x for a in self.attr_to_io.values() for x in a
@@ -618,6 +621,8 @@ class SpecSpecs(SpecsBase):
     file_ss_loc: int
     file_coadd_loc: int
     file_type_loc: int
+
+    file_sort: bool
 
     int_list: numpy.typing.NDArray[np.integer]
 
@@ -657,6 +662,7 @@ class SpecSpecs(SpecsBase):
         self.file_ss_loc = 1        # Shutter speed location in filename
         self.file_coadd_loc = 2     # Coadd location in filename
         self.file_type_loc = 3      # File type location in filename
+        self.file_sort = False      # Sort saved files into sub-folders
 
         # Predefined list of integration times for automatic exposure adjustment
         # Range adjusted for SR4 compatibility in seabreeze (6ms - 10000ms; 6000us - 10000000us)
