@@ -660,6 +660,7 @@ class SpecSpecs(SpecsBase):
 
         # Predefined list of integration times for automatic exposure adjustment
         # Range adjusted for SR4 compatibility in seabreeze (6ms - 10000ms; 6000us - 10000000us)
+        # Units are MILLISECONDS
         self.int_list = np.concatenate((np.arange(6, 10, 1),
                                         np.arange(10, 50, 5),
                                         np.arange(50, 100, 10),
@@ -716,7 +717,7 @@ class SpecSpecs(SpecsBase):
         # Check requested integration time is acceptable
         if int_time < self._int_limit_lower:
             raise ValueError(
-                "Integration time below {}}us is not possible. "
+                "Integration time below {}us is not possible. "
                 "Attempted {}us".format(self._int_limit_lower, int_time)
             )
         elif int_time > self._int_limit_upper:
@@ -728,7 +729,8 @@ class SpecSpecs(SpecsBase):
         self._int_time = int_time
 
         # Adjust _int_time_idx to reflect the closest integration time to the current int_time
-        self._int_time_idx = int(np.argmin(np.abs(self.int_list - int_time)))
+        # Note we use self.int_list and self.int_time here to be sure to compare ms with ms
+        self._int_time_idx = int(np.argmin(np.abs(self.int_list - self.int_time)))
 
     @property
     def int_time_idx(self) -> int:
@@ -742,11 +744,16 @@ class SpecSpecs(SpecsBase):
         # If index exceeds list length then we set it to the maximum
         if value < 0:
             value = 0
+            raise IndexError("Integration time index below 0 is not possible.")
         elif value > len(self.int_list) - 1:
             value = len(self.int_list) - 1
+            raise IndexError(
+                f"Integration time index above {len(self.int_list) - 1} is not possible."
+            )
         # Use the setter to update the idx and adjust the spectrometer
         self._int_time_idx = value
-        self._int_time = self.int_list[self.int_time_idx]
+        self._int_time = int(self.int_list[self.int_time_idx] * 1000)
+        # self.int_time = self.int_list[self.int_time_idx]
 
     def estimate_focal_length(self) -> float:
         """

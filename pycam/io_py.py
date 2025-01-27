@@ -44,17 +44,19 @@ def save_img(img, filename, ext='.png', metadata=None):
 
     # Save image
     cv2.imwrite(filename, img, [cv2.IMWRITE_PNG_COMPRESSION, 0])
+    print(f"Saved {filename}")
 
     # Save metadata
     if metadata:
         with open(filename.replace(ext, ".json"), "w") as f:
             json.dump(metadata, f, indent=4)
 
+
     # Remove lock to free image for transfer
     os.remove(lock)
 
 
-def save_spectrum(wavelengths, spectrum, filename):
+def save_spectrum(wavelengths, spectrum, filename, file_ext=None):
     """Saves spectrum as numpy .mat file
     wavelengths: NumPy array-like object
         Wavelength values held in array
@@ -64,7 +66,10 @@ def save_spectrum(wavelengths, spectrum, filename):
         File path for saving
     """
     # Create lock file to secure file until saving is complete
-    lock = filename.replace(SpecSpecs().file_ext, '.lock')
+    if not file_ext:
+        # read in config again to get extension if one's not provided
+        file_ext = SpecSpecs().file_ext
+    lock = filename.replace(file_ext, '.lock')
     open(lock, 'a').close()
 
     # Pack wavelengths and spectrum into single array
@@ -72,6 +77,7 @@ def save_spectrum(wavelengths, spectrum, filename):
 
     # Save spectrum
     np.save(filename, spec_array)
+    print(f"Saved {filename}")
 
     # Remove lock
     os.remove(lock)

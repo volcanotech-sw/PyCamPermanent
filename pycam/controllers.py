@@ -277,7 +277,7 @@ class Camera(CameraSpecs):
         """
         # call parent class shutter_speed setter to update self.shutter_speed and self.ss_idx
         super(
-            Camera, type(self)
+            __class__, type(self)
         ).ss_idx.fset(  # pyright: ignore[reportAttributeAccessIssue]
             self, value
         )
@@ -296,7 +296,7 @@ class Camera(CameraSpecs):
         """
         # call parent class shutter_speed setter to update self.shutter_speed and self.ss_idx
         super(
-            Camera, type(self)
+            __class__, type(self)
         ).shutter_speed.fset(  # pyright: ignore[reportAttributeAccessIssue]
             self, ss
         )
@@ -504,8 +504,7 @@ class Camera(CameraSpecs):
             command = capt_q.get(block=True)
             print(
                 "{}: Got message from camera capture queue: {}".format(
-                    __file__,
-                    command
+                    __file__, command
                 )
             )
 
@@ -599,7 +598,7 @@ class Camera(CameraSpecs):
         # Previous second value for check that we don't take 2 images in one second
         prev_sec = None
 
-        while True:
+        while self.continuous_capture:
 
             # Check capture queue for new commands (such as exiting acquisition or adjusting shutter speed)
             try:
@@ -608,6 +607,7 @@ class Camera(CameraSpecs):
                 # Exit if requested
                 if "exit_cont" in mess:
                     if mess["exit_cont"]:
+                        print(f"{self.band} camera exiting capturing sequence")
                         self.continuous_capture = False
                         # Update file saying we are no longer in automated capture (for check_run.py)
                         set_capture_status(
@@ -775,6 +775,7 @@ class Spectrometer(SpecSpecs):
         try:
             self.spec = sb.Spectrometer(sb.list_devices()[0])
             if self.spec:
+                print("Spectrometer found")
                 self.spec.trigger_mode(0)
 
             # If we have a spectrometer we then retrieve its wavelength calibration and store it as an attribute
@@ -814,7 +815,7 @@ class Spectrometer(SpecSpecs):
         """
         Closes spectrometer - may be required to free up camera for later use in other scripts
         """
-        print('Closing spectrometer')
+        print("Closing spectrometer")
         if self.spec:
             del self.spec
             self.spec = None
@@ -827,7 +828,7 @@ class Spectrometer(SpecSpecs):
         """
         # call parent class int_time setter to update self.int_time and self.int_time_idx
         super(
-            Spectrometer, type(self)
+            __class__, type(self)
         ).int_time_idx.fset(  # pyright: ignore[reportAttributeAccessIssue]
             self, value
         )
@@ -848,7 +849,7 @@ class Spectrometer(SpecSpecs):
         """
         # call parent class int_time setter to update self.int_time and self.int_time_idx
         super(
-            Spectrometer, type(self)
+            __class__, type(self)
         ).int_time.fset(  # pyright: ignore[reportAttributeAccessIssue]
             self, int_time
         )
@@ -966,7 +967,7 @@ class Spectrometer(SpecSpecs):
         # Extract spectrum in specific wavelength range to be checked
         _, spectrum = self.extract_subspec(self.saturation_wavelength_range)
 
-        # Get indices of 10 largest numbers
+        # Get indices of the sorted spectrum
         indices = spectrum.argsort()
 
         # Get DN value of top X values
@@ -1103,7 +1104,7 @@ class Spectrometer(SpecSpecs):
         # Update file saying we are in automated capture (for check_run.py)
         set_capture_status(FileLocator.RUN_STATUS_PI, "spec", "automated")
 
-        print(f"Spectrometer entering capturing sequence")
+        print("Spectrometer entering capturing sequence")
 
         # Setup queue
         spec_q = self._q_check(spec_q, q_type="spec")  # Queue for placing spectrum
@@ -1119,7 +1120,7 @@ class Spectrometer(SpecSpecs):
         # Previous second value for check that we don't take 2 images in one second
         prev_sec = None
 
-        while True:
+        while self.continuous_capture:
 
             # Check capture queue for new commands (such as exiting acquisition or adjusting shutter speed)
             # Rethink this later - how to react perhaps depends on what is sent to the queue?
@@ -1129,6 +1130,7 @@ class Spectrometer(SpecSpecs):
                 # Exit if requested
                 if "exit_cont" in mess:
                     if mess["exit_cont"]:
+                        print("Spectrometer exiting capturing sequence")
                         self.continuous_capture = False
                         # Update file saying we are no longer in automated capture (for check_run.py)
                         set_capture_status(FileLocator.RUN_STATUS_PI, "spec", "manual")

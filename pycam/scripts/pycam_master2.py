@@ -84,6 +84,7 @@ for instrument in instruments:
     if start_cont:
         instrument.capture_q.put({"start_cont": True})
         print("Continuous capture queued")
+        # Equivalent of later calling {"STC":1, "STS": 1}
 
 # Potentially we could use FrameDurationLimits to synchronise between both cameras here
 
@@ -105,7 +106,7 @@ sock_serv_ext.get_port()
 write_file(
     FileLocator.NET_EXT_FILE,
     {"ip_address": sock_serv_ext.listen_ip, "port": sock_serv_ext.port},
-    description="File holding network information for external communications"
+    description="File holding network information for external communications",
 )
 
 # Setup external communication port
@@ -143,6 +144,9 @@ while running:
 
     try:
 
+        # TODO print some sort of status output that things are working OK?
+        # check when the last save was? what the current shutter/integration time etc are?
+
         # -----------------------------------------------------------------
         # Save images
         for instrument in instruments:
@@ -159,9 +163,14 @@ while running:
 
                 elif isinstance(instrument, Spectrometer):
                     [filename, spectrum] = instrument.spec_q.get(False)
-                    save_spectrum(instrument.wavelengths, spectrum, filename)
+                    save_spectrum(
+                        instrument.wavelengths,
+                        spectrum,
+                        instrument.save_path + "/" + filename,
+                        file_ext=instrument.file_ext,
+                    )
 
-                # TODO save/copy to backup location
+            # TODO save/copy to backup location
 
             except queue.Empty:
                 pass
@@ -202,6 +211,22 @@ while running:
                     # Break out of the loop when exiting
                     running = False
 
+                # Keep track of the state of continuous capture
+                if (
+                    "STC" in comm_cmd
+                    and "STS" in comm_cmd
+                    and comm_cmd["STS"]
+                    and comm_cmd["STC"]
+                ):
+                    start_cont = True
+                elif (
+                    "SPC" in comm_cmd
+                    and "SPS" in comm_cmd
+                    and comm_cmd["SPS"]
+                    and comm_cmd["SPC"]
+                ):
+                    start_cont = False
+
                 if comm_cmd:
                     # We have received some valid commands, pass these on to the devices to carry out
                     for funcs in comms_funcs:
@@ -217,6 +242,13 @@ while running:
         # Try to quit nicely when ctrl-c'd
         print("Quitting")
         running = False
+        for funcs in comms_funcs:
+            ed = {"EXT": 1}
+            if start_cont:
+                # Stop continuous capture if it's running
+                ed["SPC"] = 1  # Stop cameras
+                ed["SPS"] = 1  # Stop spectrometer
+            funcs.q.put(ed)
 
 # Give all the various threads and sockets a moment to finish...
 to_sleep = 5
