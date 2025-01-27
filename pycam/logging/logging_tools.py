@@ -1,6 +1,25 @@
 import logging
+import colorlog
 from pathlib import Path
 from logging.handlers import TimedRotatingFileHandler
+
+class LoggerManager:
+    _loggers = {}  # Store created loggers to prevent duplicates
+
+    @staticmethod
+    def add_logger(name, colour):
+        if name not in LoggerManager._loggers:
+            logger = logging.getLogger(name)
+            if not logger.handlers:  # Only configure if no handlers exist
+                # Configure the logger (e.g., set level, add handlers)
+                format_str = f'%(log_color)s%(levelname)-8s%(reset)s%(asctime)s - %({colour})s%(name)s - %(message)s'
+                formatter = colorlog.ColoredFormatter(format_str, '%Y-%m-%d %H:%M:%S')
+                handler = colorlog.StreamHandler() # Output to console
+                handler.setFormatter(formatter)
+                logger.addHandler(handler)
+                logger.setLevel(logging.DEBUG)  # Set the desired logging level
+            LoggerManager._loggers[name] = logger
+        return LoggerManager._loggers[name]
 
 def remove_stream_handler(logger):
     """ Removes all stream handlers from logger provided.
@@ -31,7 +50,5 @@ if not any(isinstance(handler, logging.FileHandler) for handler in root_logger.h
 
     root_file_handler.setFormatter(root_file_formatter)
     root_logger.addHandler(root_file_handler)
-    root_logger.setLevel(logging.INFO)
 
     root_logger.info("New session started")
-
