@@ -125,6 +125,9 @@ class CommsFuncs(SendRecvSpecs):
             'HLS': (bool, 1),           # Hello from Spectrometer
             'GBY': (bool, 1),           # Just a friendly goodbye
             'SAV': (bool, 1),           # Trigger a save of specifications files
+            'NIA': (str, []),           # New image from Camera A (on band)
+            'NIB': (str, []),           # New image from Camera B (off band)
+            'NIS': (str, []),           # New image from the Spectrometer
             }
         # Error flag, which provides the key in which an error was found
         self.cmd_dict['ERR'] = (str, list(self.cmd_dict.keys()))

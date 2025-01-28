@@ -119,7 +119,7 @@ ext_connections = {
     # "2": CommConnection(sock_serv_ext, acc_conn=True),
 }
 
-# Setup masterpi comms function implementer
+# Setup masterpi comms function implementer, MasterComms should ALWAYS be first in this list
 comms_funcs: list[CommsCommandHandler] = [MasterComms(sock_serv_ext, ext_connections)]
 
 # Attach communications to each instrument
@@ -157,18 +157,25 @@ while running:
             try:
                 if isinstance(instrument, Camera):
                     [filename, image, metadata] = instrument.img_q.get(False)
-                    save_img(
+                    new_file = save_img(
                         image, instrument.save_path + "/" + filename, metadata=metadata
                     )
+                    # Tell connected clients about the new image (the master should be first)
+                    if instrument.band == "on":
+                        comms_funcs[0].send_tagged_comms({"NIA": new_file})
+                    else:  # off band
+                        comms_funcs[0].send_tagged_comms({"NIB": new_file})
 
                 elif isinstance(instrument, Spectrometer):
                     [filename, spectrum] = instrument.spec_q.get(False)
-                    save_spectrum(
+                    new_file = save_spectrum(
                         instrument.wavelengths,
                         spectrum,
                         instrument.save_path + "/" + filename,
                         file_ext=instrument.file_ext,
                     )
+                    # Tell connected clients about the new spectra
+                    comms_funcs[0].send_tagged_comms({"NIS": new_file})
 
             # TODO save/copy to backup location
 

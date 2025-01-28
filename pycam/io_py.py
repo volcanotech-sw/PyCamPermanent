@@ -57,6 +57,7 @@ def save_img(img, filename, ext='.png', metadata=None):
 
     # Remove lock to free image for transfer
     os.remove(lock)
+    return filename
 
 
 def save_spectrum(wavelengths, spectrum, filename, file_ext=None):
@@ -85,6 +86,7 @@ def save_spectrum(wavelengths, spectrum, filename, file_ext=None):
 
     # Remove lock
     os.remove(lock)
+    return filename
 
 
 def load_spectrum(filename, attempts = 3):
