@@ -789,7 +789,6 @@ class LoadFrame(LoadSaveProcessingSettings):
         doas_fov.load_defaults()
         calibration_wind.ils_frame.ILS_path = self.pyplis_worker.config["ILS_path"]
         calibration_wind.ils_frame.load_ILS()
-
         self.pyplis_worker.apply_config()
         self.pyplis_worker.load_sequence(pyplis_worker.img_dir, plot_bg=False)
         self.doas_worker.load_dir(self.pyplis_worker.spec_dir, prompt=False, plot=True)
@@ -805,7 +804,8 @@ class LoadFrame(LoadSaveProcessingSettings):
             messagebox.showwarning("Missing path params not updated",
                                    pyplis_worker.missing_path_param_warn)
             pyplis_worker.missing_path_param_warn = None
-
+        calibration_wind.load_ref_species()
+            
     def reset_pcs_lines(self):
         """Reset current PCS lines"""
 
