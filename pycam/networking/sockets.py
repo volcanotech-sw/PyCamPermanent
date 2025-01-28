@@ -124,7 +124,7 @@ class CommsFuncs(SendRecvSpecs):
             'HLB': (bool, 1),           # Hello from Camera B
             'HLS': (bool, 1),           # Hello from Spectrometer
             'GBY': (bool, 1),           # Just a friendly goodbye
-
+            'SAV': (bool, 1),           # Trigger a save of specifications files
             }
         # Error flag, which provides the key in which an error was found
         self.cmd_dict['ERR'] = (str, list(self.cmd_dict.keys()))
@@ -633,6 +633,19 @@ class CamComms(CommsCommandHandler):
                 comm = {'HLB': False}
             self.send_tagged_comms(comm)
 
+    def SAV(self, value):
+        """
+        Acts on the SAV command to save the current camera specifications, including shutter speed
+
+        Parameters
+        ----------
+        value: bool
+            Save settings if true. Ignore if false (it is an acknowledgement).
+        """
+        if value:
+            self.camera.save_specs()
+            self.send_tagged_comms({"SAV": False})
+
     def SSA(self, value):
         """Acts on SSA command
 
@@ -931,6 +944,19 @@ class SpecComms(CommsCommandHandler):
             # Send response if requested
             comm = {'HLS': False}
             self.send_tagged_comms(comm)
+
+    def SAV(self, value):
+        """
+        Acts on the SAV command to save the current camera specifications, including shutter speed
+
+        Parameters
+        ----------
+        value: bool
+            Save settings if true. Ignore if false (it is an acknowledgement).
+        """
+        if value:
+            self.spectrometer.save_specs()
+            self.send_tagged_comms({"SAV": False})
 
     def SSS(self, value):
         """Acts on SSS command
