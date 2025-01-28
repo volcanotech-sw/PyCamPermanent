@@ -86,8 +86,17 @@ while running:
     try:
         cmd_dict = json.loads(cmd)
     except json.decoder.JSONDecodeError as e:
-        print(f"Bad JSON? {e}")
-        continue
+        w = False
+        if "Expecting property name enclosed in double quotes" in str(e):
+            # probably ' switched with ", try that
+            try:
+                cmd_dict = json.loads(cmd.replace("'", '"'))
+                w = True
+            except json.decoder.JSONDecodeError:
+                pass
+        if not w:
+            print(f"Bad JSON? {e}")
+            continue
 
     if "Q" in cmd_dict:
         sys.exit()
