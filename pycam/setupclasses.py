@@ -192,6 +192,7 @@ class SpecsBase:
 
     filename: None | str
     instrument_type: str
+    band: None | str  # For CameraSpecs
     default_filename: str
 
     attr_to_io: dict[str, list[str]]
@@ -319,10 +320,15 @@ class SpecsBase:
 
         self.filename = filename
 
+        print(f"Saving specifications to {filename}")
+
         with open(filename, "w") as f:
             # Write header
             f.write("# -*- coding: utf-8 -*-\n")
-            f.write(f"# File holding {self.instrument_type} specifications\n")
+            if self.band:
+                f.write(f"# File holding {self.band} {self.instrument_type} specifications\n")
+            else:
+                f.write(f"# File holding {self.instrument_type} specifications\n")
 
             # Loop through object attributes and save them if they aren't None
             for attr in self.save_attrs:
@@ -369,8 +375,9 @@ class CameraSpecs(SpecsBase):
     _shutter_speed: int
     _ss_idx: int
 
-    def __init__(self, filename=None):
+    def __init__(self, filename=None, band=None):
         self.filename = filename    # Filename for loading specifications
+        self.band = band  # needed to load the correct specs
         self.instrument_type = "camera"
         self.default_filename = FileLocator.CONFIG_CAM
 
@@ -396,9 +403,8 @@ class CameraSpecs(SpecsBase):
 
         # Load configuration from text file if it is provided, otherwise default parameters are kept
         if isinstance(self.filename, str):
+            # Make sure when loading by filename that you pick the file that matches the camera specs
             self.load_specs(self.filename)
-
-    band: str
 
     pix_size_x: float
     pix_size_y: float
@@ -438,7 +444,11 @@ class CameraSpecs(SpecsBase):
 
     def _default_specs(self):
         """Define camera default specs > binned picam setup"""
-        self.band = 'on'
+        if not self.band:
+            self.band = 'on'
+
+        # Adjust the default_filename based on specs
+        self.default_filename = self.default_filename.replace('.txt', f"_{self.band}.txt")
 
         # Camera specs
         self.pix_size_x = 5.6e-6    # Pixel width in m
@@ -567,6 +577,7 @@ class SpecSpecs(SpecsBase):
 
     def __init__(self, filename=None):
         self.filename = filename  # Filename for loading specifications
+        self.band = None  # Needed for saving
         self.instrument_type = "spectrometer"
         self.default_filename = FileLocator.CONFIG_SPEC
 

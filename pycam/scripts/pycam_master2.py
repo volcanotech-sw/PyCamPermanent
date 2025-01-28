@@ -46,8 +46,8 @@ import socket
 # -----------------------------------------------------------------
 # Setup camera object
 
-cam1 = Camera(band="on", filename=FileLocator.CONFIG_CAM)  # , ignore_device=True)
-cam2 = Camera(band="off", filename=FileLocator.CONFIG_CAM)
+cam1 = Camera(band="on", filename=FileLocator.CONFIG_CAM.replace(".txt", "_on.txt"))
+cam2 = Camera(band="off", filename=FileLocator.CONFIG_CAM.replace(".txt", "_off.txt"))
 spec = Spectrometer(filename=FileLocator.CONFIG_SPEC)
 
 instruments = [cam1, cam2, spec]

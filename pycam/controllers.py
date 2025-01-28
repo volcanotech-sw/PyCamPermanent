@@ -110,10 +110,7 @@ class Camera(CameraSpecs):
 
         # Get default specs from parent class and any other attributes, this needs to be
         # after above as it will try to set things that depend on properties above
-        super().__init__(filename)
-        # 'on' or 'off' band camera (band can be overwritten by file load)
-        # This is after the specs init as band is also a spec...
-        self.band = band
+        super().__init__(filename, band)
 
         # Metadata of the most recent image (actual exposure time, etc.)
         self.metadata = {}
