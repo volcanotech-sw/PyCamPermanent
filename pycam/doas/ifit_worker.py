@@ -472,8 +472,8 @@ class IFitWorker(SpecWorker):
                                                                        wavelengths=self.wavelengths,
                                                                        spectra=self.plume_spec_shift,
                                                                        spec_time=self.spec_time)
-                    self.SpecLogger.info(f'Fit val uncorrected: {fit_0.params['SO2'].fit_val}')
-                    self.SpecLogger.info(f'Fit val corrected: {df_lookup['SO2'][0]}')
+                    self.SpecLogger.info(f'Fit val uncorrected: {fit_0.params["SO2"].fit_val}')
+                    self.SpecLogger.info(f'Fit val corrected: {df_lookup["SO2"][0]}')
                     # Update SO2 value for the best SO2 value we have
                     if not np.isnan(df_lookup['SO2'][0]):
                         fit_0.params['SO2'].fit_val = df_lookup['SO2'][0]
@@ -524,7 +524,8 @@ class IFitWorker(SpecWorker):
 
         # Loop through directory plume images processing them
         for i in range(len(self.spec_dict['plume'])):
-            self.SpecLogger.info(f'Processing spectrum {i+1} of {len(self.spec_dict['plume'])}')
+            self.SpecLogger.info(f'Processing spectrum {i+1} of {len(self.spec_dict["plume"])}')
+            
 
             self.wavelengths, self.plume_spec_raw = load_spectrum(os.path.join(self.spec_dir,
                                                                                self.spec_dict['plume'][i]))
@@ -1341,7 +1342,7 @@ class IFitWorker(SpecWorker):
                 # Change analyser values
                 self.analyser0.params['LDF'].set(value=ldf_best)
                 self.analyser1.params['LDF'].set(value=ldf_best)
-            self.SpecLogger.info(f'LDF: {self.analyser0.params['LDF'].value}')
+            self.SpecLogger.info(f'LDF: {self.analyser0.params["LDF"].value}')
 
             # Fit spectrum for in 2 fit windows
             fit0 = self.analyser0.fit_spectrum([wavelengths[i], spectra[i]], calc_od=['SO2', 'Ring', 'O3'],
