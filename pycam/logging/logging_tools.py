@@ -9,6 +9,7 @@ class LoggerManager:
     """
 
     _loggers = {}  # Store created loggers to prevent duplicates
+    _file_handlers = {}  # Store file handlers to avoid duplicates
     _file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', '%Y-%m-%d %H:%M:%S')
 
     @staticmethod
@@ -52,12 +53,43 @@ class LoggerManager:
 
         file_handler_key = str(log_path)  # Use log file path as key
         if file_handler_key not in LoggerManager._file_handlers:
-            file_handler = TimedRotatingFileHandler(log_path, when = 'D', interval=1, backupCount=5)
+            if logger.name == 'root':
+                file_handler = TimedRotatingFileHandler(log_path, when = 'D', interval=1, backupCount=5)
+            else:
+                file_handler = logging.FileHandler(log_path)
             file_handler.setFormatter(LoggerManager._file_formatter)
             file_handler.setLevel(level)
             LoggerManager._file_handlers[file_handler_key] = file_handler
         
         logger.addHandler(LoggerManager._file_handlers[file_handler_key])
+
+    @staticmethod
+    def remove_file_handler(logger, log_path):
+        """ Remove Filehandler from an existing logger. Removed based on the path to the log file.
+
+        :param logger logger: Existing logger to remove FileHandler from
+        :param (str|Path) log_path: Location of the log file
+        """
+        log_path = Path(log_path).resolve()
+        for handler in logger.handlers:
+            if isinstance(handler, logging.FileHandler):
+                handler_path = Path(handler.baseFilename).resolve()
+                if handler_path == log_path:
+                    logger.removeHandler(handler)
+
+    @staticmethod
+    def delete_file_handler(log_path):
+        """ Close and delete a saved FileHandler
+
+        :param (str|Path) log_path: _description_
+        """
+        log_path = Path(log_path)
+        try:
+            handler = LoggerManager._file_handlers[log_path]
+            handler.close()
+            del LoggerManager._file_handlers[log_path]
+        except KeyError:
+            pass
 
     @staticmethod
     def remove_stream_handlers(logger):
