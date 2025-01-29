@@ -5,7 +5,7 @@
 Scripts are an edited version of the pyplis example scripts, adapted for use with the PiCam"""
 from __future__ import (absolute_import, division)
 
-from pycam.logging.logging_tools import remove_stream_handler
+from pycam.logging.logging_tools import LoggerManager
 from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator
 from pycam.utils import calc_dt, get_horizontal_plume_speed
 from pycam.io_py import (
@@ -58,9 +58,9 @@ path_params = [
 ]
 
 # Remove StreamHandlers from pyplis loggers so messages from pyplis just get passed to the
-# root FileHandlers
-remove_stream_handler(pyplis.print_log)
-remove_stream_handler(pyplis.logger)
+# root FileHandler
+LoggerManager.remove_stream_handlers(pyplis.print_log)
+LoggerManager.remove_stream_handlers(pyplis.logger)
 
 class PyplisWorker:
     """
