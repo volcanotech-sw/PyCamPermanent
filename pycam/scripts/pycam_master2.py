@@ -2,6 +2,27 @@
 # -*- coding: utf-8 -*-
 
 """
+Master script to be run on server pi for interfacing with the various instrument components and any external
+connection (such as a laptop connected via ethernet)
+
+    usage: pycam_master2.py [-h] [-c | -d] [start_cont]
+
+    positional arguments:
+    start_cont          Immediately enter continuous capture (legacy)
+
+    options:
+    -h, --help          show this help message and exit
+    -c, --continuous    Immediately enter continuous capture
+    -d, --dark-capture  Perform a dark capture then exit
+
+When running with -d flag, the master script will just request that the instruments run their dark capture procedure
+(acquiring darks at all shutter speeds). Following this the script shuts down. While a dark capture is running, the
+script will resist exiting in order to complete the procedure. If you must exit, either send the USR1 flag over ssh
+by running "kill -USR1 `ps -ef | grep master2 | grep -v grep | awk '{print $2}'`" or using tests/run_ext_conn.py send
+The {"DXT":1} packet.
+
+Also the Raspberry Pi must be turned on at the time that this script is scheduled to start!
+
 Master script to be run on the instrument, handles:
 - Collecting camera images
 - Collecting spectra
@@ -11,6 +32,7 @@ This is intended to replace:
 - pycam_masterpi.py
 - pycam_camera.py
 - pycam_spectrometer.py
+- pycam_dark_capture.py
 - remote_pi_off_gpio.py
 - remote_pi_off.py
 - remote_pi_on.py
@@ -29,7 +51,6 @@ from pycam.io_py import save_img, save_spectrum
 from pycam.networking.sockets import (
     SocketServer,
     CommConnection,
-    CommsCommandHandler,
     MasterComms,
     CamComms,
     SpecComms,
@@ -37,10 +58,57 @@ from pycam.networking.sockets import (
 from pycam.utils import read_file, write_file
 from pycam.setupclasses import ConfigInfo, FileLocator
 
+import argparse
 import atexit
 import time
 import queue
+import signal
 import socket
+
+
+# -----------------------------------------------------------------
+# Handle arguments
+
+parser = argparse.ArgumentParser()
+group = parser.add_mutually_exclusive_group()
+group.add_argument(
+    "-c",
+    "--continuous",
+    action="store_true",
+    help="Immediately enter continuous capture",
+)
+group.add_argument(
+    "-d", "--dark-capture", action="store_true", help="Perform a dark capture then exit"
+)
+parser.add_argument(
+    "start_cont",
+    type=int,
+    help="Immediately enter continuous capture (legacy)",
+    nargs="?",
+    default=0,
+)
+args = parser.parse_args()
+
+dark_capture = False
+dark_capture_launch = False
+dark_capture_start = 0
+if args.start_cont == 1 or args.continuous:
+    start_cont = True
+    print("Continuous capture on start-up is activated")
+
+    if args.dark_capture:
+        # We only get here if we run ./pycam_master2.py 1 -d accidentally, which
+        # won't be an issue any more if support for the legacy 1 argument is removed
+        print("WARNING Cannot run dark capture when continuous capture is enabled")
+else:
+    start_cont = False
+    print("Continuous capture on start-up not activated")
+
+    # Only allow dark capture if continuous isn't specified
+    if args.dark_capture:
+        dark_capture = True
+        dark_capture_launch = True
+        print("Running dark capture only, will quit when finished")
 
 
 # -----------------------------------------------------------------
@@ -52,25 +120,8 @@ spec = Spectrometer(filename=FileLocator.CONFIG_SPEC)
 
 instruments = [cam1, cam2, spec]
 
-# -----------------------------------------------------------------
-# Setup shutdown procedure
-
-for instrument in instruments:
-    atexit.register(instrument.close)
-
-    # We always must save the current camera settings (this runs before cam.close as it is added to register second)
-    # atexit.register(instrument.save_specs)
-
-
 # ------------------------------------------------------------------
 # Initialise cameras
-
-if "1" in sys.argv:
-    start_cont = True
-    print("Continuous capture on start-up is activated")
-else:
-    start_cont = False
-    print("Continuous capture on start-up not activated")
 
 for instrument in instruments:
     # Initialise camera (may need to set shutter speed first?)
@@ -81,10 +132,8 @@ for instrument in instruments:
     # Setup thread for controlling camera capture
     instrument.interactive_capture()
 
-    if start_cont:
-        instrument.capture_q.put({"start_cont": True})
-        print("Continuous capture queued")
-        # Equivalent of later calling {"STC":1, "STS": 1}
+    # if start_cont:
+    #     instrument.capture_q.put({"start_cont": True})
 
 # Potentially we could use FrameDurationLimits to synchronise between both cameras here
 
@@ -120,26 +169,71 @@ ext_connections = {
 }
 
 # Setup masterpi comms function implementer, MasterComms should ALWAYS be first in this list
-comms_funcs: list[CommsCommandHandler] = [MasterComms(sock_serv_ext, ext_connections)]
+sock_serv_ext.internal_connections.append(MasterComms(sock_serv_ext, ext_connections))
 
 # Attach communications to each instrument
 for instrument in instruments:
     if isinstance(instrument, Camera):
-        comms_funcs.append(CamComms(sock_serv_ext, instrument))
+        sock_serv_ext.internal_connections.append(CamComms(sock_serv_ext, instrument))
     elif isinstance(instrument, Spectrometer):
-        comms_funcs.append(SpecComms(sock_serv_ext, instrument))
+        sock_serv_ext.internal_connections.append(SpecComms(sock_serv_ext, instrument))
 
 # Thread to handle passing commands to things that run commands
-for funcs in comms_funcs:
-    funcs.handle_commands()
+for func in sock_serv_ext.internal_connections:
+    func.handle_commands()
 
+# -----------------------------------------------------------------
+# Setup shutdown procedure
+
+# Use this to nicely exit the main loop
+running = True
+
+for instrument in instruments:
+    # Make sure the instruments are handled nicely
+    atexit.register(instrument.close)
+
+    # We always must save the current camera settings (this runs before cam.close as it is added to register second)
+    atexit.register(instrument.save_specs)
+
+
+def signal_handler(signum, frame):
+    # Use this to make sure we don't quit in the middle of anything important, e.g., a dark capture
+    global running, dark_capture
+    if dark_capture and (signum == signal.SIGTERM or signum == signal.SIGINT):
+        print("Dark capture is running, cannot quit")
+        return
+    if dark_capture and signum == signal.SIGUSR1:
+        print("Forced", end=" ")
+    print("Quitting")
+    running = False
+    sock_serv_ext.send_to_all({"EXT": 1})
+
+
+signal.signal(signal.SIGINT, signal_handler)  # Normally a result of Ctrl-C
+signal.signal(signal.SIGTERM, signal_handler)  #  Normal kill <pid>
+# Use the USR1 signal to allow exiting mid dark capture
+signal.signal(signal.SIGUSR1, signal_handler)  # kill -USR1 <pid>
 
 # -----------------------------------------------------------------
 # Handle communications/main loop
 
+# Send off the command line arguments
+if start_cont:
+    # instrument.capture_q.put({"start_cont": True})
+    print("Continuous capture queued")
+    cont_capt_cmd = {"STC": 1, "STS": 1, "IDN": "MAS"}
+    sock_serv_ext.send_to_all(cont_capt_cmd)
+elif dark_capture:
+    dark_capture_start = time.time()
+    # Forward dark imaging command to all communication sockets (2 cameras and 1 spectrometer)
+    dark_capt_cmd = {"DKC": 1, "DKS": 1, "IDN": "MAS"}
+    sock_serv_ext.send_to_all(dark_capt_cmd)
+    # We need a delay here for dark capture to start everywhere, otherwise
+    # it looks like it's immediately finished and we loose track of dark capture state
+    time.sleep(1)
+
 print("Entering main loop")
 
-running = True
 while running:
 
     try:
@@ -161,10 +255,11 @@ while running:
                         image, instrument.save_path + "/" + filename, metadata=metadata
                     )
                     # Tell connected clients about the new image (the master should be first)
-                    if instrument.band == "on":
-                        comms_funcs[0].send_tagged_comms({"NIA": new_file})
-                    else:  # off band
-                        comms_funcs[0].send_tagged_comms({"NIB": new_file})
+                    if not dark_capture:
+                        if instrument.band == "on":
+                            sock_serv_ext.send_to_all({"NIA": new_file, "DST": "EXN"})
+                        else:  # off band
+                            sock_serv_ext.send_to_all({"NIB": new_file, "DST": "EXN"})
 
                 elif isinstance(instrument, Spectrometer):
                     [filename, spectrum] = instrument.spec_q.get(False)
@@ -175,7 +270,8 @@ while running:
                         file_ext=instrument.file_ext,
                     )
                     # Tell connected clients about the new spectra
-                    comms_funcs[0].send_tagged_comms({"NIS": new_file})
+                    if not dark_capture:
+                        sock_serv_ext.send_to_all({"NIS": new_file, "DST": "EXN"})
 
             # TODO save/copy to backup location
 
@@ -202,7 +298,7 @@ while running:
                 # This causes a horrible loop if we're trying to quit
                 ext_connections[conn].acc_connection()
 
-        # Check message queue in each comm port
+        # Check message queue in each external networks comms port
         for conn in ext_connections:
             try:
                 # Check message queue (taken from tuple at position [1])
@@ -213,52 +309,82 @@ while running:
                     )
                 )
 
-                if "EXT" in comm_cmd and comm_cmd["EXT"]:
+                if "EXT" in comm_cmd and comm_cmd["EXT"] and not dark_capture:
                     print("Exit command received")
                     # Break out of the loop when exiting
+                    running = False
+                elif dark_capture and "EXT" in comm_cmd:
+                    # Don't allow remote to trigger an EXT to other things
+                    print("Exiting not allowed at this moment")
+                    del comm_cmd["EXT"]
+                    if len(comm_cmd) == 1 and "IDN" in comm_cmd:
+                        # All that's left in the packet is the IDN, nothing to do
+                        continue
+                if "DXT" in comm_cmd and comm_cmd["DXT"]:
+                    # Force quit during dark capture
                     running = False
 
                 # Keep track of the state of continuous capture
                 if (
                     "STC" in comm_cmd
                     and "STS" in comm_cmd
-                    and comm_cmd["STS"]
-                    and comm_cmd["STC"]
+                    and comm_cmd["STS"] == 1
+                    and comm_cmd["STC"] == 1
                 ):
                     start_cont = True
                 elif (
                     "SPC" in comm_cmd
                     and "SPS" in comm_cmd
-                    and comm_cmd["SPS"]
-                    and comm_cmd["SPC"]
+                    and comm_cmd["SPS"] == 1
+                    and comm_cmd["SPC"] == 1
                 ):
                     start_cont = False
 
                 if comm_cmd:
-                    # We have received some valid commands, pass these on to the devices to carry out
-                    for funcs in comms_funcs:
-                        funcs.q.put(comm_cmd)
+                    # We have received some valid commands, pass these on to the classes
+                    # that handle communications for the master/cameras/spectrometer to carry out
+                    sock_serv_ext.send_to_all(comm_cmd)
+
+                # Keep track of the state of dark capture
+                if (
+                    "DKC" in comm_cmd
+                    and "DKS" in comm_cmd
+                    and comm_cmd["DKC"] == 1
+                    and comm_cmd["DKS"] == 1
+                ):
+                    dark_capture_start = time.time()
+                    dark_capture = True
+                    # Wait for dark capture to actually start
+                    time.sleep(1)
 
             except queue.Empty:
                 pass
+
+        # If dark capture is running, check for if it's finished by checking if the
+        # dark capture completion tracker registers it's done for all
+        if dark_capture:
+            dark_capture = any(
+                [v for v in sock_serv_ext.internal_connections[0].dark_capture.values()]
+            )
+            if not dark_capture:
+                print(
+                    f"All dark captures finished in {time.time() - dark_capture_start:0.2f} s!"
+                )
+                if dark_capture_launch:
+                    # If started from the launch flag, quit afterwards
+                    signal.raise_signal(signal.SIGINT)
 
         # Sleep for a short period and then check the lock again
         time.sleep(0.005)
 
     except KeyboardInterrupt:
         # Try to quit nicely when ctrl-c'd
-        print("Quitting")
-        running = False
-        for funcs in comms_funcs:
-            ed = {"EXT": 1}
-            if start_cont:
-                # Stop continuous capture if it's running
-                ed["SPC"] = 1  # Stop cameras
-                ed["SPS"] = 1  # Stop spectrometer
-            funcs.q.put(ed)
+        print("Ctrl-C received, trying to quite nicely...")
+        signal.raise_signal(signal.SIGINT)
 
 # Give all the various threads and sockets a moment to finish...
 to_sleep = 5
 print(f"Sleeping {to_sleep} seconds to tidy up...")
 time.sleep(to_sleep)
 print("Exiting now")
+# Garbage collection at this point should close the cameras and spectrometer properly

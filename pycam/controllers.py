@@ -670,7 +670,6 @@ class Camera(CameraSpecs):
 
             # Acquire image
             self.capture()
-            # TODO verify this capture matches the request?
 
             # Generate filename for image and save it
             filename = self.generate_filename(time_str, self.file_type["dark"])
@@ -680,7 +679,7 @@ class Camera(CameraSpecs):
             # Put images in q
             self.img_q.put([filename, self.image, self.metadata])
 
-        print("Dark capture time: {}".format(time.time() - time_start))
+        print(f"Dark {self.band} camera capture time: {time.time() - time_start:0.2f} s")
         self.in_dark_capture = False
 
 
@@ -1208,5 +1207,5 @@ class Spectrometer(SpecSpecs):
             # Put spectra in q
             self.spec_q.put([filename, self.spectrum])
 
-        print("Dark spectrometer capture time: {}".format(time.time() - time_start))
+        print(f"Dark spectrometer capture time: {time.time() - time_start:0.2f} s")
         self.in_dark_capture = False

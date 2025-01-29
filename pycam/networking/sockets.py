@@ -13,7 +13,6 @@ import struct
 import time
 import queue
 import threading
-import sys
 import select
 
 
@@ -82,6 +81,7 @@ class CommsFuncs(SendRecvSpecs):
         # All values are converted to ASCII before being sent over the network
         self.cmd_dict = {
             'IDN': (str, ['CM1', 'CM2', 'SPE', 'EXN', 'MAS']),  # Identity of message sender (EXT not used for external to avoid confusion with EXT exit command)
+            'DST': (str, ['CM1', 'CM2', 'SPE', 'EXN', 'MAS']),  # Identity of message destination, if not set send to all
             'SSA': (int, [1, 6000001]),            # Shutter speed (us) camera A [min, max]
             'SSB': (int, [1, 6000001]),            # Shutter speed (us) camera B [min, max]
             'SSS': (int, [1, 10001]),            # Shutter speed (ms) spectrometer [min, max]
@@ -112,6 +112,7 @@ class CommsFuncs(SendRecvSpecs):
             'STC': (bool, 1),           # Starts continuous image acquisitions
             'STS': (bool, 1),           # Starts continuous spectra acquisitions
             'EXT': (bool, 1),           # Close program (should only be succeeded by 1, to confirm close request)
+            'DXT': (bool, 1),           # Force exit mid dark capture
             'RST': (bool, 1),           # Restart entire system
             'LOG': (int, [0, 5]),       # Various status report requests:
                                         # 0 - Test connection (can send just to confirm we have connection to instument)
@@ -123,6 +124,7 @@ class CommsFuncs(SendRecvSpecs):
             'HLA': (bool, 1),           # Hello from Camera A
             'HLB': (bool, 1),           # Hello from Camera B
             'HLS': (bool, 1),           # Hello from Spectrometer
+            'HLM': (bool, 1),           # Hello from Master
             'GBY': (bool, 1),           # Just a friendly goodbye
             'SAV': (bool, 1),           # Trigger a save of specifications files
             'NIA': (str, []),           # New image from Camera A (on band)
@@ -132,18 +134,22 @@ class CommsFuncs(SendRecvSpecs):
         # Error flag, which provides the key in which an error was found
         self.cmd_dict['ERR'] = (str, list(self.cmd_dict.keys()))
 
-    def IDN(self, value):
+    def IDN(self, value, cmd_source):
         """Not sure I need to do anything here, but I've included the method just in case"""
         pass
 
-    def GBY(self, value):
+    def DST(self, value, cmd_source):
+        """Not sure I need to do anything here, but I've included the method just in case"""
+        pass
+
+    def GBY(self, value, cmd_source):
         """Send a "good bye" when we are down/disconnecting"""
         pass
 
 
 class CommsCommandHandler(CommsFuncs):
 
-    def __init__(self, socket: "ServerSocket"):
+    def __init__(self, socket: "SocketServer"):
         super().__init__()
 
         self.q = queue.Queue()  # Queue for accessing information
@@ -172,13 +178,26 @@ class CommsCommandHandler(CommsFuncs):
                 self.comm_cmd = self.q.get(block=False, timeout=1)
                 if self.comm_cmd:
                     print(f"CommsCommandHandler for {self.id} received {self.comm_cmd}")
+                    if "IDN" in self.comm_cmd:
+                        cmd_source = self.comm_cmd["IDN"]
+                    else:
+                        cmd_source = "NSR"  # no source
 
                     # Loop through each command code in the dictionary, carrying our the commands individually
                     for key in self.comm_cmd:
                         # Call correct method determined by 3 character code from comms message
                         try:
                             # If we have the method call it, passing it the value from comm_cmd
-                            getattr(self, key)(self.comm_cmd[key])
+                            getattr(self, key)(self.comm_cmd[key], cmd_source)
+                        except TypeError as e:
+                            if "positional argument" in str(e):
+                                # hold over from adding command source as an argument, call the old way
+                                print(
+                                    f"WARNING {key}() for {self.id['IDN']} is not accepting cmd_source!!!"
+                                )
+                                getattr(self, key)(self.comm_cmd[key])
+                            else:
+                                raise e
                         except AttributeError:
                             # print('Attribute error raised in command {}'.format(key))
                             # print(e)
@@ -189,8 +208,8 @@ class CommsCommandHandler(CommsFuncs):
         self.working = False
         print(f"comms handler stopped for {self.id}!")
 
-    def EXT(self, value):
-        print(f"super ext for {self.id} {value}")
+    def EXT(self, value, cmd_source):
+        print(f"super ext for {self.id} {value} from {cmd_source}")
         if value:
             self.event.set()
 
@@ -218,34 +237,70 @@ class MasterComms(CommsCommandHandler):
         List containing these objects
     """
 
-    def __init__(self, socket: "ServerSocket", ext_connections):
+    def __init__(self, socket: "SocketServer", ext_connections):
         super().__init__(socket)
 
         self.id = {"IDN": "MAS"}
         self.ext_connections = ext_connections
 
-    def HLO(self, value):
+        # Keep track of dark capture
+        self.dark_capture = {"CM1": False, "CM2": False, "SPE": False}
+
+    def HLO(self, value, cmd_source):
         """For testing connection"""
         print("Hello received by the master")
         if value:
-            print(f"Response to hello requested, sending...")
+            print("Response to hello requested, sending...")
             # Send response if requested
-            self.send_tagged_comms({"HLO": False})
+            self.send_tagged_comms({"HLM": False, "DST": cmd_source})
 
-    def GBY(self, value):
+    def GBY(self, value, cmd_source):
         """Close the connection upon the request/so that we don't wait ages for the timeout"""
         for conn in self.socket.conn_dict:
             if conn[1] == self.comm_cmd["IDN"]:
                 self.socket.close_connection(connection=self.socket.conn_dict[conn][0])
 
-    def EXT(self, value):
+                self.socket.close_connection(connection=self.socket.conn_dict[conn][0])
+
+    def DKC(self, value, cmd_source):
+        """Note dark capture start on camera"""
+        if value:
+            self.dark_capture["CM1"] = True
+            self.dark_capture["CM2"] = True
+        print(f"DKC {self.dark_capture}")
+
+    def DFC(self, value, cmd_source):
+        """Note dark capture finish on camera"""
+        if value:
+            self.dark_capture[cmd_source] = False
+        print(f"DFC {self.dark_capture}")
+
+    def DKS(self, value, cmd_source):
+        """Note dark capture start on spectrometer"""
+        if value:
+            self.dark_capture["SPE"] = True
+        print(f"DKS {self.dark_capture}")
+
+    def DFS(self, value, cmd_source):
+        """Note dark capture finish on spectrometer"""
+        if value:
+            self.dark_capture[cmd_source] = False
+        print(f"DFS {self.dark_capture}")
+
+    def DXT(self, value, cmd_source):
+        """Override exit command"""
+        # Pass the command along as an exit for now
+        print(f"Override exit received from {cmd_source}")
+        self.socket.send_to_all({"IDN": cmd_source, "EXT": value})
+
+    def EXT(self, value, cmd_source):
         """Acts on EXT command, closing everything down"""
         print(f"possible shutdown for {self.id}")
         if not value:
             print("EXT false")
             self.send_tagged_comms({'ERR': 'EXT'})
             return
-        super().EXT(value)
+        super().EXT(value, cmd_source)
         timeout = 5
 
         # Wait for other systems to finish up and enter shutdown routine
@@ -273,16 +328,16 @@ class MasterComms(CommsCommandHandler):
 
         print('Ext connections finished')
 
-    def RST(self, value):
+    def RST(self, value, cmd_source):
         """Acts on RST command, restarts entire system. Exit so the daemon script can relaunch us."""
-        self.EXT(value)
+        self.EXT(value, cmd_source)
 
-    def LOG(self, value):
+    def LOG(self, value, cmd_source):
         """Acts on LOG command, sending the specified log back to the connection"""
         # If value is 0 we simply return the communication - used to confirm we have a connection
         if value == 0:
             print('Sending handshake reply')
-            self.socket.send_to_all({'LOG': 0})
+            self.send_tagged_comms({'LOG': 0, "DST": cmd_source})
 
         # If we are passed a 1 this is to get all specs from cameras and spectrometer, so we don't need to do anything
         # on masterpi
@@ -625,7 +680,7 @@ class CamComms(CommsCommandHandler):
         else:
             self.id = {'IDN': 'CM2'}
 
-    def HLO(self, value):
+    def HLO(self, value, cmd_source):
         """For testing connection"""
         print(f"Hello received by camera {self.id['IDN']}")
         if value:
@@ -634,9 +689,9 @@ class CamComms(CommsCommandHandler):
                 comm = {'HLA': False}
             else:
                 comm = {'HLB': False}
-            self.send_tagged_comms(comm)
+            self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def SAV(self, value):
+    def SAV(self, value, cmd_source):
         """
         Acts on the SAV command to save the current camera specifications, including shutter speed
 
@@ -647,9 +702,9 @@ class CamComms(CommsCommandHandler):
         """
         if value:
             self.camera.save_specs()
-            self.send_tagged_comms({"SAV": False})
+            self.send_tagged_comms({"SAV": False, "DST": cmd_source})
 
-    def SSA(self, value):
+    def SSA(self, value, cmd_source):
         """Acts on SSA command
 
         Parameters
@@ -676,9 +731,9 @@ class CamComms(CommsCommandHandler):
                 comm = {'ERR': 'SSA'}
 
             # Send return communication
-            self.send_tagged_comms(comm)
+            self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def SSB(self, value):
+    def SSB(self, value, cmd_source):
         """Acts on SSB command
 
         Parameters
@@ -703,9 +758,9 @@ class CamComms(CommsCommandHandler):
                 comm = {'ERR': 'SSB'}
 
             # Send return communication
-            self.send_tagged_comms(comm)
+            self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def FRC(self, value):
+    def FRC(self, value, cmd_source):
         """Acts on FRC command
 
         Parameters
@@ -722,9 +777,9 @@ class CamComms(CommsCommandHandler):
         except:
             comm = {'ERR': 'FRC'}
         finally:
-            self.send_tagged_comms(comm)
+            self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def ATA(self, value):
+    def ATA(self, value, cmd_source):
         """Acts on ATA command"""
         # This command is for the on band only, so we check if the camera is on band
         if self.camera.band == 'on':
@@ -740,9 +795,9 @@ class CamComms(CommsCommandHandler):
                 comm = {'ERR': 'ATA'}
 
             # Send response message
-            self.send_tagged_comms(comm)
+            self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def ATB(self, value):
+    def ATB(self, value, cmd_source):
         """Acts on ATB command"""
         # This command is for the off band only, so we check if the camera is off band
         if self.camera.band == 'off':
@@ -758,9 +813,9 @@ class CamComms(CommsCommandHandler):
                 comm = {'ERR': 'ATB'}
 
             # Send response message
-            self.send_tagged_comms(comm)
+            self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def SMN(self, value):
+    def SMN(self, value, cmd_source):
         """Acts on SMN command"""
         if value < self.camera.max_saturation:
             self.camera.min_saturation = value
@@ -769,9 +824,9 @@ class CamComms(CommsCommandHandler):
             comm = {'ERR': 'SMN'}
 
         # Send response
-        self.send_tagged_comms(comm)
+        self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def SMX(self, value):
+    def SMX(self, value, cmd_source):
         """Acts on SMX command"""
         if value > self.camera.min_saturation:
             self.camera.max_saturation = value
@@ -780,9 +835,9 @@ class CamComms(CommsCommandHandler):
             comm = {'ERR': 'SMX'}
 
         # Send response
-        self.send_tagged_comms(comm)
+        self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def PXC(self, value):
+    def PXC(self, value, cmd_source):
         """Acts on PXC command, updating the pixel average for saturation"""
         try:
             self.camera.saturation_pixels = value
@@ -790,9 +845,9 @@ class CamComms(CommsCommandHandler):
         except:
             comm = {'ERR': 'PXC'}
 
-        self.send_tagged_comms(comm)
+        self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def RWC(self, value):
+    def RWC(self, value, cmd_source):
         """Acts on RWC command, updating the pixel average for saturation"""
         try:
             self.camera.saturation_rows = value
@@ -800,9 +855,9 @@ class CamComms(CommsCommandHandler):
         except:
             comm = {'ERR': 'RWC'}
 
-        self.send_tagged_comms(comm)
+        self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def TPA(self, value):
+    def TPA(self, value, cmd_source):
         """Acts on TPA command, requesting this type of image from the camera"""
         if self.camera.band.lower() in ['on', 'a']:
             try:
@@ -812,9 +867,9 @@ class CamComms(CommsCommandHandler):
                 comm = {'ERR': 'TPA'}
 
             # Send response
-            self.send_tagged_comms(comm)
+            self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def TPB(self, value):
+    def TPB(self, value, cmd_source):
         """Acts on TPB command, requesting this type of image from the camera"""
         if self.camera.band.lower() in ['off', 'b']:
             try:
@@ -824,9 +879,9 @@ class CamComms(CommsCommandHandler):
                 comm = {'ERR': 'TPB'}
 
             # Send response
-            self.send_tagged_comms(comm)
+            self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def DKC(self, value):
+    def DKC(self, value, cmd_source):
         """Acts on DKC command, stopping continuous capture if necessary then instigating dark sequence"""
         try:
             if value:
@@ -838,7 +893,7 @@ class CamComms(CommsCommandHandler):
                 self.camera.capture_q.put({'dark_seq': True})
 
                 # Organise comms
-                self.send_tagged_comms({'DKC': 1})
+                self.send_tagged_comms({"DKC": 1, "DST": cmd_source})
 
                 # Wait for camera to enter dark capture mode
                 while not self.camera.in_dark_capture:
@@ -857,7 +912,7 @@ class CamComms(CommsCommandHandler):
         # Send response
         self.send_tagged_comms(comm)
 
-    def SPC(self, value):
+    def SPC(self, value, cmd_source):
         """Acts on SPC command by adding a stop command dictionary to the camera's capture queue"""
         if value:
             self.camera.capture_q.put({'exit_cont': True})
@@ -866,9 +921,9 @@ class CamComms(CommsCommandHandler):
             comm = {'ERR': 'SPC'}
 
         # Send response
-        self.send_tagged_comms(comm)
+        self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def STC(self, value):
+    def STC(self, value, cmd_source):
         """Acts on STC command by adding a stop command dictionary to the camera's capture queue"""
         if value:
             self.camera.capture_q.put({'start_cont': True})
@@ -877,12 +932,12 @@ class CamComms(CommsCommandHandler):
             comm = {'ERR': 'STC'}
 
         # Send response
-        self.send_tagged_comms(comm)
+        self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def LOG(self, value):
+    def LOG(self, value, cmd_source):
         """Act on LOG request"""
         if value == 1:
-            comm_dict = {'LOG': 1}
+            comm_dict = {"LOG": 1, "DST": cmd_source}
 
             # Loop through attributes associated with camera. Get their current value for camera object and pack this
             # into the comm dictionary
@@ -903,12 +958,12 @@ class CamComms(CommsCommandHandler):
             # Encode and send communications
             self.send_tagged_comms(comm_dict)
 
-    def EXT(self, value):
+    def EXT(self, value, cmd_source):
         """Shuts down camera"""
         print(f"possible shutdown for {self.id}")
         try:
             if value:
-                super().EXT(value)
+                super().EXT(value, cmd_source)
                 self.camera.capture_q.put({'exit_cont': True})
                 self.camera.capture_q.put({'exit': True})
                 comm = {'EXT': False}  # confirm exiting, but don't trigger another
@@ -940,15 +995,14 @@ class SpecComms(CommsCommandHandler):
         self.spectrometer = spectrometer  # Spectrometer object for interface/control
         self.id = {'IDN': 'SPE'}
 
-    def HLO(self, value):
+    def HLO(self, value, cmd_source):
         """For testing connection"""
         print("Hello received by the spectrometer")
         if value:
             # Send response if requested
-            comm = {'HLS': False}
-            self.send_tagged_comms(comm)
+            self.send_tagged_comms({'HLS': False, "DST": cmd_source})
 
-    def SAV(self, value):
+    def SAV(self, value, cmd_source):
         """
         Acts on the SAV command to save the current camera specifications, including shutter speed
 
@@ -959,9 +1013,9 @@ class SpecComms(CommsCommandHandler):
         """
         if value:
             self.spectrometer.save_specs()
-            self.send_tagged_comms({"SAV": False})
+            self.send_tagged_comms({"SAV": False, "DST": cmd_source})
 
-    def SSS(self, value):
+    def SSS(self, value, cmd_source):
         """Acts on SSS command
 
         Parameters
@@ -981,9 +1035,9 @@ class SpecComms(CommsCommandHandler):
         else:
             comm = {'ERR': 'SSS'}
 
-        self.send_tagged_comms(comm)
+        self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def FRS(self, value):
+    def FRS(self, value, cmd_source):
         """Acts on FRS command
 
         Parameters
@@ -1000,9 +1054,9 @@ class SpecComms(CommsCommandHandler):
         except:
             comm = {'ERR': 'FRS'}
         finally:
-            self.send_tagged_comms(comm)
+            self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def CAD(self, value):
+    def CAD(self, value, cmd_source):
         """Acts on CAD command"""
         try:
             self.spectrometer.coadd = value
@@ -1010,9 +1064,9 @@ class SpecComms(CommsCommandHandler):
         except:
             comm = {'ERR': 'CAD'}
         finally:
-            self.send_tagged_comms(comm)
+            self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def WMN(self, value):
+    def WMN(self, value, cmd_source):
         """Acts on WMN command
 
         Parameters
@@ -1027,9 +1081,9 @@ class SpecComms(CommsCommandHandler):
             comm = {'ERR': 'WMN'}
 
         # Return communication to say whether the work has been done or not
-        self.send_tagged_comms(comm)
+        self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def WMX(self, value):
+    def WMX(self, value, cmd_source):
         """Acts on WMX command"""
         # Check the new value is more than the minimum in the saturation range window
         if value > self.spectrometer.wavelength_min:
@@ -1039,9 +1093,9 @@ class SpecComms(CommsCommandHandler):
             comm = {'ERR': 'WMX'}
 
         # Return communication to say whether the work has been done or not
-        self.send_tagged_comms(comm)
+        self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def SNS(self, value):
+    def SNS(self, value, cmd_source):
         """Acts on SNS command"""
         # Try to set spectrometer max saturation value. If we encounter any kind of error, return error value
         try:
@@ -1050,9 +1104,9 @@ class SpecComms(CommsCommandHandler):
         except:
             comm = {'ERR': 'SNS'}
         finally:
-            self.send_tagged_comms(comm)
+            self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def SXS(self, value):
+    def SXS(self, value, cmd_source):
         """Acts on SXS command"""
         # Try to set spectrometer max saturation value. If we encounter any kind of error, return error value
         try:
@@ -1061,9 +1115,9 @@ class SpecComms(CommsCommandHandler):
         except:
             comm = {'ERR': 'SXS'}
         finally:
-            self.send_tagged_comms(comm)
+            self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def ATS(self, value):
+    def ATS(self, value, cmd_source):
         """Acts on ATS command"""
         try:
             if value:
@@ -1075,13 +1129,13 @@ class SpecComms(CommsCommandHandler):
         except:
             comm = {'ERR': 'ATS'}
         finally:
-            self.send_tagged_comms(comm)
+            self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def TPS(self, value):
+    def TPS(self, value, cmd_source):
         """Acts on TPS command, requesting this type of image from the spectrometer"""
         self.spectrometer.capture_q.put({'type': value})
 
-    def DKS(self, value):
+    def DKS(self, value, cmd_source):
         """Acts on DKS command, stopping continuous capture if necessary then instigating dark sequence"""
         try:
             if value:
@@ -1093,7 +1147,7 @@ class SpecComms(CommsCommandHandler):
                 self.spectrometer.capture_q.put({'dark_seq': True})
 
                 # Encode return message
-                self.send_tagged_comms({'DKS': 1})
+                self.send_tagged_comms({"DKS": 1, "DST": cmd_source})
 
                 # Wait for spectrometer to enter dark capture mode
                 while not self.spectrometer.in_dark_capture:
@@ -1111,7 +1165,7 @@ class SpecComms(CommsCommandHandler):
         # Send response message
         self.send_tagged_comms(comm)
 
-    def SPS(self, value):
+    def SPS(self, value, cmd_source):
         """Acts on SPS command by adding a stop command dictionary to the spectrometer's capture queue"""
         try:
             if value:
@@ -1123,9 +1177,9 @@ class SpecComms(CommsCommandHandler):
             comm = {'ERR': 'SPS'}
 
         # Send response
-        self.send_tagged_comms(comm)
+        self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def STS(self, value):
+    def STS(self, value, cmd_source):
         """Acts on STS command by adding a stop command dictionary to the spectrometer's capture queue"""
         try:
             if value:
@@ -1137,12 +1191,12 @@ class SpecComms(CommsCommandHandler):
             comm = {'ERR': 'STS'}
 
         # Send response
-        self.send_tagged_comms(comm)
+        self.send_tagged_comms(comm | {"DST": cmd_source})
 
-    def LOG(self, value):
+    def LOG(self, value, cmd_source):
         """Act on LOG request"""
         if value == 1:
-            comm_dict = {'LOG': 1}
+            comm_dict = {"LOG": 1, "DST": cmd_source}
 
             # Loop through attributes associated with camera. Get their current value for camera object and pack this
             # into the comm dictionary
@@ -1154,12 +1208,12 @@ class SpecComms(CommsCommandHandler):
             comm = comm_dict
             self.send_tagged_comms(comm)
 
-    def EXT(self, value):
+    def EXT(self, value, cmd_source):
         """Shuts down spectrometer"""
         print(f"possible shutdown for {self.id}")
         try:
             if value:
-                super().EXT(value)
+                super().EXT(value, cmd_source)
                 self.spectrometer.capture_q.put({'exit_cont': True})
                 self.spectrometer.capture_q.put({'exit': True})
                 comm = {'EXT': False}  # confirm exiting, but don't trigger another
@@ -1187,6 +1241,8 @@ class SocketServer(SocketMeths):
     port: int
         Communication port
     """
+    internal_connections: list[CommsCommandHandler]
+
     def __init__(self, listen_ip, port):
         super().__init__()
 
@@ -1195,6 +1251,7 @@ class SocketServer(SocketMeths):
         self.port_list = None               # List of ports available to this server
         self.server_addr = (listen_ip, port)  # Server address
         self.connections = []               # List holding connections
+        self.internal_connections = []      # List holding the queues of internal components (e.g., a camera)
         self.conn_dict = {}
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)   # Socket object
         # self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # Make socket reuseable quickly
@@ -1414,15 +1471,27 @@ class SocketServer(SocketMeths):
         cmd_bytes = self.encode_comms(cmd)
         # print(f"Sending {cmd_bytes}")
 
-        # Loop through connections and send to all
+        # Loop through external connections and send to all over network
         for conn in self.connections:
             try:
-                self.send_comms(conn[0], cmd_bytes)
+                if ("DST" not in cmd or ("DST" in cmd and "EXN" in cmd["DST"])) and (
+                    "IDN" not in cmd or not cmd["IDN"] == "EXN"
+                ):
+                    # send to all if no DST is set, or otherwise send if the DST is EXN
+                    # also do not loop back and send things that came from EXN
+                    self.send_comms(conn[0], cmd_bytes)
             except BrokenPipeError:
                 print(
                     "SocketServer BrokenPipeError: Closing connection {}".format(conn)
                 )
                 self.close_connection(conn)
+
+        # Loop through the internal connections and send to all cameras, etc
+        for conn in self.internal_connections:
+            if (
+                "DST" not in cmd or ("DST" in cmd and conn.id["IDN"] in cmd["DST"])
+            ) and ("IDN" not in cmd or not cmd["IDN"] == conn.id["IDN"]):
+                conn.q.put(cmd)
 
 
 # ======================================================================
