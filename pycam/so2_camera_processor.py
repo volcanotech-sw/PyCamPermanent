@@ -25,6 +25,7 @@ from pyplis.fluxcalc import det_emission_rate, MOL_MASS_SO2, N_A, EmissionRates
 from pyplis.doascalib import DoasCalibData, DoasFOV
 from pyplis.exceptions import ImgMetaError
 
+import argparse
 import pandas as pd
 from math import log10, floor
 import datetime
@@ -3907,7 +3908,7 @@ class PyplisWorker:
     def _process_sequence(self):
         """
         Processes the current image directory
-        Direcotry should therefore already have been processed using load_sequence()
+        Directory should therefore already have been processed using load_sequence()
         """
         # Check cross-correlation lines are defined if we have requested cross-correlation
         if self.velo_modes['flow_glob']:
@@ -4323,6 +4324,12 @@ class PyplisWorker:
         if self.cal_type_int in [1,2]:
             self.save_calibration(only_last_value=only_last_value)
 
+    @staticmethod
+    def get_args():
+        parser = argparse.ArgumentParser(description="Process image sequence")
+        parser.add_argument('-i', '--image_directory', type="str")
+        return parser.parse_args()
+    
 class ImageRegistration:
     """
     Image registration class for warping the off-band image to align with the on-band image
@@ -4668,6 +4675,8 @@ def plot_pcs_profiles_4_tau_images(tau0, tau1, tau2, tau3, pcs_line):
     ax.legend(loc="best", fancybox=True, framealpha=0.5, fontsize=12)
     return fig
 
+
+    
 
 class UnrecognisedSourceError(BaseException):
     """Error raised for a source which cannot be found online"""
