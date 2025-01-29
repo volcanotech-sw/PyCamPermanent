@@ -866,6 +866,10 @@ class IFitWorker(SpecWorker):
 
                 # Stop processing thread when we stop watching the directory
                 self.q_spec.put(self.STOP_FLAG)
+
+                LoggerManager.remove_file_handler(self.SpecLogger, self.log_path)
+                LoggerManager.remove_file_handler(self.SpecDirWatchLogger, self.log_path)
+                LoggerManager.delete_file_handler(self.log_path)
             else:
                 self.SpecDirWatchLogger.warning('No directory watcher to stop')
         else:

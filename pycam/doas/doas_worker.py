@@ -17,6 +17,7 @@ from tkinter import filedialog
 from pycam.setupclasses import SpecSpecs
 from pycam.io_py import load_spectrum
 from pycam.doas.spec_worker import SpecWorker, SpectraError
+from pycam.logging.logging_tools import LoggerManager
 from pydoas.analysis import DoasResults
 
 warnings.filterwarnings("ignore", category=OptimizeWarning)
@@ -582,6 +583,10 @@ class DOASWorker(SpecWorker):
 
         # Stop the processing thread
         self.q_spec.put('exit')
+
+        LoggerManager.remove_file_handler(self.SpecLogger, self.log_path)
+        LoggerManager.remove_file_handler(self.SpecDirWatchLogger, self.log_path)
+        LoggerManager.delete_file_handler(self.log_path)
 
     def directory_watch_handler(self, pathname, t):
         """Handles new spectra passed from watcher"""
