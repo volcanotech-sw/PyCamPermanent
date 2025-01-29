@@ -7,6 +7,7 @@ import threading
 import numpy as np
 import pandas as pd
 from astropy.convolution import convolve
+from pycam.directory_watcher import create_dir_watcher
 from pycam.setupclasses import SpecSpecs
 from pydoas.analysis import DoasResults
 from pycam.io_py import load_spectrum
@@ -444,8 +445,6 @@ class SpecWorker:
 
     def start_processing_thread(self):
         """Public access thread starter for _processing"""
-        # Reset self
-        self.reset_self()
 
         self.processing_in_thread = True
         self.process_thread = threading.Thread(target=self._process_loop, args=())
@@ -528,6 +527,36 @@ class SpecWorker:
         # Not sure we want to print every time
         self.SpecLogger.info(f'DOAS results saved: {pathname}')
 
+    def start_watching(self, directory, recursive=True):
+        """
+        Setup directory watcher for images - note this is not for watching spectra - use DOASWorker for that
+        Also starts a processing thread, so that the images which arrive can be processed
+        """
+
+        # Reset self
+        self.reset_self()
+
+        if self.watching:
+            self.SpecDirWatchLogger.info(
+                f'Already watching for spectra: {self.transfer_dir}\n'
+                f'Please stop watcher before attempting to start new watch. This isssue may be '
+                f'caused by having manual acquisitions running alongside continuous watching'
+            )
+            return
+        
+        self.set_output_dir(directory)
+
+        self.watcher = create_dir_watcher(directory, recursive, self.directory_watch_handler)
+        self.watcher.start()
+        self.transfer_dir = directory
+        self.watching = True
+        self.SpecDirWatchLogger.info(f'Watching {self.transfer_dir[-30:]} for new spectra')
+
+        # Start the processing thread
+        self.start_processing_thread()
+
+    def reset_self(self):
+        pass
 
 class SpectraError(Exception):
     """

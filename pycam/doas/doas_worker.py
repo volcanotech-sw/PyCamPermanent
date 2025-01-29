@@ -16,7 +16,6 @@ from scipy.optimize import curve_fit, OptimizeWarning
 from tkinter import filedialog
 from pycam.setupclasses import SpecSpecs
 from pycam.io_py import load_spectrum
-from pycam.directory_watcher import create_dir_watcher
 from pycam.doas.spec_worker import SpecWorker, SpectraError
 from pydoas.analysis import DoasResults
 
@@ -575,25 +574,6 @@ class DOASWorker(SpecWorker):
             if first_spec:
                 # Now that we have processed first_spec, set flag to False
                 first_spec = False
-
-    def start_watching(self, directory):
-        """
-        Setup directory watcher for images - note this is not for watching spectra - use DOASWorker for that
-        Also starts a processing thread, so that the images which arrive can be processed
-        """
-        if self.watching:
-            print('Already watching for spectra: {}'.format(self.transfer_dir))
-            print('Please stop watcher before attempting to start new watch. '
-                  'This isssue may be caused by having manual acquisitions running alongside continuous watching')
-            return
-        self.watcher = create_dir_watcher(directory, True, self.directory_watch_handler)
-        self.watcher.start()
-        self.transfer_dir = directory
-        self.watching = True
-        print('Watching {} for new spectra'.format(self.transfer_dir[-30:]))
-
-        # Start the processing thread
-        self.start_processing_thread()
 
     def stop_watching(self):
         """Stop directory watcher and end processing thread"""

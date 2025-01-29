@@ -20,7 +20,6 @@ from scipy.interpolate import griddata
 from matplotlib.pyplot import GridSpec
 from shapely.geometry import Point, Polygon     # For Varnam light dilution
 from shapely.strtree  import STRtree
-from pycam.directory_watcher import create_dir_watcher
 from pycam.setupclasses import SpecSpecs, FileLocator
 from pycam.io_py import load_spectrum
 from pycam.ifit_ld import lookup
@@ -854,27 +853,6 @@ class IFitWorker(SpecWorker):
     def stop_sequence_processing(self):
         """Stops processing a sequence"""
         self.q_stop.put(self.STOP_FLAG)
-
-    def start_watching(self, directory, recursive=True):
-        """
-        Setup directory watcher for images - note this is not for watching spectra - use DOASWorker for that
-        Also starts a processing thread, so that the images which arrive can be processed
-        """
-        if self.watching:
-            self.SpecDirWatchLogger.warning(
-                f'Already watching for spectra: {self.transfer_dir}\n'
-                f'Please stop watcher before attempting to start new watch. This isssue may be '
-                f'caused by having manual acquisitions running alongside continuous watching'
-            )
-            return
-        self.watcher = create_dir_watcher(directory, recursive, self.directory_watch_handler)
-        self.watcher.start()
-        self.transfer_dir = directory
-        self.watching = True
-        self.SpecDirWatchLogger.info(f'Watching {self.transfer_dir[-30:]} for new spectra')
-
-        # Start the processing thread
-        self.start_processing_thread()
 
     def stop_watching(self):
         """Stop directory watcher and end processing thread"""
