@@ -114,7 +114,7 @@ class IFitWorker(SpecWorker):
             'a_k': 0.0
         }
         for key in self.ils_params:
-            self.params.add(key, value=self.ils_params[key], vary=True)
+            self.params.add(key, value=self.ils_params[key], vary=True)  # With vary=True this will fit the ILS in the fit procedure
 
         # Setup ifit analyser (we will stray correct ourselves
         self.analyser = Analyser(params=self.params,
@@ -896,7 +896,7 @@ class IFitWorker(SpecWorker):
         NOTE: I cannot just adjust the fit_window attribute as the model is generated
         """
         # TODO perhaps requst ben adds an update fit window func to update the analyser without creating a new object
-        if self.ils_path is not None:
+        if not self.include_ils_fit and self.ils_path is not None:
             self.remove_ils_params()
             self.analyser = Analyser(params=self.params,
                                      fit_window=[self._start_fit_wave_init, self._end_fit_wave_init],
@@ -931,16 +931,8 @@ class IFitWorker(SpecWorker):
 
     def load_ils(self, ils_path):
         """Load ils from path"""
-        self.remove_ils_params()
-        self.analyser = Analyser(params=self.params,
-                                 fit_window=[self._start_fit_wave_init, self._end_fit_wave_init],
-                                 frs_path=self.frs_path,
-                                 stray_flag=False,      # We stray correct prior to passing spectrum to Analyser
-                                 dark_flag=False,
-                                 ils_type='File',
-                                 ils_path=ils_path)
-
         self.ils_path = ils_path
+        self.update_analyser()
 
         # Load ILS
         self.ILS_wavelengths, self.ILS = np.loadtxt(ils_path, unpack=True)
