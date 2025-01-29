@@ -25,6 +25,7 @@ from pycam.setupclasses import SpecSpecs, FileLocator
 from pycam.io_py import load_spectrum
 from pycam.ifit_ld import lookup
 from pycam.doas.spec_worker import SpecWorker, SpectraError
+from pycam.logging.logging_tools import LoggerManager
 from ifit.parameters import Parameters
 from ifit.spectral_analysis import Analyser
 from ifit.light_dilution import generate_ld_curves
@@ -706,8 +707,19 @@ class IFitWorker(SpecWorker):
         # Add the exit flag at the end, to ensure that the process_loop doesn't get stuck waiting on the queue forever
         self.q_spec.put(self.STOP_FLAG)
 
+        # Need to generate output dir at the start of processing to create log file
+        self.set_output_dir(self.spec_dir)
+        self.log_path = os.path.join(self.doas_outdir, "SpecWorker.log")
+
+        LoggerManager.add_file_handler(self.SpecLogger, self.log_path)
+        LoggerManager.add_file_handler(self.SpecDirWatchLogger, self.log_path)
+
         # Begin processing
         self._process_loop(continuous_save=False)
+
+        LoggerManager.remove_file_handler(self.SpecLogger, self.log_path)
+        LoggerManager.remove_file_handler(self.SpecDirWatchLogger, self.log_path)
+        LoggerManager.delete_file_handler(self.log_path)
 
     def _process_loop(self, continuous_save=True):
         """
@@ -760,10 +772,10 @@ class IFitWorker(SpecWorker):
                 if not self.first_spec and spec_time.day != self.spec_time.day:
                     self.SpecLogger.info("new day found")
                     self.reset_self()
-
-                if self.first_spec:
                     # Set output dir
                     self.set_output_dir(working_dir)
+
+                if self.first_spec:
                     # Save processing params
                     self.save_doas_params()
                     header = True
