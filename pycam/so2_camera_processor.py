@@ -25,6 +25,7 @@ from pyplis.fluxcalc import det_emission_rate, MOL_MASS_SO2, N_A, EmissionRates
 from pyplis.doascalib import DoasCalibData, DoasFOV
 from pyplis.exceptions import ImgMetaError
 
+from pathlib import Path
 import pandas as pd
 from math import log10, floor
 import datetime
@@ -532,6 +533,7 @@ class PyplisWorker:
         current_params = {key: getattr(self.doas_worker, value)
                           for key, value in doas_params.items()}
         self.config.update(current_params)
+        self.config['spec_dir'] = str(doas_params['spec_dir'])
 
     def save_config_plus(self, file_path, file_name = None):
         """Save extra data associated with config file along with config"""
@@ -555,7 +557,7 @@ class PyplisWorker:
             vals = {key: self.config[key] for key in subset if key in self.config.keys()}
             self.raw_configs["default"].update(vals)
 
-        full_path = os.path.join(file_path, file_name)
+        full_path = str(Path(file_path) / file_name)
 
         with open(full_path, "w") as file:
             yaml.dump(self.raw_configs["default"], file)
@@ -782,13 +784,13 @@ class PyplisWorker:
             return
 
         if img_dir is not None:
-            self.img_dir = img_dir
+            self.img_dir = Path(img_dir)
 
         if location is not None and location != self.location:
             self.location = location
 
         # Setup measurement object
-        self.meas = pyplis.setupclasses.MeasSetup(self.img_dir, start, stop, camera=self.cam,
+        self.meas = pyplis.setupclasses.MeasSetup(str(self.img_dir), start, stop, camera=self.cam,
                                                   source=self.source, wind_info=wind_info)
 
         # Compute all distance images and associated parameter (done here so it will be set correctly every time
@@ -841,9 +843,14 @@ class PyplisWorker:
         Gets image list and splits it into image pairs (on/off), it flags if there are missing pairs
         :returns img_list: list
         """
+
+        # If no img_dir has been defined, return
+        if not self.img_dir:
+            return []
+
         # Create full list of images
-        full_list = [f for f in os.listdir(self.img_dir)
-                     if self.cam_specs.file_type['meas'] in f and self.cam_specs.file_ext in f]
+        full_list = [str(f) for f in self.img_dir.iterdir()
+                     if self.cam_specs.file_type['meas'] in str(f) and self.cam_specs.file_ext in str(f)]
 
         self.num_img_tot = len(full_list)
 
@@ -866,7 +873,7 @@ class PyplisWorker:
                 continue
             elif len(img_B) > 1:
                 warnings.warn('Multiple contemporaenous images found for {} in image directory {}\n'
-                              'Selecting the first image as the pair'.format(img_A, self.img_dir))
+                              'Selecting the first image as the pair'.format(img_A, str(self.img_dir)))
 
             # Append the image pair to img_list, if we have a pair
             img_list.append([img_A, img_B[0]])
@@ -994,15 +1001,19 @@ class PyplisWorker:
         :return:
         """
         if img_dir is not None:
-            if not os.path.exists(img_dir):
+            img_dir = Path(img_dir)
+            if not img_dir.exists():
                 raise ValueError('Directory does not exist, cannot setup processing directory')
-        else:
+        elif self.img_dir:
             img_dir = self.img_dir
+        else:
+            # self.img_dir is None and has not been set,
+            return
 
         # Make output dir with time (when processed as opposed to when captured) suffix to minimise risk of overwriting
         process_time = datetime.datetime.now().strftime(self.save_date_fmt)
         # Save this as an attribute so we only have to generate it once
-        self.processed_dir = os.path.join(img_dir, self.proc_name.format(process_time))
+        self.processed_dir = str(img_dir / self.proc_name.format(process_time))
         self.saved_img_dir = os.path.join(self.processed_dir, 'saved_images')
         if make_dir:
             os.makedirs(self.saved_img_dir, exist_ok = True)
@@ -1014,12 +1025,19 @@ class PyplisWorker:
         :return:
         """
         if img_dir is None:
-            img_dir = filedialog.askdirectory(title='Select image sequence directory', initialdir=self.img_dir)
+            img_dir = filedialog.askdirectory(title='Select image sequence directory', initialdir=str(self.img_dir))
 
-        if len(img_dir) > 0 and os.path.exists(img_dir):
+        if len(img_dir) > 0:
+            img_dir = Path(img_dir)
+        else:
+            # no image directory
+            return
+
+        if img_dir.exists():
             self.config["img_dir"] = img_dir
             self.apply_config(subset="img_dir")
         else:
+            # non-existant image-directory
             return
 
         # Reset buffers as we have a new sequence
@@ -1037,22 +1055,26 @@ class PyplisWorker:
 
         # Display first images of sequence
         if len(self.img_list) > 0:
-            self.process_pair(self.img_dir + '\\' + self.img_list[0][0],
-                              self.img_dir + '\\' + self.img_list[0][1],
+            self.process_pair(str(self.img_dir / self.img_list[0][0]),
+                              str(self.img_dir / self.img_list[0][1]),
                               plot=plot, plot_bg=plot_bg)
 
             if len(self.img_list) > 1:
                 # Load second image too so that we have optical flow output generated
                 self.idx_current += 1
                 self.first_image = False
-                self.process_pair(self.img_dir + '\\' + self.img_list[1][0],
-                                  self.img_dir + '\\' + self.img_list[1][1],
+                self.process_pair(str(self.img_dir / self.img_list[1][0]),
+                                  str(self.img_dir / self.img_list[1][1]),
                                   plot=plot, plot_bg=plot_bg)
 
     def next_image(self):
         """Move to loading in next image of a sequence (used when stepping through a sequence for display purposes)"""
         # TODO because this doesn't update everything properly, clicking vignette correction corrects the wrong image.
         # TODO Maybe we need to do full processing of the image if we step to the next image?
+
+        if not isinstance(self.img_list, list):
+            # we must have a valid img_list to work on
+            return
 
         self.idx_current += 1
         try:
@@ -1065,7 +1087,7 @@ class PyplisWorker:
 
                 # Going to previous image, so we get data from buffer
                 for img_name in [img_A, img_B]:
-                    self.load_img(self.img_dir + '\\' + img_name, plot=True, temporary=True)
+                    self.load_img(str(self.img_dir / img_name), plot=True, temporary=True)
                 self.fig_tau.update_plot(img_tau)
                 # TODO plot optical flow image
                 if opt_flow is not None:
@@ -1074,8 +1096,8 @@ class PyplisWorker:
             # If we don't already have this image loaded in then we process it
             else:
                 # Process images too
-                self.process_pair(self.img_dir + '\\' + self.img_list[self.idx_current+1][0],
-                                  self.img_dir + '\\' + self.img_list[self.idx_current+1][1])
+                self.process_pair(str(self.img_dir / self.img_list[self.idx_current+1][0]),
+                                  str(self.img_dir / self.img_list[self.idx_current+1][1]))
         except IndexError:
             self.idx_current -= 1
 
@@ -1090,7 +1112,7 @@ class PyplisWorker:
 
             # Going to previous image, so we get data from buffer
             for img_name in [img_A, img_B]:
-                self.load_img(self.img_dir + '\\' + img_name, plot=True, temporary=True)
+                self.load_img(str(self.img_dir / img_name), plot=True, temporary=True)
             self.fig_tau.update_plot(img_tau)
             # TODO plot image
             if opt_flow is not None:
@@ -1354,7 +1376,7 @@ class PyplisWorker:
             opt_flow = None
 
         # Add all values to the buffer
-        new_dict = {'directory': self.img_dir,
+        new_dict = {'directory': str(self.img_dir),
                     'file_A': file_A,
                     'file_B': file_B,
                     'time': copy.deepcopy(self.get_img_time(file_A)),
@@ -2062,7 +2084,10 @@ class PyplisWorker:
 
     def make_aa_list(self):
         """Makes pyplis ImgList from current img_list (set using get_img_list())"""
-        full_paths = [os.path.join(self.img_dir, f) for f in self.img_list]
+        if not isinstance(self.img_list, list):
+            # img_list must be a list for this function to execute
+            return
+        full_paths = [str(self.img_dir / f) for f in self.img_list]
         self.pyplis_img_list = pyplis.imagelists.ImgList(full_paths, cam=self.cam)
 
     def update_meta(self, new_image, meta_image):
@@ -3984,8 +4009,8 @@ class PyplisWorker:
             # Process image pair
             print('SO2 cam processor: Processing pair: {}'.format(self.img_list[i][0]))
             try:
-                self.process_pair(self.img_dir + '\\' + self.img_list[i][0],
-                                  self.img_dir + '\\' + self.img_list[i][1],
+                self.process_pair(str(self.img_dir / self.img_list[i][0]),
+                                  str(self.img_dir / self.img_list[i][1]),
                                   plot=plot_iter, force_cal=force_cal, cross_corr=cross_corr)
             except FileNotFoundError:
                 traceback.print_exc()
@@ -4311,7 +4336,7 @@ class PyplisWorker:
     def stop_watching_dir(self):
         
         if self.seq_info is not None:
-            self.seq_info.update_img_dir_lab(self.img_dir)
+            self.seq_info.update_img_dir_lab(str(self.img_dir))
         self.doas_worker.stop_watching()
         self.stop_watching()
 
