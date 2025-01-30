@@ -934,7 +934,7 @@ class RefPlot:
         if not self.ref_spec_path:
             return
         if not init_load:
-            self.nameRef.configure(self.ref_spec_path_short)
+            self.nameRef.configure(text=self.ref_spec_path_short)
         self.doas_worker.load_ref_spec(self.ref_spec_path, self.species)
 
         self.ref_spec_file = self.ref_spec_path.split('/')[-1]
