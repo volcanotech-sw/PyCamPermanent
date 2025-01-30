@@ -848,8 +848,8 @@ class PyplisWorker:
             return []
 
         # Create full list of images
-        full_list = [str(f) for f in self.img_dir.iterdir()
-                     if self.cam_specs.file_type['meas'] in str(f) and self.cam_specs.file_ext in str(f)]
+        full_list = [f.name for f in self.img_dir.iterdir()
+                     if self.cam_specs.file_type['meas'] in f.name and self.cam_specs.file_ext in f.name]
 
         self.num_img_tot = len(full_list)
 
