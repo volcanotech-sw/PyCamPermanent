@@ -8,7 +8,6 @@ from .misc import Indicator
 from pycam.networking.sockets import SocketClient, ExternalRecvConnection, ExternalSendConnection, read_network_file
 from pycam.networking.FTP import FTPClient, CurrentDirectories
 from .settings import GUISettings
-import copy
 
 # ======================================================================================================================
 # SOCKET
@@ -17,7 +16,7 @@ import copy
 config = read_file(FileLocator.CONFIG_WINDOWS)
 
 # Socket client
-port = int(self.config[ConfigInfo.port_ext]) # configured port port
+port = int(config[ConfigInfo.port_ext]) # configured port port
 # _, port = read_network_file(FileLocator.NET_EXT_FILE_WINDOWS) # dynamically updated port on the pi
 sock = SocketClient(host_ip=config[ConfigInfo.host_ip], port=port)
 

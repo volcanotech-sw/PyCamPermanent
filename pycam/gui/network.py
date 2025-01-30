@@ -228,7 +228,7 @@ class GUICommRecvHandler:
                 if comm['LOG'] == 1:
                     if comm['IDN'] in ['CM1', 'CM2']:
                         self.cam_acq.update_acquisition_parameters(comm)
-                    elif comm['IDN'] == 'SPC':
+                    elif comm['IDN'] == 'SPE':
                         self.spec_acq.update_acquisition_parameters(comm)
 
             if "NIA" in comm:
