@@ -30,4 +30,4 @@ dark_script=/home/pi/pycam/scripts/pycam_dark_capture.py
 temp_log=/home/pi/pycam/scripts/log_temperature.sh
 disk_space_script=/home/pi/pycam/scripts/check_disk_space.py
 
-cam_specs=.\\cam_specs.txt          # Location of camera specs file on master Pi
+cam_specs=./cam_specs.txt          # Location of camera specs file on master Pi

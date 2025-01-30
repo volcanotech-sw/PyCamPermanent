@@ -17,7 +17,7 @@ class TestSockets:
 
     def test_io(self):
         """Tests file I/O of socket information (IP address and port)"""
-        filename = '.\\test_data\\network.txt'
+        filename = './test_data/network.txt'
         sock_data = {'port': 12345, 'ip_address': '255.255.255.255'}
 
         # Write socket data to file
@@ -80,7 +80,7 @@ class TestSockets:
     def test_send_recv_img(self):
         """Tests send and receive funcionality of PiSockets for image and associated information"""
         # Path to image for testing
-        img_path = '.\\test_data\\2019-09-18T074335_fltrA_1ag_999904ss_Plume.png'
+        img_path = './test_data/2019-09-18T074335_fltrA_1ag_999904ss_Plume.png'
 
         # Open sockets
         sock_serv, sock_cli = self.open_sockets()
@@ -110,7 +110,7 @@ class TestSockets:
     def test_send_recv_spec(self):
         """Tests send and receive funcionality of PiSockets for spectrum and associated information"""
         # Path to spectrum
-        spec_path = '.\\test_data\\sample_spectrum.npy'
+        spec_path = './test_data/sample_spectrum.npy'
 
         # Open sockets
         sock_serv, sock_cli = self.open_sockets(cli='spec')

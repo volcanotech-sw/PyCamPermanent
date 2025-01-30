@@ -42,7 +42,7 @@ class IFitWorker(SpecWorker):
 
     :param q_doas: queue.Queue   Queue where final processed dictionary is placed (should be a PyplisWorker.q_doas)
     """
-    def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir='C:\\',
+    def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir='C:/',
                  dark_dir=None, q_doas=queue.Queue(), frs_path='./pycam/doas/calibration/sao2010.txt'):
         super().__init__(routine, species, spec_specs, spec_dir, dark_dir, q_doas)
 
@@ -1381,8 +1381,8 @@ if __name__ == '__main__':
                  'Ring': {'path': './pycam/doas/calibration/Ring.txt', 'value': 0.1}
                  }
 
-    # ref_paths = {'SO2': {'path': 'C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\PyCamPermanent\\pycam\\doas\\calibration\\Vandaele (2009) x-section in wavelength.txt', 'value': 1.0e16},
-    # 'O3': {'path':     'C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\PyCamPermanent\\pycam\\doas\\calibration\\Serdyuchenko_O3_223K.txt', 'value': 1.0e19},
+    # ref_paths = {'SO2': {'path': 'C:/Users/tw9616/Documents/PostDoc/Permanent Camera/PyCamPermanent/pycam/doas/calibration/Vandaele (2009) x-section in wavelength.txt', 'value': 1.0e16},
+    # 'O3': {'path':     'C:/Users/tw9616/Documents/PostDoc/Permanent Camera/PyCamPermanent/pycam/doas/calibration/Serdyuchenko_O3_223K.txt', 'value': 1.0e19},
     # 'Ring': {'path': '../iFit/Ref/Ring.txt', 'value': 0.1}
     # }
 

@@ -1037,16 +1037,16 @@ class PyplisWorker:
 
         # Display first images of sequence
         if len(self.img_list) > 0:
-            self.process_pair(self.img_dir + '\\' + self.img_list[0][0],
-                              self.img_dir + '\\' + self.img_list[0][1],
+            self.process_pair(self.img_dir + '/' + self.img_list[0][0],
+                              self.img_dir + '/' + self.img_list[0][1],
                               plot=plot, plot_bg=plot_bg)
 
             if len(self.img_list) > 1:
                 # Load second image too so that we have optical flow output generated
                 self.idx_current += 1
                 self.first_image = False
-                self.process_pair(self.img_dir + '\\' + self.img_list[1][0],
-                                  self.img_dir + '\\' + self.img_list[1][1],
+                self.process_pair(self.img_dir + '/' + self.img_list[1][0],
+                                  self.img_dir + '/' + self.img_list[1][1],
                                   plot=plot, plot_bg=plot_bg)
 
     def next_image(self):
@@ -1065,7 +1065,7 @@ class PyplisWorker:
 
                 # Going to previous image, so we get data from buffer
                 for img_name in [img_A, img_B]:
-                    self.load_img(self.img_dir + '\\' + img_name, plot=True, temporary=True)
+                    self.load_img(self.img_dir + '/' + img_name, plot=True, temporary=True)
                 self.fig_tau.update_plot(img_tau)
                 # TODO plot optical flow image
                 if opt_flow is not None:
@@ -1074,8 +1074,8 @@ class PyplisWorker:
             # If we don't already have this image loaded in then we process it
             else:
                 # Process images too
-                self.process_pair(self.img_dir + '\\' + self.img_list[self.idx_current+1][0],
-                                  self.img_dir + '\\' + self.img_list[self.idx_current+1][1])
+                self.process_pair(self.img_dir + '/' + self.img_list[self.idx_current+1][0],
+                                  self.img_dir + '/' + self.img_list[self.idx_current+1][1])
         except IndexError:
             self.idx_current -= 1
 
@@ -1090,7 +1090,7 @@ class PyplisWorker:
 
             # Going to previous image, so we get data from buffer
             for img_name in [img_A, img_B]:
-                self.load_img(self.img_dir + '\\' + img_name, plot=True, temporary=True)
+                self.load_img(self.img_dir + '/' + img_name, plot=True, temporary=True)
             self.fig_tau.update_plot(img_tau)
             # TODO plot image
             if opt_flow is not None:
@@ -3984,8 +3984,8 @@ class PyplisWorker:
             # Process image pair
             print('SO2 cam processor: Processing pair: {}'.format(self.img_list[i][0]))
             try:
-                self.process_pair(self.img_dir + '\\' + self.img_list[i][0],
-                                  self.img_dir + '\\' + self.img_list[i][1],
+                self.process_pair(self.img_dir + '/' + self.img_list[i][0],
+                                  self.img_dir + '/' + self.img_list[i][1],
                                   plot=plot_iter, force_cal=force_cal, cross_corr=cross_corr)
             except FileNotFoundError:
                 traceback.print_exc()
