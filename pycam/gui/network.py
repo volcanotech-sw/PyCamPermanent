@@ -221,6 +221,7 @@ class GUICommRecvHandler:
         """Gets received communications from the recv_comms queue and acts on them"""
         while not self.stop.is_set():
             comm = self.recv_comms.q.get(block=True)
+            # print(f"GUI incoming comms: {comm}")
 
             if 'LOG' in comm:
                 # If getting acquisition flags was purpose of comm we update widgets
@@ -230,10 +231,31 @@ class GUICommRecvHandler:
                     elif comm['IDN'] == 'SPC':
                         self.spec_acq.update_acquisition_parameters(comm)
 
+            if "NIA" in comm:
+                # TODO handle notification of new on camera image
+                pass
+            if "NIB" in comm:
+                # TODO handle notification of new off camera image
+                pass
+            if "NIS" in comm:
+                # TODO handle notification of new spectrometer image
+                pass
+
+            if "GBY" in comm:
+                # The server is letting us go, tidy up
+                cfg.indicator.sock.close_socket()
+                # Raise the flags to break out of the threads
+                cfg.recv_comms.event.set()
+                cfg.send_comms.event.set()
+                # Set indicator to off
+                cfg.indicator.indicator_off()
+                # Tell the user the server quit
+                messagebox.showinfo('Disconnected', 'The instrument exited.')
+
             mess = ''
             for id in comm:
                 if id != 'IDN':
-                    mess += 'COMM ({}) > {}: {}\n'.format(comm['IDN'], id, comm[id])
+                    mess += 'COMM ({}) > {}: {}\n>> '.format(comm['IDN'], id, comm[id])
 
             # # Put comms into string for message window
             # mess = 'Received communication from instrument. IDN: {}\n' \
@@ -242,6 +264,7 @@ class GUICommRecvHandler:
             #     if id != 'IDN':
             #         mess += '{}: {}\n'.format(id, comm[id])
             self.message_wind.add_message(mess)
+    print("GUI get_comms stopping")
 
 
 class InstrumentConfiguration:

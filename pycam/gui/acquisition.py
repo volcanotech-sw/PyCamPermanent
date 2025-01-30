@@ -672,6 +672,9 @@ class CommHandler:
             cmd_dict['STC'] = 1
             cmd_dict['STS'] = 1
 
+        # Save configuration
+        cmd_dict['SAV'] = 1
+
         # Add dictionary command to queue to be sent
         cfg.send_comms.q.put(cmd_dict)
 
@@ -695,6 +698,10 @@ class CommHandler:
         # Add dictionary command to queue to be sent
         cfg.send_comms.q.put(cmd_dict)
 
+        # Have the cameras save their config
+        cfg.send_comms.q.put({"DST": "CM1", "SAV": 1})
+        cfg.send_comms.q.put({"DST": "CM2", "SAV": 1})
+
     def acq_spec_full(self, acq_type=None):
         """Sends spectrometer communications"""
         if not self.check_connection():
@@ -712,6 +719,9 @@ class CommHandler:
 
         # Add dictionary command to queue to be sent
         cfg.send_comms.q.put(cmd_dict)
+
+        # Have the spectrometer save its config
+        cfg.send_comms.q.put({"DST": "SPE", "SAV": 1})
 
     def acq_darks(self):
         """Acquires set of dark images and spectra"""

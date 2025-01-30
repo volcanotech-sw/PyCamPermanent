@@ -5,7 +5,7 @@
 from pycam.utils import read_file, StorageMount
 from pycam.setupclasses import FileLocator, ConfigInfo, SpecSpecs, CameraSpecs
 from .misc import Indicator
-from pycam.networking.sockets import SocketClient, ExternalRecvConnection, ExternalSendConnection
+from pycam.networking.sockets import SocketClient, ExternalRecvConnection, ExternalSendConnection, read_network_file
 from pycam.networking.FTP import FTPClient, CurrentDirectories
 from .settings import GUISettings
 import copy
@@ -17,7 +17,9 @@ import copy
 config = read_file(FileLocator.CONFIG_WINDOWS)
 
 # Socket client
-sock = SocketClient(host_ip=config[ConfigInfo.host_ip], port=int(config[ConfigInfo.port_ext]))
+port = int(self.config[ConfigInfo.port_ext]) # configured port port
+# _, port = read_network_file(FileLocator.NET_EXT_FILE_WINDOWS) # dynamically updated port on the pi
+sock = SocketClient(host_ip=config[ConfigInfo.host_ip], port=port)
 
 # Setup recv comms connection object
 recv_comms = ExternalRecvConnection(sock=sock, acc_conn=False)

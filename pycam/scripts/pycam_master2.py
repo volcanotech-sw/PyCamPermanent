@@ -165,7 +165,7 @@ sock_serv_ext.open_socket(bind=False)
 # (one may be local computer conn, other may be wireless)
 ext_connections = {
     "1": CommConnection(sock_serv_ext, acc_conn=True),
-    # "2": CommConnection(sock_serv_ext, acc_conn=True),
+    "2": CommConnection(sock_serv_ext, acc_conn=True),
 }
 
 # Setup masterpi comms function implementer, MasterComms should ALWAYS be first in this list
@@ -206,7 +206,7 @@ def signal_handler(signum, frame):
         print("Forced", end=" ")
     print("Quitting")
     running = False
-    sock_serv_ext.send_to_all({"EXT": 1})
+    sock_serv_ext.send_to_all({"IDN": "NUL", "EXT": 1})
 
 
 signal.signal(signal.SIGINT, signal_handler)  # Normally a result of Ctrl-C
@@ -257,9 +257,13 @@ while running:
                     # Tell connected clients about the new image (the master should be first)
                     if not dark_capture:
                         if instrument.band == "on":
-                            sock_serv_ext.send_to_all({"NIA": new_file, "DST": "EXN"})
+                            sock_serv_ext.send_to_all(
+                                {"IDN": "MAS", "NIA": new_file, "DST": "EXN"}
+                            )
                         else:  # off band
-                            sock_serv_ext.send_to_all({"NIB": new_file, "DST": "EXN"})
+                            sock_serv_ext.send_to_all(
+                                {"IDN": "MAS", "NIB": new_file, "DST": "EXN"}
+                            )
 
                 elif isinstance(instrument, Spectrometer):
                     [filename, spectrum] = instrument.spec_q.get(False)
@@ -271,7 +275,9 @@ while running:
                     )
                     # Tell connected clients about the new spectra
                     if not dark_capture:
-                        sock_serv_ext.send_to_all({"NIS": new_file, "DST": "EXN"})
+                        sock_serv_ext.send_to_all(
+                            {"IDN": "MAS", "NIS": new_file, "DST": "EXN"}
+                        )
 
             # TODO save/copy to backup location
 
@@ -290,10 +296,16 @@ while running:
                 and not ext_connections[conn].accepting
             ):
                 # Connection has probably already been closed, but try closing it anyway
-                try:
-                    sock_serv_ext.close_connection(ip=ext_connections[conn].ip)
-                except socket.error:
-                    pass
+                if (
+                    ext_connections[conn].connection
+                    and not ext_connections[conn].connection.fileno() == -1
+                ):
+                    try:
+                        sock_serv_ext.close_connection(
+                            connection=ext_connections[conn].connection
+                        )
+                    except socket.error:
+                        pass
 
                 # This causes a horrible loop if we're trying to quit
                 ext_connections[conn].acc_connection()
@@ -323,6 +335,10 @@ while running:
                 if "DXT" in comm_cmd and comm_cmd["DXT"]:
                     # Force quit during dark capture
                     running = False
+                if "RST" in comm_cmd and comm_cmd["RST"]:
+                    # Restart the entire pi
+                    running = False
+                    # TODO run 'sudo restart'
 
                 # Keep track of the state of continuous capture
                 if (

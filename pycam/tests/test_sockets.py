@@ -139,18 +139,6 @@ class TestSockets:
         assert np.array_equal(wavelengths, spec[0, :])
         assert filename == spec_path
 
-    def test_get_connection(self):
-        """Tests get connection"""
-        sock_serv, sock_cli = self.open_sockets()
-
-        # Attempt the get_connection() function
-        conn = sock_serv.get_connection(ip='127.0.0.1')
-
-        # Close socket to finish
-        sock_serv.close_socket()
-
-        assert conn == sock_serv.connections[0][0]
-
     def test_close_connection(self):
         """Tests closing and deleting a connection"""
         sock_serv, sock_cli = self.open_sockets()
@@ -207,7 +195,7 @@ class TestSockets:
         comms = sock_serv.encode_comms(cmd_dict)
 
         # Get connection
-        conn = sock_serv.get_connection(ip='127.0.0.1')
+        conn = sock_serv.connections[0]
 
         # Send data over connection
         sock_serv.send_comms(conn, comms)
@@ -245,13 +233,13 @@ class TestSockets:
         # Open two sockets and connect them
         sock_serv, sock_cli = self.open_sockets()
 
-        recv_thread = threading.Thread(target=recv_comms, args=(sock_serv, sock_serv.get_connection(conn_num=0),))
+        recv_thread = threading.Thread(target=recv_comms, args=(sock_serv, sock_serv.connections[0]))
         recv_thread.daemon = True
         recv_thread.start()
 
         time.sleep(2)
 
-        sock_serv.close_connection(connection=sock_serv.get_connection(conn_num=0))
+        sock_serv.close_connection(connection=sock_serv.connections[0][0])
         sock_serv.close_socket()
         recv_thread.join()
         assert not recv_thread.is_alive()

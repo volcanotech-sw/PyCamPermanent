@@ -1,6 +1,5 @@
 # File contains all options for ports to be used for each connection. The server read this in and tries them one by one,
-# It then updates the network_comm.txt file and the network_transfer.txt file on both pis so that when pycam_camera and
-# pycam_spectrometer are started up they connect to the correct port
+# It then updates the network_external.txt file on the pi to record the correct port to connect to
 # This should prevent issues of "Socket already in use" which is an error we sometimes hit
 
 ext_ports=12347,12352,12353

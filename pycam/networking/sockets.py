@@ -16,7 +16,7 @@ import threading
 import select
 
 
-def read_network_file(filename):
+def read_network_file(filename: str) -> tuple[str | None, int | None]:
     """Reads IP address and port from text file
 
     Parameters
@@ -75,12 +75,20 @@ class SendRecvSpecs:
 class CommsFuncs(SendRecvSpecs):
     """Holds all functions relating to communication procedures"""
 
+    # cmd_dict: dict[
+    #     str,
+    #     tuple[type[str], list[str]]
+    #     | tuple[type[int], list[int]]
+    #     | tuple[type[float], list[float]]
+    #     | tuple[type[bool], int],
+    # ]
+
     def __init__(self):
         # Create dictionary for communication protocol. Dictionary contains:
         # character code as key, value as tuple (type, range of accepted values)
         # All values are converted to ASCII before being sent over the network
         self.cmd_dict = {
-            'IDN': (str, ['CM1', 'CM2', 'SPE', 'EXN', 'MAS']),  # Identity of message sender (EXT not used for external to avoid confusion with EXT exit command)
+            'IDN': (str, ['CM1', 'CM2', 'SPE', 'EXN', 'MAS', 'NUL']),  # Identity of message sender (EXT not used for external to avoid confusion with EXT exit command)
             'DST': (str, ['CM1', 'CM2', 'SPE', 'EXN', 'MAS']),  # Identity of message destination, if not set send to all
             'SSA': (int, [1, 6000001]),            # Shutter speed (us) camera A [min, max]
             'SSB': (int, [1, 6000001]),            # Shutter speed (us) camera B [min, max]
@@ -125,7 +133,7 @@ class CommsFuncs(SendRecvSpecs):
             'HLB': (bool, 1),           # Hello from Camera B
             'HLS': (bool, 1),           # Hello from Spectrometer
             'HLM': (bool, 1),           # Hello from Master
-            'GBY': (bool, 1),           # Just a friendly goodbye
+            'GBY': (int, [0, 65535]),   # Just a friendly goodbye, optionally specify remote port for clean disconnection
             'SAV': (bool, 1),           # Trigger a save of specifications files
             'NIA': (str, []),           # New image from Camera A (on band)
             'NIB': (str, []),           # New image from Camera B (off band)
@@ -206,14 +214,14 @@ class CommsCommandHandler(CommsFuncs):
             except queue.Empty:
                 pass
         self.working = False
-        print(f"comms handler stopped for {self.id}!")
+        print(f"Comms handler stopped for {self.id}!")
 
     def EXT(self, value, cmd_source):
-        print(f"super ext for {self.id} {value} from {cmd_source}")
+        print(f"Base EXT for {self.id} got value of {value} from {cmd_source}")
         if value:
             self.event.set()
 
-    def send_tagged_comms(self, comm):
+    def send_tagged_comms(self, comm: dict):
         """
         Send a message back from the class handling the communications
         tagged with the ID of that class, e.g., the CamComms class will send
@@ -256,11 +264,21 @@ class MasterComms(CommsCommandHandler):
 
     def GBY(self, value, cmd_source):
         """Close the connection upon the request/so that we don't wait ages for the timeout"""
-        for conn in self.socket.conn_dict:
-            if conn[1] == self.comm_cmd["IDN"]:
-                self.socket.close_connection(connection=self.socket.conn_dict[conn][0])
-
-                self.socket.close_connection(connection=self.socket.conn_dict[conn][0])
+        to_close = None
+        if value < 1024:
+            # Old behaviour
+            for conn, conn_id in self.socket.conn_dict.values():
+                if conn_id == cmd_source and value:
+                    to_close = conn[0]
+        else:
+            # Value is the remote port
+            for ip,remote_port in self.socket.conn_dict:
+                if value == remote_port:
+                    print(f"GBY: Found matching port for {value}")
+                    to_close = self.socket.conn_dict[(ip,remote_port)][0][0]
+        if to_close:
+            # We need to do this separately as conn_dict will change size from this
+            self.socket.close_connection(connection=to_close)
 
     def DKC(self, value, cmd_source):
         """Note dark capture start on camera"""
@@ -295,7 +313,7 @@ class MasterComms(CommsCommandHandler):
 
     def EXT(self, value, cmd_source):
         """Acts on EXT command, closing everything down"""
-        print(f"possible shutdown for {self.id}")
+        print(f"Possible shutdown for {self.id}")
         if not value:
             print("EXT false")
             self.send_tagged_comms({'ERR': 'EXT'})
@@ -303,13 +321,13 @@ class MasterComms(CommsCommandHandler):
         super().EXT(value, cmd_source)
         timeout = 5
 
-        # Wait for other systems to finish up and enter shutdown routine
-        time.sleep(3)
-
         # Tell any connected clients we're done for the day, good bye
         self.send_tagged_comms({'GBY': True})
 
-        # Loop though each server closing connections and sockets
+        # Wait for other systems to finish up and enter shutdown routine
+        time.sleep(3)
+
+        # Loop though each server closing remaining connections/sockets
         for conn in self.socket.connections[:]:
             self.socket.close_connection(connection=conn[0])
         self.socket.close_socket()
@@ -353,7 +371,7 @@ class SocketMeths(CommsFuncs):
 
         self.data_buff = bytearray()  # Instantiate empty byte array to append received data to
 
-    def encode_comms(self, message):
+    def encode_comms(self, message: dict) -> bytearray:
         """Encode message into a single byte array
 
         Parameters
@@ -455,12 +473,6 @@ class SocketMeths(CommsFuncs):
 
                 cmd_ret[mess_list[i]] = cmd
 
-            # # If we don't recognise the command we add it to the ERR list
-            ## This doesnt work as it just flags all of the values as well as incorrect keys - maybe need a different
-            ## way to loop through message keys
-            # elif mess_list[i] != 'ERR':
-            #     cmd_ret['ERR'].append(mess_list[i])
-
         # If we haven't thrown any errors we can remove this key so that it isn't sent in message
         if (isinstance(cmd_ret['ERR'], list) and len(cmd_ret['ERR']) == 0) or not return_errors:
             del cmd_ret['ERR']
@@ -468,7 +480,7 @@ class SocketMeths(CommsFuncs):
         return cmd_ret
 
     @staticmethod
-    def send_comms(connection, cmd_bytes):
+    def send_comms(connection, cmd_bytes: bytearray):
         """Sends byte array over connection
 
         Parameters
@@ -486,7 +498,7 @@ class SocketMeths(CommsFuncs):
         else:
             raise AttributeError('Object {} has no sendall command'.format(connection))
 
-    def recv_comms(self, connection):
+    def recv_comms(self, connection: socket.socket):
         """Receives data without a header until end string is encountered
 
         Parameters
@@ -498,7 +510,7 @@ class SocketMeths(CommsFuncs):
 
         # This was formerly a while looping waiting forever, instead wait at most 5 seconds
         for ii in range(0, 5):
-            if not self.end_str in self.data_buff:
+            if self.end_str not in self.data_buff:
                 # Wait up to 1 second for some new data
                 ready = select.select([connection], [], [], 1)[0]
             else:
@@ -523,6 +535,7 @@ class SocketMeths(CommsFuncs):
                 self.data_buff = self.data_buff[end_idx + len(self.end_str) :]
                 return ret
 
+        return ""
 
 class SocketClient(SocketMeths):
     """Object for setup of a client socket for network communication using the low-level socket interface
@@ -534,27 +547,27 @@ class SocketClient(SocketMeths):
     port: int
         Communication port
     """
-    def __init__(self, host_ip, port):
+    sock: socket.socket
+    def __init__(self, host_ip: str, port: int):
         super().__init__()
 
         self.host_ip = host_ip                          # IP address of server
         self.port = port                                # Communication port
         self.server_addr = (self.host_ip, self.port)    # Tuple packaging for later use
         self.connect_stat = False                       # Bool for defining if object has a connection
-        self.id = {'IDN':  'EXN'}
+        self.id = {'IDN':  'EXN'}                       # Default identifier of this connection
+        self.local_ip = ''                              # Our IP address that's made the connection
+        self.local_port = 0                             # Our port that's made the connection
 
         self.timeout = 5    # Timeout on attempting to connect socket
-
-        self.sock = self.open_socket()  # Socket object
-
-        self.comm_connection = None     # Comms connection attribute
+        self.open_socket()  # Socket object, sets self.sock
 
     def open_socket(self):
         """(Re)open the socket for reconnections"""
         if not hasattr(self, 'sock') or (self.sock and self.sock.fileno() == -1):
-            return socket.socket(socket.AF_INET, socket.SOCK_STREAM)   # Socket object
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # Socket object
 
-    def update_address(self, host_ip, port):
+    def update_address(self, host_ip: str, port: int):
         """Updates socket information (only to be used if this object does not currently have an active connection)"""
         self.host_ip = host_ip
         self.port = port
@@ -567,16 +580,16 @@ class SocketClient(SocketMeths):
                 time.sleep(0.05)    # Small sleep so it doesn't go mad
                 try:
                     print('Client connecting to {}'.format(self.server_addr))
-                    # print(self.sock)
                     self.sock.connect(self.server_addr)  # Attempting to connect to the server
-                    print('Client connected')
+                    self.local_ip,self.local_port = self.sock.getsockname()
+                    print(f"Client connected as {self.local_ip}:{self.local_port}")
                     self.connect_stat = True
                 except OSError as e:
                     # If the socket was previously closed we may need to create a new socket object to connect
                     # On windows this will be WinError 10038, or on Linux [Errno 9] Bad file descriptor
                     if 'WinError 10038' in '{}'.format(e) or e.errno == 9:
                         print('Creating new socket for connection attempt')
-                        self.sock = self.open_socket()
+                        self.open_socket()
                         continue
                     raise e
 
@@ -588,7 +601,7 @@ class SocketClient(SocketMeths):
                 f.write(time.strftime("%Y-%m-%dT%H:%M:%S%z", time.gmtime()) + ' ERROR: ' + str(e) + '\n')
         return
 
-    def connect_socket_timeout(self, timeout=None):
+    def connect_socket_timeout(self, timeout: int | None = None):
         """Attempts to connect to socket - threads connection attempt and will timeout after given time"""
         if timeout is None:
             timeout = self.timeout
@@ -612,8 +625,10 @@ class SocketClient(SocketMeths):
         # If we get to allotted time and no connection has been made we raise a connection error
         raise ConnectionError("Timed out trying to connect")
 
-    def connect_socket_try_all(self, timeout=None, port_list=None):
-        """Trys all possible socket ports form a list of port numbers"""
+    def connect_socket_try_all(
+        self, timeout: int | None = None, port_list: list[int] | None = None
+    ):
+        """Try all possible socket ports form a list of port numbers"""
         if port_list is not None:
             self.port_list = port_list
 
@@ -640,9 +655,10 @@ class SocketClient(SocketMeths):
 
     def close_socket(self):
         """Closes socket by disconnecting from host"""
-        self.sock.close()
-        print('Closed client socket {}'.format(self.server_addr))
-        self.connect_stat = False
+        if self.sock:
+            self.sock.close()
+            print('Closed client socket {}'.format(self.server_addr))
+            self.connect_stat = False
 
     def generate_header(self, msg_size):
         """Generates a header with the given message size and returns byte array version"""
@@ -960,7 +976,7 @@ class CamComms(CommsCommandHandler):
 
     def EXT(self, value, cmd_source):
         """Shuts down camera"""
-        print(f"possible shutdown for {self.id}")
+        print(f"Possible shutdown for {self.id}")
         try:
             if value:
                 super().EXT(value, cmd_source)
@@ -1210,7 +1226,7 @@ class SpecComms(CommsCommandHandler):
 
     def EXT(self, value, cmd_source):
         """Shuts down spectrometer"""
-        print(f"possible shutdown for {self.id}")
+        print(f"Possible shutdown for {self.id}")
         try:
             if value:
                 super().EXT(value, cmd_source)
@@ -1241,14 +1257,15 @@ class SocketServer(SocketMeths):
     port: int
         Communication port
     """
+    connections: list[tuple[socket.socket, tuple[str, int]]]  # This is really a list of connection_tuples
     internal_connections: list[CommsCommandHandler]
 
-    def __init__(self, listen_ip, port):
+    def __init__(self, listen_ip: str, port: int):
         super().__init__()
 
         self.listen_ip = listen_ip          # IP address of host
         self.port = port                    # Communication port
-        self.port_list = None               # List of ports available to this server
+        self.port_list = [None]               # List of ports available to this server
         self.server_addr = (listen_ip, port)  # Server address
         self.connections = []               # List holding connections
         self.internal_connections = []      # List holding the queues of internal components (e.g., a camera)
@@ -1320,9 +1337,10 @@ class SocketServer(SocketMeths):
             # Receive the handshake to get connection ID
             conn_id = self.recv_comms(connection[0])
             conn_id = self.decode_comms(conn_id)['IDN']
-            print('Got connection from {} with ID: {}'.format(connection[1][0], conn_id))
+            print('Got connection from {}:{} with ID: {}'.format(connection[1][0], connection[1][1], conn_id))
 
-            self.conn_dict[(connection[1][0], conn_id)] = connection
+            # Remote IP address, our own connection ID thing, remote port (for GBY)
+            self.conn_dict[(connection[1][0], connection[1][1])] = connection, conn_id
 
         except BaseException as e:
             print('Error in accepting socket connection, it is likely that the socket was closed during accepting:')
@@ -1332,39 +1350,9 @@ class SocketServer(SocketMeths):
 
         return (connection, conn_id)
 
-    def get_connection(self, conn_num=None, ip=None):
-        """Returns connection defined by conn_num. Wrapper for connections, to make access more intuitive.
-        If ip is provided then function will use this instead to return connection
-        conn_num: int
-            Number in connection list
-        ip: str
-            IP address to find specific connection"""
-        # TODO need to adjust this to look at laddr/raddr as well as ip, since the same ip will be present for a camera
-        # TODO and the spectrometer
-        # Search for ip address in connections list
-        if isinstance(ip, str):
-            for i in range(len(self.connections)):
-                # Check if ip address is in the addr tuple. If it is, we set conn_num to this connection
-                if ip in self.connections[i][1]:
-                    conn_num = i
-
-            # If we fail to find the ip in any of the connection, we return None
-            if conn_num is None:
-                return None
-
-        # If we aren't given an ip to search, we use connection number provided, first checking it is within limits of
-        # number of connections we have
-        elif isinstance(conn_num, int):
-            if conn_num > len(self.connections):
-                raise IndexError('Connection number is greater than the number of connections to this socket')
-
-        else:
-            return None
-
-        # Return the requested connection, which is the first item in a tuple at a defined index in the connection list
-        return self.connections[conn_num][0]
-
-    def get_ip(self, connection=None, conn_num=None):
+    def get_ip(
+        self, connection: socket.socket | None = None, conn_num: int | None = None
+    ):
         """Returns the ip address of a connection. Connection is defined either by its connection object or the
         connection number in the connections list
 
@@ -1382,7 +1370,12 @@ class SocketServer(SocketMeths):
         elif isinstance(conn_num, int):
             return self.connections[conn_num][1][0]
 
-    def close_connection(self, conn_num=None, ip=None, connection=None):
+    def close_connection(
+        self,
+        conn_num: int | None = None,
+        ip: str | None = None,
+        connection: socket.socket | None = None,
+    ):
         """Closes connection if it has not been already, and then deletes it from the connection list to ensure that
         this list maintains an up-to-date record of connections
 
@@ -1395,14 +1388,17 @@ class SocketServer(SocketMeths):
         connection: socket connection object
             The socket connection object that would be returned by an accept() call
         """
+        remote_port = None
         if connection is not None:
-            print('Closing connection: {}'.format(self.connections))
+            print('Trying to close connection: {}'.format(connection))
+
             for i in range(len(self.connections)):
-                if connection in self.connections[i]:
-                    # Get ip of connection, just closing print statement
-                    ip = self.get_ip(connection=connection)
+                if connection == self.connections[i][0]:
+                    print("Closing...")
 
                     try:
+                        # Get ip of connection, just closing print statement
+                        ip, remote_port = connection.getpeername()
                         connection.shutdown(socket.SHUT_RDWR)
                         # Close the connection
                         connection.close()
@@ -1420,24 +1416,26 @@ class SocketServer(SocketMeths):
 
         # Search for ip address in connections list
         elif isinstance(ip, str):
+            print('Trying to close connection from {}'.format(ip))
             for i in range(len(self.connections)):
                 # Check if ip address is in the addr tuple. If it is, we set conn_num to this connection
                 if ip in self.connections[i][1]:
                     conn_num = i
                     conn = self.connections[conn_num][0]
+                    print("Closing...")
 
                     try:
+                        remote_port = self.connections[conn_num][0].getpeername()[1]
                         conn.shutdown(socket.SHUT_RDWR)
                         conn.close()
                     except OSError:
                         print('Connection already closed, removing it from list')
 
-                    # SOMETIMES GET AN INDEX ERROR HERE - I THINK WE JUST WANT TO IGNORE IT
-                    # TODO this try clause is quite new so if issues are experienced, maybe get rid?
                     try:
                         # Remove connection from list
                         del self.connections[conn_num]
                     except IndexError:
+                        # Maybe this happens because the size of self.connections changes?
                         pass
 
                     # Only want to close one connection at a time. And this prevents hitting index errors
@@ -1446,10 +1444,12 @@ class SocketServer(SocketMeths):
         # If explicitly passed the connection number we can just close that number directly
         else:
             if isinstance(conn_num, int):
-                ip = self.get_ip(conn_num=conn_num)
+                print('Trying to close connection number {}'.format(conn_num))
                 conn = self.connections[conn_num][0]
+                print("Closing...")
 
                 try:
+                    ip, remote_port = conn.getpeername()
                     conn.shutdown(socket.SHUT_RDWR)
                     conn.close()
                 except OSError:
@@ -1457,7 +1457,15 @@ class SocketServer(SocketMeths):
 
                 del self.connections[conn_num]
 
-        print('Closed connection: {}, {}'.format(ip, self.port))
+        if ip is None or remote_port is None:
+            print("Failed to close connection, was it already closed?")
+            return
+
+        if (ip, remote_port) in self.conn_dict:
+            del self.conn_dict[(ip, remote_port)]
+            print("Cleaned up conn_dict")
+
+        print(f"Closed connection: {ip}:{remote_port}, {self.port}")
 
     def send_to_all(self, cmd):
         """Sends a command to all connections on the server
@@ -1484,7 +1492,7 @@ class SocketServer(SocketMeths):
                 print(
                     "SocketServer BrokenPipeError: Closing connection {}".format(conn)
                 )
-                self.close_connection(conn)
+                self.close_connection(connection=conn[0])
 
         # Loop through the internal connections and send to all cameras, etc
         for conn in self.internal_connections:
@@ -1507,6 +1515,8 @@ class Connection:
     sock: SocketServer, PiSocketCam, PiSocketSpec
         Object of one of above classes, which contain certain necessary methods
     """
+    connection_tuple: tuple[socket.socket, tuple[str, int]] | None
+    _connection: socket.socket | None
     def __init__(self, sock, acc_conn=False):
         self.sock = sock
         self.ip = None
@@ -1525,12 +1535,12 @@ class Connection:
             self.acc_connection()
 
     @property
-    def connection(self):
+    def connection(self) -> socket.socket | None:
         """Updates the connection attributes"""
         return self._connection
 
     @connection.setter
-    def connection(self, connection):
+    def connection(self, connection: socket.socket):
         """Setting new connection and updates new ip address too so everything is correct"""
         self._connection = connection
 
@@ -1590,7 +1600,7 @@ class CommConnection(Connection):
     sock: SocketServer
         Object of server where external comms connection is  held
     """
-    def __init__(self, sock, acc_conn=False):
+    def __init__(self, sock: SocketServer, acc_conn=False):
         super().__init__(sock, acc_conn)
 
     def _thread_func(self):
@@ -1645,7 +1655,7 @@ class ExternalRecvConnection(Connection):
     sock: SocketClient
         Object of server where external comms connection is  held
     """
-    def __init__(self, sock, acc_conn=False, return_errors=False):
+    def __init__(self, sock: SocketClient, acc_conn=False, return_errors=False):
         super().__init__(sock, acc_conn)
         self.return_errors = return_errors
 
@@ -1662,6 +1672,10 @@ class ExternalRecvConnection(Connection):
 
                 # Decode the message into dictionary
                 dec_mess = self.sock.decode_comms(message, self.return_errors)
+
+                # # Strip the destination header if it's external
+                # if "DST" in dec_mess and dec_mess["DST"] == "EXN":
+                #     del dec_mess["DST"]
 
                 # Add message to queue to be processed
                 self.q.put(dec_mess)

@@ -37,6 +37,9 @@ print("Creating socket for {} on port {}".format(host_ip, port))
 sock_ext = SocketClient(host_ip, port)
 sock_ext.connect_socket()
 print(f"Connected? {sock_ext.connect_stat}")
+if not sock_ext.connect_stat:
+    sock_ext.close_socket()
+    exit()
 
 recv_comms = ExternalRecvConnection(sock=sock_ext, acc_conn=False, return_errors=True)
 recv_comms.thread_func()
@@ -61,6 +64,7 @@ def print_q():
             print(f"Server responded: {ret_dict}", flush=True)
             if "GBY" in ret_dict:
                 # GBY only sent when the server is exiting
+                print("Server is exiting, we will too")
                 do_exit()
         except queue.Empty:
             pass
@@ -101,6 +105,10 @@ while running:
     if "Q" in cmd_dict:
         sys.exit()
     else:
+        if "GBY" in cmd_dict:
+            if cmd_dict['GBY'] > 0:
+                print(f"Filling in GBY with local port {sock_ext.local_port}")
+                cmd_dict['GBY'] = sock_ext.local_port
         cmd_bytes = sock_ext.encode_comms(cmd_dict)
         sock_ext.send_comms(sock_ext.sock, cmd_bytes)
 

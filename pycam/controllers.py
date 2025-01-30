@@ -488,7 +488,7 @@ class Camera(CameraSpecs):
             )
 
             if "exit" in command:
-                print("Exiting camera capture thread")
+                print(f"Exiting {self.band} camera capture thread")
                 # return if commanded to exit
                 if command["exit"]:
                     self.in_interactive_capture = False

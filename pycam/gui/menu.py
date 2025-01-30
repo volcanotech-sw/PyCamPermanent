@@ -104,15 +104,14 @@ class PyMenu:
 
         self.submenu_cmd = tk.Menu(self.frame, tearoff=0)
         self.menus[tab].add_cascade(label='Commands', menu=self.submenu_cmd)
-        self.submenu_cmd.add_command(label='Restart', command=lambda: instrument_cmd('RST'))
-        self.submenu_cmd.add_command(label='Restart cameras', command=lambda: instrument_cmd('RSC'))
-        self.submenu_cmd.add_command(label='Restart spectrometer', command=lambda: instrument_cmd('RSS'))
-        self.submenu_cmd.add_separator()
-        self.submenu_cmd.add_command(label='Run pycam (with automated capture)',
-                                     command=lambda: run_pycam(cfg.sock.host_ip, auto_capt=1))
         self.submenu_cmd.add_command(label='Run pycam (without automated capture)',
                                      command=lambda: run_pycam(cfg.sock.host_ip, auto_capt=0))
+        self.submenu_cmd.add_command(label='Run pycam (with automated capture)',
+                                     command=lambda: run_pycam(cfg.sock.host_ip, auto_capt=1))
+        self.submenu_cmd.add_separator()
         self.submenu_cmd.add_command(label='Stop pycam', command=lambda: instrument_cmd('EXT'))
+        self.submenu_cmd.add_separator()
+        self.submenu_cmd.add_command(label='Restart', command=lambda: instrument_cmd('RST'))
         self.menus[tab].add_separator()
 
         # Data transfer
@@ -144,6 +143,7 @@ class PyMenu:
                                      command=automated_acq_handler.stop_cont)
         self.submenu_acq.add_separator()
         self.submenu_acq.add_command(label='Update all instrument settings', command=automated_acq_handler.acq_comm)
+        # TODO remove individual camera and spectrometer updating?
         self.submenu_acq.add_command(label='Update spectrometer settings', command=automated_acq_handler.acq_spec_full)
         self.submenu_acq.add_command(label='Update camera settings', command=automated_acq_handler.acq_cam_full)
         self.submenu_acq.add_command(label='Retrieve current settings',

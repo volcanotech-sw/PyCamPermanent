@@ -104,7 +104,7 @@ class Indicator:
 
         try:
             # Commented out as not sure this is currently working properly
-            #self.sock.connect_socket_try_all(timeout=5)
+            # self.sock.connect_socket_try_all(timeout=5)
             self.sock.close_socket()    # Close socket first, might avoid issues
             self.sock.connect_socket_timeout(timeout=5)
 
@@ -112,7 +112,7 @@ class Indicator:
             self.sock.send_comms(self.sock.sock, cmd)
             reply = self.sock.recv_comms(self.sock.sock)
             reply = self.sock.decode_comms(reply)
-            if reply != {'LOG': 0}:
+            if not len(reply) == 3 or "LOG" not in reply or not reply["LOG"] == 0:
                 print('Unrecognised socket reply')
                 raise ConnectionError
             else:
@@ -143,7 +143,7 @@ class Indicator:
             messagebox.showerror('Connection Error', 'No connection was present to disconnect from.')
 
         # Tell the server we are disconnecting and wait a moment for it to receive the message
-        cfg.send_comms.q.put({'GBY': 1})
+        cfg.send_comms.q.put({"GBY": cfg.sock.local_port})
         time.sleep(0.1)
 
         self.sock.close_socket()
