@@ -30,9 +30,9 @@ if process_settings['doas_method'] == 'doas':
     doas_worker = DOASWorker(spec_dir=process_settings['spec_dir'],
                              dark_dir=process_settings['dark_spec_dir'],
                              q_doas=pyplis_worker.q_doas,
-                             species=species)
+                             species=pyplis_worker.species_paths)
 elif process_settings['doas_method'] == 'ifit':
     doas_worker = IFitWorker(spec_dir=process_settings['spec_dir'],
                              dark_dir=process_settings['dark_spec_dir'],
                              q_doas=pyplis_worker.q_doas,
-                             species=species)
+                             species=pyplis_worker.species_paths)
