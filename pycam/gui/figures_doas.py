@@ -780,7 +780,7 @@ class CalibrationWindow:
     def load_ref_species(self, fig_setts=GUISettings(FileLocator.GUI_SETTINGS)):
         for spec in doas_worker.species_info:
             species_id = 'ref_spec_{}'.format(spec)
-            self.ref_frame[spec] = RefPlot(ref_spec_path=doas_worker.params[spec].xpath, species=spec, doas_work=doas_worker,
+            self.ref_frame[spec] = RefPlot(ref_spec_path=doas_worker.species_info[spec]["path"], species=spec, doas_work=doas_worker,
                                            fig_setts=fig_setts)
             
     def add_gui(self, gui):
