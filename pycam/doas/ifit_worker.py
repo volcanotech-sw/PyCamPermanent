@@ -248,7 +248,9 @@ class IFitWorker(SpecWorker):
             plume_gas = True
         else:
             plume_gas = False
+        # Update both self.params and self.species_info with species_info
         self.params.add(species, value=value, vary=True, xpath=pathname, plume_gas=plume_gas)
+        self.species_info.update({species:{'path': pathname, 'value': value}})
         if update:
             self.update_analyser()
 
