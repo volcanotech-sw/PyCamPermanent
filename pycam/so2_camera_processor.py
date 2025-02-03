@@ -516,6 +516,7 @@ class PyplisWorker:
             "spec_dir": "spec_dir",
             "dark_spec_dir": "dark_dir",
             "ILS_path": "ils_path",
+            "include_ils_fit": "include_ils_fit",
             "use_light_dilution_spec": "corr_light_dilution",
             "grid_max_ppmm": "grid_max_ppmm",
             "grid_increment_ppmm": "grid_increment_ppmm",
@@ -1036,16 +1037,16 @@ class PyplisWorker:
 
         # Display first images of sequence
         if len(self.img_list) > 0:
-            self.process_pair(self.img_dir + '\\' + self.img_list[0][0],
-                              self.img_dir + '\\' + self.img_list[0][1],
+            self.process_pair(self.img_dir + '/' + self.img_list[0][0],
+                              self.img_dir + '/' + self.img_list[0][1],
                               plot=plot, plot_bg=plot_bg)
 
             if len(self.img_list) > 1:
                 # Load second image too so that we have optical flow output generated
                 self.idx_current += 1
                 self.first_image = False
-                self.process_pair(self.img_dir + '\\' + self.img_list[1][0],
-                                  self.img_dir + '\\' + self.img_list[1][1],
+                self.process_pair(self.img_dir + '/' + self.img_list[1][0],
+                                  self.img_dir + '/' + self.img_list[1][1],
                                   plot=plot, plot_bg=plot_bg)
 
     def next_image(self):
@@ -1064,7 +1065,7 @@ class PyplisWorker:
 
                 # Going to previous image, so we get data from buffer
                 for img_name in [img_A, img_B]:
-                    self.load_img(self.img_dir + '\\' + img_name, plot=True, temporary=True)
+                    self.load_img(self.img_dir + '/' + img_name, plot=True, temporary=True)
                 self.fig_tau.update_plot(img_tau)
                 # TODO plot optical flow image
                 if opt_flow is not None:
@@ -1073,8 +1074,8 @@ class PyplisWorker:
             # If we don't already have this image loaded in then we process it
             else:
                 # Process images too
-                self.process_pair(self.img_dir + '\\' + self.img_list[self.idx_current+1][0],
-                                  self.img_dir + '\\' + self.img_list[self.idx_current+1][1])
+                self.process_pair(self.img_dir + '/' + self.img_list[self.idx_current+1][0],
+                                  self.img_dir + '/' + self.img_list[self.idx_current+1][1])
         except IndexError:
             self.idx_current -= 1
 
@@ -1089,7 +1090,7 @@ class PyplisWorker:
 
             # Going to previous image, so we get data from buffer
             for img_name in [img_A, img_B]:
-                self.load_img(self.img_dir + '\\' + img_name, plot=True, temporary=True)
+                self.load_img(self.img_dir + '/' + img_name, plot=True, temporary=True)
             self.fig_tau.update_plot(img_tau)
             # TODO plot image
             if opt_flow is not None:
@@ -1122,8 +1123,11 @@ class PyplisWorker:
                 img.subtract_dark_image(dark_img)
                 img.img[img.img <= 0] = np.finfo(float).eps
             else:
-                warnings.warn('No dark image provided for background image.\n '
-                              'Background image has not been corrected for dark current.')
+                warnings.warn('No dark image found, for band {} background image.'
+                              'Note: Image will still be flagged as dark-corrected so processing can proceed.'.format(band))
+                img.subtract_dark_image(0)  # Just subtract 0. This ensures the image is flagged as dark-corr
+        else:
+            img.subtract_dark_image(0)  # Just subtract 0. This ensures the image is flagged as dark-corr
 
         # Set variables
         setattr(self, 'bg_{}'.format(band), img)
@@ -1255,11 +1259,13 @@ class PyplisWorker:
             print('Updating plot {}'.format(band))
             getattr(self, 'fig_{}'.format(band)).update_plot(img_path)
 
-    def find_dark_img(self, img_dir, ss, band='on'):
+    def find_dark_img(self, img_dir, ss, band='on', find_nearest=True):
         """
         Searches for suitable dark image in designated directory. First it filters the images for the correct filter,
         then searches for an image with the same shutter speed defined
         :param: ss  int,str     Shutter speed value to hunt for. Can be either int or str
+        :param: find_nearest  bool  If True, a dark image will always be returned, based on the nearest available
+                                    shutter speed.
         :returns: dark_img      Coadded dark image for this shutter speed
         :returns: dark_paths    List of strings representing paths to all dark images used to generate dark_img
         """
@@ -1286,6 +1292,16 @@ class PyplisWorker:
         ss_str = self.cam_specs.file_ss.replace('{}', '')
         ss_images = [int(f.split('_')[self.cam_specs.file_ss_loc].replace(ss_str, '')) for f in dark_list]
         ss_rounded_list = [round(f, -int(floor(log10(abs(f)))) + 1) for f in ss_images]
+
+        # Find nearest shutter speed that exists and allow for faster exit of function if it does
+        # This may seem slightly repetitive to above, but is necessary if we want the fastest possible look-up when
+        # find nearest is False. Otherwise we always not to create the ss_rounded_list before lookup
+        if find_nearest:
+            ss_rounded = min(ss_rounded_list, key=lambda x: abs(x - ss_rounded))
+            # Fast dictionary look up for preloaded dark images (using rounded ss value)
+            if str(ss_rounded) in self.dark_dict[band].keys():
+                dark_img = self.dark_dict[band][str(ss_rounded)]
+                return dark_img, None
 
         ss_idx = [i for i, x in enumerate(ss_rounded_list) if x == ss_rounded]
         ss_images = [dark_list[i] for i in ss_idx]
@@ -1572,7 +1588,11 @@ class PyplisWorker:
 
             # Find associated dark image by extracting shutter speed, then subtract this image
             ss = meta['texp'] / self.cam_specs.file_ss_units
-            img_array_clear_A[:, :, i] -= self.find_dark_img(self.cell_cal_dir, ss=ss, band='A')[0]
+            try:
+                img_array_clear_A[:, :, i] -= self.find_dark_img(self.cell_cal_dir, ss=ss, band='A')[0]
+            except np.core._exceptions._UFuncOutputCastingError:
+                print('Unable to find dark image for cell calibration in '
+                              'band A exposure {}. Image will not be dark-subtracted'.format(ss))
 
             # Scale image to 1 second exposure (so that we can deal with images of different shutter speeds
             img_array_clear_A[:, :, i] *= (1 / meta['texp'])
@@ -1586,7 +1606,12 @@ class PyplisWorker:
 
             # Find associated dark image by extracting shutter speed, then subtract this image
             ss = meta['texp'] / self.cam_specs.file_ss_units
-            img_array_clear_B[:, :, i] -= self.find_dark_img(self.cell_cal_dir, ss=ss, band='B')[0]
+            try:
+                img_array_clear_B[:, :, i] -= self.find_dark_img(self.cell_cal_dir, ss=ss, band='B')[0]
+            except np.core._exceptions._UFuncOutputCastingError:
+                print('Unable to find dark image for cell calibration in '
+                              'band B exposure {}. Image will not be dark-subtracted'.format(ss))
+
 
             # Scale image to 1 second exposure (so that we can deal with images of different shutter speeds
             img_array_clear_B[:, :, i] *= (1 / meta['texp'])
@@ -1661,7 +1686,12 @@ class PyplisWorker:
 
                     # Find associated dark image by extracting shutter speed, then subtract this image
                     ss = meta['texp'] / self.cam_specs.file_ss_units
-                    cell_array[:, :, i] -= self.find_dark_img(self.cell_cal_dir, ss=ss, band=band)[0]
+                    try:
+                        cell_array[:, :, i] -= self.find_dark_img(self.cell_cal_dir, ss=ss, band=band)[0]
+                    except np.core._exceptions._UFuncOutputCastingError:
+                        print('Unable to find dark image for cell calibration in '
+                                      'band {} exposure {}. Image will not be dark-subtracted'.format(band, ss))
+
 
                     # Scale image to 1 second exposure (so that we can deal with images of different shutter speeds
                     cell_array[:, :, i] *= (1 / meta['texp'])
@@ -3954,8 +3984,8 @@ class PyplisWorker:
             # Process image pair
             print('SO2 cam processor: Processing pair: {}'.format(self.img_list[i][0]))
             try:
-                self.process_pair(self.img_dir + '\\' + self.img_list[i][0],
-                                  self.img_dir + '\\' + self.img_list[i][1],
+                self.process_pair(self.img_dir + '/' + self.img_list[i][0],
+                                  self.img_dir + '/' + self.img_list[i][1],
                                   plot=plot_iter, force_cal=force_cal, cross_corr=cross_corr)
             except FileNotFoundError:
                 traceback.print_exc()

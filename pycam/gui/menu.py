@@ -796,6 +796,7 @@ class LoadFrame(LoadSaveProcessingSettings):
         self.main_gui.set_transfer_dir()
         self.doas_worker.get_wavelengths(pyplis_worker.config)
         self.doas_worker.get_shift(pyplis_worker.config)
+        self.doas_worker.set_ils_fit(pyplis_worker.config)
         self.main_gui.spec_wind.spec_frame.update_all()
         self.main_gui.spec_wind.doas_frame.update_vals()
 

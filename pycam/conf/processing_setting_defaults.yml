@@ -3,14 +3,14 @@
 # This file contains the settings for loading default pyplis worker objects for startup in the gui
 
 # General settings
-img_dir: .\pycam\Data\Images\Villarrica\Seq_1\
-dark_img_dir: .\pycam\Data\Images\Villarrica\Cal_1\
-transfer_dir: .\pycam\Data\ 
-spec_dir: .\pycam\tests\test_data\test_spectra\
-dark_spec_dir: .\pycam\tests\test_data\test_spectra\
-bg_A_path: .\pycam\Data\Images\Villarrica\Cal_1\2018-03-26T143723_fltrA_1ag_1399829ss_Clear.png
-bg_B_path: .\pycam\Data\Images\Villarrica\Cal_1\2018-03-26T143715_fltrB_1ag_99980ss_Clear.png
-cell_cal_dir: .\pycam\Data\Images\Villarrica\Cal_1\
+img_dir: ./pycam/Data/Images/Villarrica/Seq_1/
+dark_img_dir: ./pycam/Data/Images/Villarrica/Cal_1/
+transfer_dir: ./pycam/Data/
+spec_dir: ./pycam/tests/test_data/test_spectra/
+dark_spec_dir: ./pycam/tests/test_data/test_spectra/
+bg_A_path: ./pycam/Data/Images/Villarrica/Cal_1/2018-03-26T143723_fltrA_1ag_1399829ss_Clear.png
+bg_B_path: ./pycam/Data/Images/Villarrica/Cal_1/2018-03-26T143715_fltrB_1ag_99980ss_Clear.png
+cell_cal_dir: ./pycam/Data/Images/Villarrica/Cal_1/
 cal_type_int: 1
 cal_series_path: ''
 min_cd: 5.0e+16
@@ -55,7 +55,8 @@ auto_bg_cmap: 0
 
 # DOAS calibration and DOAS-AA calibration
 doas_method: ifit
-ILS_path: .\pycam\tests\test_data\test_spectra\2019-07-03_302nm_ILS.txt
+ILS_path: ./pycam/tests/test_data/test_spectra/2019-07-03_302nm_ILS.txt
+include_ils_fit: false
 maxrad_doas: 1.0
 remove_doas_mins: 30
 doas_recal: 1
