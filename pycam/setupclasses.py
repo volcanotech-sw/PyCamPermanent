@@ -10,6 +10,7 @@ from pycam.utils import check_filename
 import warnings
 import numpy as np
 import numpy.typing
+import inspect
 import os
 import platform
 
@@ -45,16 +46,21 @@ class MetaFileLocator(type):
         If on anything else return the _WINDOWS version
         If neither exist return the version with out anything if it exists
         Otherwise raise an AttributeError
+        Don't do anything special if in the GUI
         """
 
-        # check for architecture (this will probably fail on mac)
+        # check if in the GUI
+        in_gui = any(
+            [True if "gui" in frame.filename else False for frame in inspect.stack()]
+        )
 
-        if attr.endswith("_PI") and not running_on_pi():
+        # check for architecture (this will probably fail on mac)
+        if attr.endswith("_PI") and not running_on_pi() and not in_gui:
             # this should be a _WINDOWS instead
             attr_new = attr[:-3] + "_WINDOWS"
             print(f"Using {attr_new} instead of {attr}")
             attr = attr_new
-        elif attr.endswith("_WINDOWS") and running_on_pi():
+        elif attr.endswith("_WINDOWS") and running_on_pi() and not in_gui:
             # this should be a _PI instead
             attr_new = attr[:-8] + "_PI"
             print(f"Using {attr_new} instead of {attr}")
