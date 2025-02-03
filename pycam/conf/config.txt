@@ -5,6 +5,7 @@
 # FTP INFORMATION
 uname=pi                            # Raspberry pi username
 pwd=raspberry                       # Raspberry pi password
+ftppwd=raspftp                      # Raspberry pi FTP password
 data_dir=/home/pi/pycam/Images/     # Directory where images and spectra are saved. NOTE: Currently must mirror FileLocator.IMG_SPEC_PATH
 local_data_dir=./pycam/Data/                   # Local directory for saving data
 
