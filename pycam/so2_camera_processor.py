@@ -4327,7 +4327,9 @@ class PyplisWorker:
     @staticmethod
     def get_args():
         parser = argparse.ArgumentParser(description="Process image sequence")
-        parser.add_argument('-i', '--image_directory', type="str")
+        parser.add_argument('-i', '--image_directory', type=str)
+        parser.add_argument('-c', '--config_path', type=str)
+        parser.add_argument('-n', '--name', type=str)
         return parser.parse_args()
     
 class ImageRegistration:
