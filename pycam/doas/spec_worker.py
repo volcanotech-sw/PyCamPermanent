@@ -20,7 +20,7 @@ class SpecWorker:
     """
     Parent class for IfitWorker and DoasWorker
     """
-    def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir='C:\\', dark_dir=None,
+    def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir='C:/', dark_dir=None,
                  q_doas=queue.Queue()):
         self.routine = routine          # Defines routine to be used, either (1) Polynomial or (2) Digital Filtering
         self.spec_specs = spec_specs    # Spectrometer specifications
@@ -73,7 +73,8 @@ class SpecWorker:
         self.abs_spec_filt = None
         self.abs_spec_species = dict()  # Dictionary of absorbances isolated for individual species
         self.ILS_wavelengths = None     # Wavelengths for ILS
-        self._ILS = None                 # Instrument line shape (will be a numpy array)
+        self._ILS = None                # Instrument line shape (will be a numpy array)
+        self._include_ils_fit = False   # Whether to include ILS as part of the fit parameters (if False, an ILS must be provided via file)
         self.processed_data = False     # Bool to define if object has processed DOAS yet - will become true once process_doas() is run
 
         self.start_ca = -2000  # Starting column amount for iterations
@@ -244,6 +245,19 @@ class SpecWorker:
         # If new ILS is generated, then must flag that ref spectrum is no longer convolved with up-to-date ILS
         self.ref_convolved = False
 
+    @property
+    def include_ils_fit(self):
+        return self._include_ils_fit
+
+    @include_ils_fit.setter
+    def include_ils_fit(self, value):
+        self._include_ils_fit = value
+        # Attempt to update analyser with new setting. If using DOASWorker this won't be possible, so using try/except
+        try:
+            self.update_analyser()
+        except AttributeError:
+            pass
+
     def get_spec_time(self, filename):
         """
         Gets time from filename and converts it to datetime object
@@ -370,6 +384,10 @@ class SpecWorker:
         shift_val = config.get("shift")
         if shift_val is not None:
             setattr(self, "shift", shift_val)
+
+    def set_ils_fit(self, config):
+        """Sets whether ILS is part of the fit parameters or if a predefined ILS is used in the iFit retrieval"""
+        self.include_ils_fit = config.get("include_ils_fit")
 
     def reset_stray_pix(self):
         self._start_stray_pix = None

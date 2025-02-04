@@ -28,7 +28,7 @@ while True:
             volc_dict[cam]['dbx'] = DropboxIO(refresh_token_path='./dbx_access.txt', root_folder=cam,
                                               save_folder=volc_dict[cam]['save_path'], download_to_datedirs=True,
                                               delete_after=True)
-            # dbx = DropboxIO(watch_folder='C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\', delete_after=False)
+            # dbx = DropboxIO(watch_folder='C:/Users/tw9616/Documents/PostDoc/Permanent Camera/', delete_after=False)
 
             # Download data files
             print('Setting up downloader for {}'.format(cam))
