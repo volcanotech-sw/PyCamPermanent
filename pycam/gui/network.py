@@ -20,9 +20,9 @@ import threading
 
 def run_pycam(ip, auto_capt=1):
     """Runs main pycam script on remote machine"""
-    if messagebox.askyesno("Please confirm", "Are you sure you want to run pycam_masterpi.py?\n"
+    if messagebox.askyesno("Please confirm", "Are you sure you want to run pycam_master2.py?\n"
                                              "Running this on a machine which already has the script running could cause issues"):
-        print('Running pycam_masterpi on {}'.format(ip))
+        print('Running pycam_master2.py on {}'.format(ip))
 
         # Read configuration file which contains important information for various things
         config = read_file(FileLocator.CONFIG_WINDOWS)

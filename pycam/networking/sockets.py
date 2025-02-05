@@ -138,6 +138,8 @@ class CommsFuncs(SendRecvSpecs):
             'NIA': (str, []),           # New image from Camera A (on band)
             'NIB': (str, []),           # New image from Camera B (off band)
             'NIS': (str, []),           # New image from the Spectrometer
+            'CLI': (bool, 1),           # Return list of connected clients
+            'MSG': (str, []),           # Generic string message
             }
         # Error flag, which provides the key in which an error was found
         self.cmd_dict['ERR'] = (str, list(self.cmd_dict.keys()))
@@ -279,6 +281,13 @@ class MasterComms(CommsCommandHandler):
         if to_close:
             # We need to do this separately as conn_dict will change size from this
             self.socket.close_connection(connection=to_close)
+
+    def CLI(self, value, cmd_source):
+        ret = {"MSG": "Connected:", "DST": cmd_source}
+        for conn, _ in self.socket.conn_dict.values():
+            ip, remote_port = conn[0].getpeername()
+            ret["MSG"] += f"{ip}:{remote_port}"  # note can't have spaces
+        self.send_tagged_comms(ret)
 
     def DKC(self, value, cmd_source):
         """Note dark capture start on camera"""

@@ -15,7 +15,6 @@ import threading
 
 from .setupclasses import CameraSpecs, SpecSpecs, FileLocator
 from .utils import format_time, set_capture_status
-from .io_py import save_img, save_spectrum
 
 
 try:

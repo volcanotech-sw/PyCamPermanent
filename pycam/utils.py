@@ -190,7 +190,7 @@ def kill_process(process='pycam_master2'):
 
 def kill_all(ips, script_name='/home/pi/pycam/scripts/kill_process.py'):
     """
-    Kills local and remote pycam scripts (mainly for use at the end of pycam_masterpi to ensure everything is
+    Kills local and remote pycam scripts (mainly for use at the end of pycam_master2.py to ensure everything is
     shutdown - a bit of a fail-safe
     """
     print('Attempting to kill any scripts still running')

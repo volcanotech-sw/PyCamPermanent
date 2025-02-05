@@ -55,7 +55,7 @@ from pycam.networking.sockets import (
     CamComms,
     SpecComms,
 )
-from pycam.utils import read_file, write_file
+from pycam.utils import read_file, write_file, StorageMount
 from pycam.setupclasses import ConfigInfo, FileLocator
 
 import argparse
@@ -110,6 +110,11 @@ else:
         dark_capture_launch = True
         print("Running dark capture only, will quit when finished")
 
+# -----------------------------------------------------------------
+# Make USB storage available
+storage_mount = StorageMount()
+storage_mount.mount_dev()
+atexit.register(storage_mount.unmount_dev)  # Unmount device when script closes
 
 # -----------------------------------------------------------------
 # Setup camera object
@@ -232,6 +237,10 @@ elif dark_capture:
     # it looks like it's immediately finished and we loose track of dark capture state
     time.sleep(1)
 
+# New image transmissions need to be paused while clients connect so that they can receive the output of {"LOG": 0}
+new_conn_pause_time = 0  # The time we receive a LOG request
+new_conn_pause_delay = 10  # Pause notification for 10 seconds
+
 print("Entering main loop")
 
 while running:
@@ -255,7 +264,10 @@ while running:
                         image, instrument.save_path + "/" + filename, metadata=metadata
                     )
                     # Tell connected clients about the new image (the master should be first)
-                    if not dark_capture:
+                    if (
+                        not dark_capture
+                        and time.time() - new_conn_pause_time > new_conn_pause_delay
+                    ):
                         if instrument.band == "on":
                             sock_serv_ext.send_to_all(
                                 {"IDN": "MAS", "NIA": new_file, "DST": "EXN"}
@@ -274,7 +286,10 @@ while running:
                         file_ext=instrument.file_ext,
                     )
                     # Tell connected clients about the new spectra
-                    if not dark_capture:
+                    if (
+                        not dark_capture
+                        and time.time() - new_conn_pause_time > new_conn_pause_delay
+                    ):
                         sock_serv_ext.send_to_all(
                             {"IDN": "MAS", "NIS": new_file, "DST": "EXN"}
                         )
@@ -339,6 +354,8 @@ while running:
                     # Restart the entire pi
                     running = False
                     # TODO run 'sudo restart'
+                if "LOG" in comm_cmd:
+                    new_conn_pause_time = time.time()
 
                 # Keep track of the state of continuous capture
                 if (
