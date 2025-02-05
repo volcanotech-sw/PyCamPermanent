@@ -259,9 +259,18 @@ while running:
 
             try:
                 if isinstance(instrument, Camera):
-                    [filename, image, metadata] = instrument.img_q.get(False)
-                    new_file = save_img(
-                        image, instrument.save_path + "/" + filename, metadata=metadata
+                    [img_filename, image, metadata, meta_filename] = (
+                        instrument.img_q.get(False)
+                    )
+                    new_file = instrument.save_path + "/" + img_filename
+                    new_meta = instrument.save_path + "/" + meta_filename
+                    save_img(
+                        image,
+                        new_file,
+                        ext=instrument.file_ext,
+                        metadata=metadata,
+                        meta_filename=new_meta,
+                        meta_ext=instrument.meta_ext,
                     )
                     # Tell connected clients about the new image (the master should be first)
                     if (
@@ -272,9 +281,15 @@ while running:
                             sock_serv_ext.send_to_all(
                                 {"IDN": "MAS", "NIA": new_file, "DST": "EXN"}
                             )
+                            sock_serv_ext.send_to_all(
+                                {"IDN": "MAS", "NMA": new_meta, "DST": "EXN"}
+                            )
                         else:  # off band
                             sock_serv_ext.send_to_all(
                                 {"IDN": "MAS", "NIB": new_file, "DST": "EXN"}
+                            )
+                            sock_serv_ext.send_to_all(
+                                {"IDN": "MAS", "NMB": new_meta, "DST": "EXN"}
                             )
 
                 elif isinstance(instrument, Spectrometer):

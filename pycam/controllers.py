@@ -341,7 +341,7 @@ class Camera(CameraSpecs):
         else:
             return 0
 
-    def generate_filename(self, time_str: str, img_type: str) -> str:
+    def generate_filename(self, time_str: str, img_type: str) -> tuple[str, str]:
         """
         Generates the image filename
 
@@ -360,21 +360,25 @@ class Camera(CameraSpecs):
         else:
             prefix = ""
 
-        return (
-            prefix
-            + time_str
-            + "_"
-            + self.file_filterids[self.band]
-            + "_"
-            + str(self.metadata["AnalogueGain"])
-            + "_"
-            + str(self.metadata["ExposureTime"])
-            + "_"
-            + img_type
-            + self.file_ext
-        )
+        filenames = []
+        for ext in [self.file_ext, self.meta_ext]:
+            filenames.append(
+                prefix
+                + time_str
+                + "_"
+                + self.file_filterids[self.band]
+                + "_"
+                + str(self.metadata["AnalogueGain"])
+                + "_"
+                + str(self.metadata["ExposureTime"])
+                + "_"
+                + img_type
+                + ext
+            )
         #    self.file_ag.format(str(int(self.analog_gain))) + '_' + \
         #    self.file_ss.format(self.shutter_speed) + '_' + \
+
+        return filenames[0], filenames[1]
 
     def capture(self):
         """
@@ -530,11 +534,13 @@ class Camera(CameraSpecs):
                     self.capture()
 
                     # Generate filename
-                    filename = self.generate_filename(time_str, command["type"])
-                    print("{}: Captured image: {}".format(__file__, filename))
+                    img_filename, meta_filename = self.generate_filename(
+                        time_str, command["type"]
+                    )
+                    print("{}: Captured image: {}".format(__file__, img_filename))
 
                     # Put filename and image in queue
-                    img_q.put([filename, self.image, self.metadata])
+                    img_q.put([img_filename, self.image, self.metadata, meta_filename])
 
     def capture_sequence(
         self,
@@ -625,13 +631,15 @@ class Camera(CameraSpecs):
                 self.capture()
 
                 # Generate filename
-                filename = self.generate_filename(time_str, self.file_type["meas"])
+                img_filename, meta_filename = self.generate_filename(
+                    time_str, self.file_type["meas"]
+                )
 
                 # Save image
                 # save_img(self.image, filename, metadata=self.metadata)
 
                 # Put filename and image into q
-                img_q.put([filename, self.image, self.metadata])
+                img_q.put([img_filename, self.image, self.metadata, meta_filename])
 
                 # Check image saturation and adjust shutter speed if required
                 if self.auto_ss:
@@ -671,14 +679,18 @@ class Camera(CameraSpecs):
             self.capture()
 
             # Generate filename for image and save it
-            filename = self.generate_filename(time_str, self.file_type["dark"])
+            img_filename, meta_filename = self.generate_filename(
+                time_str, self.file_type["dark"]
+            )
             # save_img(self.image, filename, metadata=self.metadata)
-            print("Captured dark: {}".format(filename))
+            print("Captured dark: {}".format(img_filename))
 
             # Put images in q
-            self.img_q.put([filename, self.image, self.metadata])
+            self.img_q.put([img_filename, self.image, self.metadata, meta_filename])
 
-        print(f"Dark {self.band} camera capture time: {time.time() - time_start:0.2f} s")
+        print(
+            f"Dark {self.band} camera capture time: {time.time() - time_start:0.2f} s"
+        )
         self.in_dark_capture = False
 
 

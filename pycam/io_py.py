@@ -31,7 +31,7 @@ except ModuleNotFoundError:
 from pandas import DataFrame
 from pathlib import Path
 
-def save_img(img, filename, ext='.png', metadata=None):
+def save_img(img, filename, ext='.png', metadata=None, meta_filename=None, meta_ext='.json'):
     """Saves image
     img: np.array
         Image array to be saved
@@ -50,10 +50,10 @@ def save_img(img, filename, ext='.png', metadata=None):
     print(f"Saved {filename}")
 
     # Save metadata
-    if metadata:
-        with open(filename.replace(ext, ".json"), "w") as f:
+    if metadata and meta_filename:
+        with open(meta_filename, "w") as f:
             json.dump(metadata, f, indent=4)
-
+        print(f"Saved {meta_filename}")
 
     # Remove lock to free image for transfer
     os.remove(lock)

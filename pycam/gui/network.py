@@ -205,6 +205,9 @@ class GUICommRecvHandler:
 
         self.widgets = ['cam_acq', 'spec_acq', 'message_wind']
 
+        # For downloading frames as they come in
+        self.ftp_client = None
+
     def add_widgets(self, **kwargs):
         """Adds widgets to object that may be required for acting on certain received comms (used by pycam_gui)"""
         for widg in self.widgets:
@@ -231,15 +234,21 @@ class GUICommRecvHandler:
                     elif comm['IDN'] == 'SPE':
                         self.spec_acq.update_acquisition_parameters(comm)
 
-            if "NIA" in comm:
-                # TODO handle notification of new on camera image
-                pass
-            if "NIB" in comm:
-                # TODO handle notification of new off camera image
-                pass
-            if "NIS" in comm:
-                # TODO handle notification of new spectrometer image
-                pass
+            if "NIA" in comm and self.ftp_client:
+                #  handle notification of new on camera image
+                self.ftp_client.get_data(comm["NIA"])  # the on PNG
+            if "NMA" in comm and self.ftp_client:
+                #  handle notification of new on camera image metadata
+                self.ftp_client.get_data(comm["NMA"])  # the on JSON
+            if "NIB" in comm and self.ftp_client:
+                # handle notification of new off camera image
+                self.ftp_client.get_data(comm["NIB"])  # the off PNG
+            if "NMB" in comm and self.ftp_client:
+                #  handle notification of new off camera image metadata
+                self.ftp_client.get_data(comm["NMB"])  # the off JSON
+            if "NIS" in comm and self.ftp_client:
+                # handle notification of new spectrometer image
+                self.ftp_client.get_data(comm["NIS"])  # the npy
 
             if "GBY" in comm:
                 # The server is letting us go, tidy up

@@ -137,6 +137,8 @@ class CommsFuncs(SendRecvSpecs):
             'SAV': (bool, 1),           # Trigger a save of specifications files
             'NIA': (str, []),           # New image from Camera A (on band)
             'NIB': (str, []),           # New image from Camera B (off band)
+            'NMA': (str, []),           # New image metadata from Camera A (on band)
+            'NMB': (str, []),           # New image metadata from Camera B (off band)
             'NIS': (str, []),           # New image from the Spectrometer
             'CLI': (bool, 1),           # Return list of connected clients
             'MSG': (str, []),           # Generic string message

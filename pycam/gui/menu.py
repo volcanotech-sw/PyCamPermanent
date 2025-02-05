@@ -6,7 +6,7 @@ from pycam.gui.network import ConnectionGUI, instrument_cmd, run_pycam
 import pycam.gui.cfg as cfg
 from pycam.gui.cfg_menu_frames import geom_settings, process_settings, plume_bg, cell_calib, \
     opti_flow, light_dilution, cross_correlation, doas_fov, basic_acq_handler, automated_acq_handler,\
-    calibration_wind, instrument_cfg, temp_log, plume_velocity, nadeau_flow
+    calibration_wind, instrument_cfg, temp_log, plume_velocity, nadeau_flow, comm_recv_handler
 from pycam.gui.misc import About, LoadSaveProcessingSettings
 from pycam.io_py import save_pcs_line, load_pcs_line, save_light_dil_line, load_light_dil_line, create_video
 import pycam.gui.settings as settings
@@ -119,7 +119,7 @@ class PyMenu:
         self.menus[tab].add_cascade(label='Data Transfer', menu=self.submenu_data)
         # self.submenu_data.add_command(label='Start transfer', command=self.ftp_transfer.start_transfer)
         self.submenu_data.add_command(label='Start transfer (new images only)',
-                                      command=lambda: self.ftp_transfer.start_transfer(new_only=True))
+                                      command=lambda: self.ftp_transfer.start_transfer(new_only=True, recv_handler=comm_recv_handler))
         self.submenu_data.add_command(label='Stop transfer', command=self.ftp_transfer.stop_transfer)
         self.submenu_data.add_command(label='Options', command=self.ftp_transfer.generate_frame)  # Add options such as directory to transfer to/from?? Maybe only transfer certain data - certain times etc
         self.submenu_data.add_separator()

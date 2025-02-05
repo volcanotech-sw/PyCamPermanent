@@ -398,7 +398,7 @@ class CameraSpecs(SpecsBase):
         self.attr_to_io = {'int': ['pix_num_x', 'pix_num_y', '_bit_depth', '_shutter_speed', 'raw_num_x', 'raw_num_y'],
                            'float': ['pix_size_x', 'pix_size_y', 'fov_x', 'fov_y', 'framerate', '_analog_gain',
                                      'min_saturation', 'max_saturation', 'file_ss_units'],
-                           'str': ['save_path', 'file_ext', 'file_datestr', 'file_ss', 'band', 'raw_pixel_format'],
+                           'str': ['save_path', 'file_ext', 'meta_ext', 'file_datestr', 'file_ss', 'band', 'raw_pixel_format'],
                            'dict': ['file_filterids', 'file_type'],
                            'bool': ['auto_ss', 'file_sort']
                            }
@@ -424,6 +424,7 @@ class CameraSpecs(SpecsBase):
 
     save_path: str
     file_ext: str
+    meta_ext: str
     file_datestr: str
     file_filterids: dict
     file_ag: str
@@ -473,6 +474,7 @@ class CameraSpecs(SpecsBase):
         # Filename info
         self.save_path = FileLocator.IMG_SPEC_PATH
         self.file_ext = '.png'                                  # File extension for images
+        self.meta_ext = '.json'                                 # File extension of image metadata
         self.file_datestr = "%Y-%m-%dT%H%M%S"                   # Date/time format spec in filename
         self.file_filterids = {'on': 'fltrA', 'off': 'fltrB'}   # Filter identifiers in filename
         self.file_ag = '{}ag'                                   # Analog gain format spec
