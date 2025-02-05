@@ -270,30 +270,36 @@ class FileTransferGUI:
     def disp_images(self, value):
         self._disp_images.set(value)
 
-    def start_transfer(self, new_only=False, reconnect=True, recv_handler=None):
+    def start_transfer(self, new_only=False, reconnect=True, recv_handler=None, indicator=None):
         """
         Starts automatic image transfer from instrument
         new_only    bool    If True, existing images on the instrument are ignored and only new images are transferred
         reconnect   bool    If True, if connection is lost to the instrument we attempt to reconnect (for if pi turns
                             off at night)
         """
-        if self.disp_images:
-            if not self.pyplis_worker.plot_iter and not self.pyplis_worker.display_only:
-                self.pyplis_worker.display_only = 1
-                self.menu.disp_var.set(1)
-            
-            self.pyplis_worker.start_watching_dir()
+
+        # We need the indicator to know if we're connected to the Pi
+        if indicator and not indicator.connected:
+            messagebox.showerror('Connection Error', 'Need to be connected to the Pi to transfer images!')
+            return
 
         if recv_handler:
             self.recv_handler = recv_handler
             self.recv_handler.ftp_client = self.ftp_client
 
-            print('FTP: Start watching directory')
+            print('FTP: Starting continuous transfer')
             if not self.ftp_client.test_connection():
                 if reconnect:
                     pass
                 else:
                     raise ConnectionError
+
+        if self.disp_images:
+            if not self.pyplis_worker.plot_iter and not self.pyplis_worker.display_only:
+                self.pyplis_worker.display_only = 1
+                self.menu.disp_var.set(1)
+
+            self.pyplis_worker.start_watching_dir()
 
         # try:
         #     self.ftp_client.watch_dir(new_only=new_only, reconnect=reconnect)
@@ -309,9 +315,9 @@ class FileTransferGUI:
         # self.ftp_client.stop_watch()
 
         if self.recv_handler:
-            # Take away the client and it can't download files any more
+            # Take away the client from recv comms and it can't download files any more
             self.recv_handler.ftp_client = None
-            print('FTP: Stop watching directory')
+            print('FTP: Stop continuous transfer')
 
 
 class FTPClient:

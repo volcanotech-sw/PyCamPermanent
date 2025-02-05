@@ -75,7 +75,7 @@ def create_dir_watcher(dir_name, recursive, func, *args, **kwargs):
         if sys.platform == 'linux2':
             return LinuxDirectoryWatcher(dir_name, func, recursive, *args, **kwargs)
         elif sys.platform == 'linux':
-            return PiDirectoryWatcher(dir_name, func, recursive)
+            return PiDirectoryWatcher(dir_name, func, recursive, *args, **kwargs)
         elif sys.platform == 'win32':
             # return PiDirectoryWatcher(dir_name, func, recursive, *args, **kwargs)
             return WindowsDirectoryWatcher(dir_name, func, recursive, *args, **kwargs)
@@ -108,31 +108,30 @@ class _DirectoryWatcherBase:
 
 # ======================================================================================================================
 # RASPBERRY PI DIRECTORY WATCHER
-class PiDirectoryWatcher:
+class PiDirectoryWatcher(_DirectoryWatcherBase):
     """
     Directory watcher that will work on a Raspberry Pi
     """
-    def __init__(self, watch_directory, func, recursive=True):
-        self.watch_directory = watch_directory
-        self.func = func
+
+    def __init__(self, dir_name, func, recursive=True, *args, **kwargs):
+        _DirectoryWatcherBase.__init__(self, dir_name, func, recursive, *args, **kwargs)
         self.observer = Observer()
         self.recursive = recursive
-        self.event_handler = Handler(self.func)
+        self.event_handler = Handler(self._on_new_file)
 
     def start(self):
 
-        self.observer.schedule(self.event_handler, self.watch_directory, recursive=self.recursive)
+        self.observer.schedule(
+            self.event_handler, self.dir_to_watch, recursive=self.recursive
+        )
         self.observer.start()
-        try:
-            while True:
-                time.sleep(5)
-        except:
-            self.observer.stop()
-            print("Observer Stopped")
-        self.observer.join()
+        print(f"Observer started for {self.dir_to_watch}")
+        # This just returns here, so if you want to wait for it you'll need a sleep loop or a call to self.observer.join()
 
     def stop(self):
         self.observer.stop()
+        self.observer.join()
+        print(f"Observer Stopped for {self.dir_to_watch}")
 
 
 class Handler(FileSystemEventHandler):
@@ -140,15 +139,15 @@ class Handler(FileSystemEventHandler):
     def __init__(self, func):
         self.func = func
 
-    @staticmethod
-    def on_any_event(event):
+    def on_any_event(self, event):
+        # print(event)
         pass
 
     def on_created(self, event):
         self.func(event.src_path, None)
 
-# ======================================================================================================================
 
+# ======================================================================================================================
 
 
 try:

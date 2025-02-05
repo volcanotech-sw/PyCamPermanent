@@ -113,7 +113,8 @@ class Indicator:
             reply = self.sock.recv_comms(self.sock.sock)
             reply = self.sock.decode_comms(reply)
             if not len(reply) == 3 or "LOG" not in reply or not reply["LOG"] == 0:
-                print('Unrecognised socket reply')
+                print('Unrecognised socket reply:')
+                print(reply)
                 raise ConnectionError
             else:
                 print('Got pycam handshake reply')

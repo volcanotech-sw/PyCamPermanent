@@ -268,21 +268,27 @@ class MasterComms(CommsCommandHandler):
 
     def GBY(self, value, cmd_source):
         """Close the connection upon the request/so that we don't wait ages for the timeout"""
-        to_close = None
-        if value < 1024:
-            # Old behaviour
-            for conn, conn_id in self.socket.conn_dict.values():
-                if conn_id == cmd_source and value:
-                    to_close = conn[0]
-        else:
-            # Value is the remote port
-            for ip,remote_port in self.socket.conn_dict:
-                if value == remote_port:
-                    print(f"GBY: Found matching port for {value}")
-                    to_close = self.socket.conn_dict[(ip,remote_port)][0][0]
-        if to_close:
-            # We need to do this separately as conn_dict will change size from this
-            self.socket.close_connection(connection=to_close)
+        try:
+            to_close = None
+            if value < 1024:
+                # Old behaviour
+                for conn, conn_id in self.socket.conn_dict.values():
+                    if conn_id == cmd_source and value:
+                        to_close = conn[0]
+            else:
+                # Value is the remote port
+                for ip,remote_port in self.socket.conn_dict:
+                    if value == remote_port:
+                        print(f"GBY: Found matching port for {value}")
+                        to_close = self.socket.conn_dict[(ip,remote_port)][0][0]
+                        # Sometimes we can get an error here (presumably due to race conditions)
+            if to_close:
+                # We need to do this separately as conn_dict will change size from this
+                self.socket.close_connection(connection=to_close)
+        except Exception as e:
+            print("Error disconnecting client:")
+            print(e)
+            pass
 
     def CLI(self, value, cmd_source):
         ret = {"MSG": "Connected:", "DST": cmd_source}

@@ -187,6 +187,8 @@ for instrument in instruments:
 for func in sock_serv_ext.internal_connections:
     func.handle_commands()
 
+# TODO we might need to monitor MasterComms.handle_commands() and restart it if something goes wrong
+
 # -----------------------------------------------------------------
 # Setup shutdown procedure
 

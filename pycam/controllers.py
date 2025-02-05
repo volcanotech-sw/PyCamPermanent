@@ -370,7 +370,7 @@ class Camera(CameraSpecs):
                 + "_"
                 + str(self.metadata["AnalogueGain"])
                 + "_"
-                + str(self.metadata["ExposureTime"])
+                + self.file_ss.format(self.metadata["ExposureTime"])
                 + "_"
                 + img_type
                 + ext

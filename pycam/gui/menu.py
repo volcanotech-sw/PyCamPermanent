@@ -119,7 +119,7 @@ class PyMenu:
         self.menus[tab].add_cascade(label='Data Transfer', menu=self.submenu_data)
         # self.submenu_data.add_command(label='Start transfer', command=self.ftp_transfer.start_transfer)
         self.submenu_data.add_command(label='Start transfer (new images only)',
-                                      command=lambda: self.ftp_transfer.start_transfer(new_only=True, recv_handler=comm_recv_handler))
+                                      command=lambda: self.ftp_transfer.start_transfer(new_only=True, recv_handler=comm_recv_handler, indicator=cfg.indicator))
         self.submenu_data.add_command(label='Stop transfer', command=self.ftp_transfer.stop_transfer)
         self.submenu_data.add_command(label='Options', command=self.ftp_transfer.generate_frame)  # Add options such as directory to transfer to/from?? Maybe only transfer certain data - certain times etc
         self.submenu_data.add_separator()
