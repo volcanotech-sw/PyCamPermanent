@@ -569,12 +569,13 @@ def read_temp_log(filename):
     temps = []
     with open(filename, 'r', newline='\n') as f:
         for line in f:
-            sep = line.split()
-            date_time = sep[0] + ' ' + sep[1]
-            temp = sep[2].split('°')[0].split('Â')[0]
-            date_obj = datetime.datetime.strptime(date_time, date_fmt)
+            sep = [k.strip() for k in line.split(',')]
+            date_obj = datetime.datetime.strptime(sep[0], date_fmt)
+            cpu_temp = float(sep[2])
+            ssd_temp = float(sep[4])
+            adc_temp = float(sep[6])
             dates.append(date_obj)
-            temps.append(float(temp))
+            temps.append([cpu_temp, ssd_temp, adc_temp])
 
     dates = np.array(dates)
     temps = np.array(temps)
