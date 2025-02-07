@@ -42,6 +42,8 @@ import cv2
 from skimage import transform as tf
 import warnings
 from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedMap
+
 from inspect import cleandoc
 warnings.simplefilter("ignore", UserWarning)
 warnings.simplefilter("ignore", RuntimeWarning)
@@ -50,7 +52,8 @@ yaml = YAML()
 
 path_params = [
     "img_dir", "dark_img_dir", "transfer_dir", "spec_dir", "dark_spec_dir", "bg_A_path", "bg_B_path", "cell_cal_dir",
-    "pcs_lines", "img_registration", "dil_lines", "ld_lookup_1", "ld_lookup_2", "ILS_path", "default_cam_geom", "cal_series_path"
+    "pcs_lines", "img_registration", "dil_lines", "ld_lookup_1", "ld_lookup_2", "ILS_path", "default_cam_geom", "cal_series_path",
+    "species_paths"
 ]
 
 class PyplisWorker:
@@ -387,6 +390,10 @@ class PyplisWorker:
             if type(config_value) is str:
                 new_value = self.expand_check_path(config_value, config_dir, path_param)
                 raw_config[path_param] = new_value
+            elif type(config_value) is CommentedMap:
+                for species, species_dict in config_value.items():
+                    new_value = self.expand_check_path(species_dict['path'], config_dir, path_param)
+                    raw_config[path_param][species] = {'path': new_value, 'value': species_dict['value']}
             else:
                 for idx, val in enumerate(config_value):
                     new_value = self.expand_check_path(val, config_dir, path_param)
