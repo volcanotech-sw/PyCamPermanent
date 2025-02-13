@@ -9,7 +9,7 @@ from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator
 from pycam.utils import calc_dt, get_horizontal_plume_speed
 from pycam.io_py import (
     save_img, save_emission_rates_as_txt, save_so2_img, save_so2_img_raw,
-    save_pcs_line, save_light_dil_line, load_picam_png
+    save_pcs_line, save_light_dil_line, load_picam_png, load_pcs_line
 )
 from pycam.directory_watcher import create_dir_watcher
 from pycam.exceptions import InvalidCalibration
@@ -452,6 +452,12 @@ class PyplisWorker:
                 pcs_lines.append(file_name)
         
         self.config["pcs_lines"] = pcs_lines
+
+    def load_pcs_cross_corr(self):
+        """ Load the cross correlation lines used for plume speed calculation from the pcs_lines specified in the config """
+        for line_file in self.config['pcs_lines']:
+            line, type = load_pcs_line(line_file)
+            self.cross_corr_lines[type] = line
 
     def save_all_dil(self, save_dir):
         dil_lines = []

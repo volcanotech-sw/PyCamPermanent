@@ -200,11 +200,13 @@ def load_pcs_line(filename, color='blue', line_id='line'):
     """
     Loads PCS line and returns it as a pyplis object
     :param filename:
-    :return:
+    :return: 
     """
     if not os.path.exists(filename):
         print('Cannot get line from filename as no file exists at this path')
         return
+
+    pcs_line_type = None
 
     with open(filename, 'r') as f:
         for line in f:
@@ -216,13 +218,14 @@ def load_pcs_line(filename, color='blue', line_id='line'):
                 y0, y1 = [int(y) for y in coords.split(',')]
             elif 'orientation=' in line:
                 orientation = line.split('orientation=')[-1].split('\n')[0]
-
+            elif 'type=' in line:
+                pcs_line_type = line.split('type=')[-1].split('\n')[0]
     pcs_line = LineOnImage(x0=x0, y0=y0, x1=x1, y1=y1,
                            normal_orientation=orientation,
                            color=color,
                            line_id=line_id)
 
-    return pcs_line
+    return pcs_line, pcs_line_type
 
 
 def save_light_dil_line(line, filename):
@@ -232,7 +235,7 @@ def save_light_dil_line(line, filename):
 
 def load_light_dil_line(filename, color='blue', line_id='line'):
     """Loads light dilution line from text file"""
-    line = load_pcs_line(filename, color, line_id)
+    line, _ = load_pcs_line(filename, color, line_id)
     return line
 
 def load_picam_png(file_path, meta={}, **kwargs):

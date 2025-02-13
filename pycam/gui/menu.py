@@ -586,7 +586,7 @@ class LoadFrame(LoadSaveProcessingSettings):
             filename = filedialog.askopenfilename(initialdir=self.init_dir, **kwargs)
 
         if len(filename) > 0:
-            line = load_pcs_line(filename)
+            line, _ = load_pcs_line(filename)
             if new_line:
                 line_num = None
             else:
