@@ -9,4 +9,5 @@ if __name__ == "__main__":
     pyplis_worker.load_config(file_path=args.config_path, conf_name=args.name)
     pyplis_worker.load_pcs_cross_corr()
     pyplis_worker.apply_config()
-    pyplis_worker._process_sequence()
+    pyplis_worker.img_list = pyplis_worker.get_img_list()
+    pyplis_worker._process_sequence(reset_plot=False)

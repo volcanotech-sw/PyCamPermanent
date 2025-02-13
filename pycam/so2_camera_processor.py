@@ -3911,7 +3911,7 @@ class PyplisWorker:
         else:
             raise InvalidCalibration("Preloaded calibration is selected but no calibration has been loaded.")
 
-    def _process_sequence(self):
+    def _process_sequence(self, reset_plot = True):
         """
         Processes the current image directory
         Directory should therefore already have been processed using load_sequence()
@@ -3943,7 +3943,7 @@ class PyplisWorker:
         self.in_processing = True
 
         # Reset important parameters to ensure we start processing correctly
-        self.reset_self()
+        self.reset_self(reset_plot=reset_plot)
 
         # Set plot iter for this period, get it from current setting for this attribute
         plot_iter = self.plot_iter
