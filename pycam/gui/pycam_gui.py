@@ -3,10 +3,10 @@
 """Main GUI script to be run as main executable"""
 # Enables Basemap import by pointing to (tested this 2022-04-1 by removing it - not actually sure I lost any functionality)
 # import os
-# os.environ["PROJ_LIB"] = 'C:\\Users\\tw9616\\Anaconda3\\envs\\py38\\Lib\\site-packages\\pyproj'
+# os.environ["PROJ_LIB"] = 'C:/Users/tw9616/Anaconda3/envs/py38/Lib/site-packages/pyproj'
 
 # import sys
-# sys.path.append("C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\PyCamPermanent\\")
+# sys.path.append("C:/Users/tw9616/Documents/PostDoc/Permanent Camera/PyCamPermanent/")
 # # Make it possible to import iFit by updating path
 # dir_path = os.path.dirname(os.path.realpath(__file__))
 # sys.path.append(os.path.join(dir_path, 'ifit'))

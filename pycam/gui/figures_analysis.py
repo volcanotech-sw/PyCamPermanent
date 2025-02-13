@@ -767,7 +767,7 @@ class ImageSO2(LoadSaveProcessingSettings):
         ica_num = self.num_ica
         for ica in self.PCS_lines_list[self.num_ica:]:
             if ica is not None:
-                self.del_ica(ica_num)
+                self.del_ica(ica_num, permanent=True)
                 # self.PCS_lines_list[ica_num] = None   # I think this isn't required as it is done in del_ica
             ica_num += 1
 
@@ -876,7 +876,7 @@ class ImageSO2(LoadSaveProcessingSettings):
         else:
             print('Clicked outside axes bounds but inside plot window')
 
-    def del_ica(self, line_num, update_all=True):
+    def del_ica(self, line_num, update_all=True, permanent = False):
         """Searches axis for line object relating to pyplis line object and removes it
 
         Parameters
@@ -909,6 +909,13 @@ class ImageSO2(LoadSaveProcessingSettings):
         # Once removed, set the line to None
         self.PCS_lines_list[line_num] = None
 
+        if pyplis_worker.auto_nadeau_pcs == line_num and permanent:
+            pyplis_worker.config['auto_nadeau_pcs'] = 0
+            if pyplis_worker.auto_nadeau_line:
+                self.root.after_idle(self.show_auto_nadeau_warn)
+                print("The ICA line selected for Nadeau line autogeneration was removed. "
+                      "Reverting to ICA line 1 for Nadeau line autogeneration")
+
         if update_all:
             # Gather variables
             self.gather_vars()
@@ -918,6 +925,13 @@ class ImageSO2(LoadSaveProcessingSettings):
 
             # Redraw canvas
             self.img_canvas.draw()
+
+    @staticmethod
+    def show_auto_nadeau_warn():
+        messagebox.showwarning(
+            "Reverting ICA line used for Nadeau line autogeneration",
+            "ICA line used for Nadeau line autogeneration removed\n"
+            "Reverting to ICA line 1 for Nadeau line autogeneration")
 
     def change_cmap(self, cmap):
         """Change colourmap of image"""
@@ -4693,9 +4707,12 @@ class NadeauFlowSettings(LoadSaveProcessingSettings):
         row += 1
         lab = ttk.Label(auto_frame, text='ICA line:')
         lab.grid(row=row, column=0, padx=self.pdx, pady=self.pdy, sticky='w')
+        max_lines = len([line for line in self.pyplis_worker.PCS_lines_all if line is not None])
         pcs_spin = ttk.Spinbox(auto_frame, textvariable=self._auto_nadeau_pcs,
-                               from_=1, to=len(self.pyplis_worker.PCS_lines_all), command=self.run_nadeau_line)
+                               from_=1, to=max_lines, command=self.run_nadeau_line)
         pcs_spin.grid(row=row, column=1, sticky='ew', padx=self.pdx, pady=self.pdy)
+        pcs_spin.bind('<FocusOut>', self.run_nadeau_line)
+        pcs_spin.bind('<Return>', self.run_nadeau_line)
 
         # -------------------------------------------
         # Build figure displaying cross-correlation
@@ -4956,7 +4973,7 @@ class NadeauFlowSettings(LoadSaveProcessingSettings):
         if draw:
             self.q.put(1)
 
-    def run_nadeau_line(self):
+    def run_nadeau_line(self, event = None):
         """Instigates automatic generation of the Nadeau line and plots current line pased on this"""
         # Update pyplis_worker config
         self.gather_vars(update_pyplis=True)

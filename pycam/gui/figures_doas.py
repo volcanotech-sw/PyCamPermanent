@@ -21,6 +21,7 @@ from pycam.setupclasses import SpecSpecs
 from pycam.gui.settings import GUISettings
 from pycam.gui.misc import LoadSaveProcessingSettings
 from pycam.utils import truncate_path
+from pycam.setupclasses import FileLocator
 
 # plt.style.use('dark_background')
 plt.style.use('default')
@@ -765,20 +766,23 @@ class CalibrationWindow:
     :param  fig_setts:  dict     Dictionary containing settings values for figures
     :param gui:         PyCam
     """
-    def __init__(self, fig_setts=GUISettings(), gui=None):
+    def __init__(self, fig_setts=GUISettings(FileLocator.GUI_SETTINGS), gui=None):
         self.gui = None
         self.in_frame = False
         self.frame = None
-
+        
         # Setup reference spectra objects
         self.ref_frame = dict()
-        for spec in species:
-            species_id = 'ref_spec_{}'.format(spec)
-            self.ref_frame[spec] = RefPlot(ref_spec_path=species[spec]['path'], species=spec, doas_work=doas_worker,
-                                           fig_setts=fig_setts)
+        self.load_ref_species(fig_setts=fig_setts)
 
         self.ils_frame = ILSFrame(doas_work=doas_worker, fig_setts=fig_setts)
 
+    def load_ref_species(self, fig_setts=GUISettings(FileLocator.GUI_SETTINGS)):
+        for spec in doas_worker.species_info:
+            species_id = 'ref_spec_{}'.format(spec)
+            self.ref_frame[spec] = RefPlot(ref_spec_path=doas_worker.species_info[spec]["path"], species=spec, doas_work=doas_worker,
+                                           fig_setts=fig_setts)
+            
     def add_gui(self, gui):
         self.gui = gui
 
@@ -841,7 +845,7 @@ class RefPlot:
     species: str
         Defines the species for reference spectrum
     """
-    def __init__(self, frame=None, doas_work=DOASWorker(), init_dir='.\\', ref_spec_path=None, species='SO2',
+    def __init__(self, frame=None, doas_work=DOASWorker(), init_dir='./', ref_spec_path=None, species='SO2',
                  fig_setts=GUISettings()):
         self.frame = frame
         self.doas_worker = doas_work  # DOAS processor
@@ -930,7 +934,7 @@ class RefPlot:
         if not self.ref_spec_path:
             return
         if not init_load:
-            self.nameRef.configure(self.ref_spec_path_short)
+            self.nameRef.configure(text=self.ref_spec_path_short)
         self.doas_worker.load_ref_spec(self.ref_spec_path, self.species)
 
         self.ref_spec_file = self.ref_spec_path.split('/')[-1]
@@ -981,7 +985,7 @@ class ILSFrame:
     Frame containing widgets for ILS extraction from a calibration spectrum
     """
     def __init__(self, parent=None, doas_work=DOASWorker(), spec_specs=SpecSpecs(), fig_setts=GUISettings(),
-                 config=pyplis_worker.config, save_path='C:\\'):
+                 config=pyplis_worker.config, save_path='C:/'):
         # Setup some main variables
         self.parent = parent
         self.frame = None

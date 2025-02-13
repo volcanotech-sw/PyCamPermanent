@@ -43,6 +43,8 @@ import cv2
 from skimage import transform as tf
 import warnings
 from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedMap
+
 from inspect import cleandoc
 warnings.simplefilter("ignore", UserWarning)
 warnings.simplefilter("ignore", RuntimeWarning)
@@ -51,7 +53,8 @@ yaml = YAML()
 
 path_params = [
     "img_dir", "dark_img_dir", "transfer_dir", "spec_dir", "dark_spec_dir", "bg_A_path", "bg_B_path", "cell_cal_dir",
-    "pcs_lines", "img_registration", "dil_lines", "ld_lookup_1", "ld_lookup_2", "ILS_path", "default_cam_geom", "cal_series_path"
+    "pcs_lines", "img_registration", "dil_lines", "ld_lookup_1", "ld_lookup_2", "ILS_path", "default_cam_geom", "cal_series_path",
+    "species_paths"
 ]
 
 class PyplisWorker:
@@ -388,6 +391,10 @@ class PyplisWorker:
             if type(config_value) is str:
                 new_value = self.expand_check_path(config_value, config_dir, path_param)
                 raw_config[path_param] = new_value
+            elif type(config_value) is CommentedMap:
+                for species, species_dict in config_value.items():
+                    new_value = self.expand_check_path(species_dict['path'], config_dir, path_param)
+                    raw_config[path_param][species] = {'path': new_value, 'value': species_dict['value']}
             else:
                 for idx, val in enumerate(config_value):
                     new_value = self.expand_check_path(val, config_dir, path_param)
@@ -1044,16 +1051,16 @@ class PyplisWorker:
 
         # Display first images of sequence
         if len(self.img_list) > 0:
-            self.process_pair(self.img_dir + '\\' + self.img_list[0][0],
-                              self.img_dir + '\\' + self.img_list[0][1],
+            self.process_pair(self.img_dir + '/' + self.img_list[0][0],
+                              self.img_dir + '/' + self.img_list[0][1],
                               plot=plot, plot_bg=plot_bg)
 
             if len(self.img_list) > 1:
                 # Load second image too so that we have optical flow output generated
                 self.idx_current += 1
                 self.first_image = False
-                self.process_pair(self.img_dir + '\\' + self.img_list[1][0],
-                                  self.img_dir + '\\' + self.img_list[1][1],
+                self.process_pair(self.img_dir + '/' + self.img_list[1][0],
+                                  self.img_dir + '/' + self.img_list[1][1],
                                   plot=plot, plot_bg=plot_bg)
 
     def next_image(self):
@@ -1072,7 +1079,7 @@ class PyplisWorker:
 
                 # Going to previous image, so we get data from buffer
                 for img_name in [img_A, img_B]:
-                    self.load_img(self.img_dir + '\\' + img_name, plot=True, temporary=True)
+                    self.load_img(self.img_dir + '/' + img_name, plot=True, temporary=True)
                 self.fig_tau.update_plot(img_tau)
                 # TODO plot optical flow image
                 if opt_flow is not None:
@@ -1081,8 +1088,8 @@ class PyplisWorker:
             # If we don't already have this image loaded in then we process it
             else:
                 # Process images too
-                self.process_pair(self.img_dir + '\\' + self.img_list[self.idx_current+1][0],
-                                  self.img_dir + '\\' + self.img_list[self.idx_current+1][1])
+                self.process_pair(self.img_dir + '/' + self.img_list[self.idx_current+1][0],
+                                  self.img_dir + '/' + self.img_list[self.idx_current+1][1])
         except IndexError:
             self.idx_current -= 1
 
@@ -1097,7 +1104,7 @@ class PyplisWorker:
 
             # Going to previous image, so we get data from buffer
             for img_name in [img_A, img_B]:
-                self.load_img(self.img_dir + '\\' + img_name, plot=True, temporary=True)
+                self.load_img(self.img_dir + '/' + img_name, plot=True, temporary=True)
             self.fig_tau.update_plot(img_tau)
             # TODO plot image
             if opt_flow is not None:
@@ -3991,8 +3998,8 @@ class PyplisWorker:
             # Process image pair
             print('SO2 cam processor: Processing pair: {}'.format(self.img_list[i][0]))
             try:
-                self.process_pair(self.img_dir + '\\' + self.img_list[i][0],
-                                  self.img_dir + '\\' + self.img_list[i][1],
+                self.process_pair(self.img_dir + '/' + self.img_list[i][0],
+                                  self.img_dir + '/' + self.img_list[i][1],
                                   plot=plot_iter, force_cal=force_cal, cross_corr=cross_corr)
             except FileNotFoundError:
                 traceback.print_exc()
