@@ -460,11 +460,14 @@ class PyplisWorker:
         
         self.config["pcs_lines"] = pcs_lines
 
-    def load_pcs_cross_corr(self):
+    def load_pcs_from_config(self):
         """ Load the cross correlation lines used for plume speed calculation from the pcs_lines specified in the config """
         for line_file in self.config['pcs_lines']:
-            line, type = load_pcs_line(line_file)
-            self.cross_corr_lines[type] = line
+            line, line_type = load_pcs_line(line_file)
+            if line_type:
+                self.cross_corr_lines[type] = line
+            self.PCS_lines_all.append(line)
+
 
     def save_all_dil(self, save_dir):
         dil_lines = []
@@ -4341,6 +4344,7 @@ class PyplisWorker:
     def get_args():
         parser = argparse.ArgumentParser(description="Process image sequence")
         parser.add_argument('-i', '--image_directory', type=str)
+        parser.add_argument('-o', '--output_directory', type=str)
         parser.add_argument('-c', '--config_path', type=str)
         parser.add_argument('-n', '--name', type=str)
         return parser.parse_args()
