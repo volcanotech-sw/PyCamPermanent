@@ -462,11 +462,12 @@ class PyplisWorker:
 
     def load_pcs_from_config(self):
         """ Load the cross correlation lines used for plume speed calculation from the pcs_lines specified in the config """
-        for line_file in self.config['pcs_lines']:
+        for i, line_file in enumerate(self.config['pcs_lines']):
             line, line_type = load_pcs_line(line_file)
             if line_type:
-                self.cross_corr_lines[type] = line
+                self.cross_corr_lines[line_type] = line
             self.PCS_lines_all.append(line)
+            self.PCS_lines_all[-1].line_id = str(i)
 
 
     def save_all_dil(self, save_dir):
