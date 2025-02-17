@@ -306,7 +306,8 @@ class PyplisWorker:
         self.stop_q = queue.Queue()
 
         self.plot_iter = True   # Bool defining if plotting iteratively is active. If it is, all images are passed to qs
-
+        self.headless = False   # Bool defining if the object is running in headless mode (no GUI)
+        
         self.display_only = False   # If True, images are just sent to GUI to be displayed when they arrive on machine - no processing is performed
         self.process_thread = None  # Placeholder for threading object
         self.in_processing = False
@@ -3987,7 +3988,7 @@ class PyplisWorker:
                 pass
 
             # Always plot the final image and always force cross-correlation
-            if i == len(self.img_list) - 1:
+            if i == len(self.img_list) - 1 and not self.headless:
                 plot_iter = True
                 cross_corr = True
 
