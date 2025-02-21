@@ -484,10 +484,10 @@ def read_schedule_file(filename):
     with open(filename, 'r', newline='\n') as f:
         for line in f:
             if 'on_time=' in line:
-                on_time_str = line.split('=')[1].split('\n')[0]
+                on_time_str = line.split('=')[1].split('\n')[0].split('\r')[0]
                 on_time = datetime.time.fromisoformat(on_time_str)
             elif 'off_time=' in line:
-                off_time_str = line.split('=')[1].split('\n')[0]
+                off_time_str = line.split('=')[1].split('\n')[0].split('\r')[0]
                 off_time = datetime.time.fromisoformat(off_time_str)
 
     if on_time is None or off_time is None:
