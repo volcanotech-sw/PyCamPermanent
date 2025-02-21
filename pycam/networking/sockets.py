@@ -44,9 +44,9 @@ def read_network_file(filename: str) -> tuple[str | None, int | None]:
             if line[0] == '#':
                 continue
             if 'ip_address=' in line:
-                ip_addr = line.split('=')[1].split('#')[0].strip('\n').strip()
+                ip_addr = line.split('=')[1].split('#')[0].strip()
             if 'port=' in line:
-                port = int(line.split('=')[1].split('#')[0].strip('\n').strip())
+                port = int(line.split('=')[1].split('#')[0].strip())
 
     return ip_addr, port
 

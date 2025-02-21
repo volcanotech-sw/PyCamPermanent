@@ -479,7 +479,7 @@ class PyplisWorker:
 
                 # Extract key-value pair, remove the newline character from the value, then recast
                 key, value = line.split('=')
-                value = value.replace('\n', '')
+                value = value.strip()
                 if key == 'volcano':
                     self.volcano = value
                 elif key == 'altitude':
@@ -2837,7 +2837,7 @@ class PyplisWorker:
         #Extract number of headers
         with open(filename, 'r') as f:
             headerline = f.readline()
-            num_headers = int(headerline.split('=')[-1].split(',')[0].split('\n')[0])
+            num_headers = int(headerline.split('=')[-1].split(',')[0].strip())
 
         # Load in csv to dataframe
         self.calibration_series = pd.read_csv(filename, header=num_headers)

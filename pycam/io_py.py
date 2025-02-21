@@ -227,13 +227,13 @@ def load_pcs_line(filename, color='blue', line_id='line'):
     with open(filename, 'r') as f:
         for line in f:
             if 'x=' in line:
-                coords = line.split('x=')[-1].split('\n')[0]
+                coords = line.split('x=')[-1].strip()
                 x0, x1 = [int(x) for x in coords.split(',')]
             elif 'y=' in line:
-                coords = line.split('y=')[-1].split('\n')[0]
+                coords = line.split('y=')[-1].strip()
                 y0, y1 = [int(y) for y in coords.split(',')]
             elif 'orientation=' in line:
-                orientation = line.split('orientation=')[-1].split('\n')[0]
+                orientation = line.split('orientation=')[-1].strip()
 
     pcs_line = LineOnImage(x0=x0, y0=y0, x1=x1, y1=y1,
                            normal_orientation=orientation,
@@ -484,10 +484,10 @@ def read_schedule_file(filename):
     with open(filename, 'r', newline='\n') as f:
         for line in f:
             if 'on_time=' in line:
-                on_time_str = line.split('=')[1].split('\n')[0].split('\r')[0]
+                on_time_str = line.split('=')[1].strip()
                 on_time = datetime.time.fromisoformat(on_time_str)
             elif 'off_time=' in line:
-                off_time_str = line.split('=')[1].split('\n')[0].split('\r')[0]
+                off_time_str = line.split('=')[1].strip()
                 off_time = datetime.time.fromisoformat(off_time_str)
 
     if on_time is None or off_time is None:

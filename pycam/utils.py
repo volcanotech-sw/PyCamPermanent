@@ -108,7 +108,7 @@ def read_file(filename, separator='=', ignore='#'):
 
             # Add attribute to dictionary, first removing any unwanted information at the end of the line
             # (including whitespace and #)
-            data[key] = attr.split(ignore)[0].strip('\n').strip()
+            data[key] = attr.split(ignore)[0].strip()
 
     return data
 
