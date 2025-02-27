@@ -2,7 +2,7 @@
 
 ## Documentation
 
-Detailed user and quick start guides can be found at [volcanotech.org](https://www.volcanotech.org/software.html)  
+Detailed user and quick start guides can be found at [volcanotech.co.uk](https://www.volcanotech.co.uk/software.html)  
 
 ## Pre-requsities
 
@@ -26,7 +26,7 @@ cd PyCamPermanent
 - If you don't have `git` installed you can still download and extract [the repository](https://github.com/ubdbra001/PyCamPermanent/tree/standalone) (for instructions, see 'If All Else Fails, Get The Code' on [this page](https://www.howtogeek.com/827348/how-to-download-files-from-github/))
   - Once downloaded you need to extract the files from the zipped file and navigate to the newly extracted directory in your terminal
 
-2. Create a new `python 3.8` conda environment and activate it:
+2. Create a new `python 3.12` conda environment and activate it:
 
 ```sh
 conda create -n pycam python=3.12
