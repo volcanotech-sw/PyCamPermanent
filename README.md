@@ -29,7 +29,7 @@ cd PyCamPermanent
 2. Create a new `python 3.8` conda environment and activate it:
 
 ```sh
-conda create -n pycam python=3.8
+conda create -n pycam python=3.12
 conda activate pycam
 ```
 
