@@ -364,9 +364,14 @@ class StorageMount:
         if self.dev_path is None:
             self.find_dev()
 
+        # Cache variable to keep track of if we successfully mounted
+        self._mounted = False  # Start out in an unmounted state
+
     @property
     def is_mounted(self):
         """Check whether device is already mounted"""
+        if self._mounted:
+            return True
         mnt_output = subprocess.check_output('mount')
         if self.dev_path is None:
             return False
@@ -423,6 +428,10 @@ class StorageMount:
             pass
         if not os.path.exists(self.data_path):
             subprocess.call(['sudo', 'mkdir', self.data_path])
+        # verify we're actually mounted
+        self._mounted = self.is_mounted
+        if self._mounted:
+            print(f"Mounted storage: {self.dev_path} on {self.mount_path}")
 
     def unmount_dev(self):
         """Unmount device located at self.dev_path"""
@@ -431,6 +440,8 @@ class StorageMount:
         # unmount the wrong device - so this needs to be thought about some more.
         if self.is_mounted:
             subprocess.call(['sudo', 'umount', self.dev_path])
+            self._mounted = False
+            print(f"Unmounted storage: {self.dev_path} from {self.mount_path}")
 
     def del_all_data(self):
         """

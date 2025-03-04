@@ -62,6 +62,7 @@ import argparse
 import atexit
 import time
 import queue
+import shutil
 import signal
 import socket
 
@@ -293,6 +294,15 @@ while running:
                             sock_serv_ext.send_to_all(
                                 {"IDN": "MAS", "NMB": new_meta, "DST": "EXN"}
                             )
+                    if storage_mount.is_mounted:
+                        try:
+                            # let's have a small delay to try and avoid too much power consumption
+                            # at once from writing to both the internal and external SSDs simultaneously
+                            time.sleep(0.1)
+                            shutil.copy2(new_file, storage_mount.data_path)
+                            shutil.copy2(new_meta, storage_mount.data_path)
+                        except Exception as e:
+                            print(f"Error copying to backup: {e}")
 
                 elif isinstance(instrument, Spectrometer):
                     [filename, spectrum] = instrument.spec_q.get(False)
@@ -310,6 +320,12 @@ while running:
                         sock_serv_ext.send_to_all(
                             {"IDN": "MAS", "NIS": new_file, "DST": "EXN"}
                         )
+                    if storage_mount.is_mounted:
+                        try:
+                            time.sleep(0.1)
+                            shutil.copy2(new_file, storage_mount.data_path)
+                        except Exception as e:
+                            print(f"Error copying to backup: {e}")
 
             # TODO save/copy to backup location
 
