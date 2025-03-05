@@ -269,7 +269,7 @@ class IFitWorker(SpecWorker):
         elif ext == '.txt':
             wavelengths, spectrum = np.load(dark_spec_path)
         else:
-            self.SpecLogger.info('Unrecognised file type for loading clear spectrum')
+            self.SpecLogger.debug('Unrecognised file type for loading clear spectrum')
             return
         self.wavelengths = wavelengths
         self.dark_spec = spectrum
@@ -281,7 +281,7 @@ class IFitWorker(SpecWorker):
 
         # Update dark dictionary
         if ss in self.dark_dict.keys():
-            self.SpecLogger.info(
+            self.SpecLogger.debug(
                 f'New dark spectrum for integration time {ss} overwriting previous in dictionary'
             )
         self.dark_dict[ss] = self.dark_spec
@@ -298,7 +298,7 @@ class IFitWorker(SpecWorker):
         elif ext == '.txt':
             wavelengths, spectrum = np.load(clear_spec_path)
         else:
-            self.SpecLogger.info('Unrecognised file type for loading clear spectrum')
+            self.SpecLogger.debug('Unrecognised file type for loading clear spectrum')
             return
         self.wavelengths = wavelengths
         self.clear_spec_raw = spectrum
@@ -347,7 +347,7 @@ class IFitWorker(SpecWorker):
             ss = self.spec_dict['plume'][0].split('_')[self.spec_specs.file_ss_loc].replace(ss_id, '')
             self.dark_spec = self.find_dark_spectrum(self.dark_dir, ss)
             if self.dark_spec is None:
-                self.SpecLogger.info(
+                self.SpecLogger.warning(
                     'No dark spectrum could be found in the current spectrum directory or current '
                     'dark directory')
 
@@ -423,7 +423,7 @@ class IFitWorker(SpecWorker):
 
         if not self.dark_corrected_plume:
             if self.dark_spec is None:
-                self.SpecLogger.info('Warning! No dark spectrum present, processing without dark subtraction')
+                self.SpecLogger.warning('No dark spectrum present, processing without dark subtraction')
 
                 # Set raw spectra to the corrected spectra, ignoring that they have not been dark corrected
                 self.plume_spec_corr = self.plume_spec_raw
@@ -446,10 +446,10 @@ class IFitWorker(SpecWorker):
 
         # If we have light dilution correction we run it here
         if self.corr_light_dilution:
-            self.SpecLogger.info('Performing iFit light dilution correction...')
+            self.SpecLogger.debug('Performing iFit light dilution correction...')
             if False in [isinstance(x, np.ndarray) for x in
                          [self.ifit_so2_0, self.ifit_err_1, self.ifit_so2_1, self.ifit_err_1]]:
-                self.SpecLogger.info('{} SO2 grids not found for light dilution correction. '
+                self.SpecLogger.warning('{} SO2 grids not found for light dilution correction. '
                       'Use load_ld_lookup() or light_dilution_cure_generator()'.format(str(self.__class__).split()[-1]))
                 self.ldf_best = np.nan
             else:
@@ -472,8 +472,8 @@ class IFitWorker(SpecWorker):
                                                                        wavelengths=self.wavelengths,
                                                                        spectra=self.plume_spec_shift,
                                                                        spec_time=self.spec_time)
-                    self.SpecLogger.info(f'Fit val uncorrected: {fit_0.params["SO2"].fit_val}')
-                    self.SpecLogger.info(f'Fit val corrected: {df_lookup["SO2"][0]}')
+                    self.SpecLogger.debug(f'Fit val uncorrected: {fit_0.params["SO2"].fit_val}')
+                    self.SpecLogger.debug(f'Fit val corrected: {df_lookup["SO2"][0]}')
                     # Update SO2 value for the best SO2 value we have
                     if not np.isnan(df_lookup['SO2'][0]):
                         fit_0.params['SO2'].fit_val = df_lookup['SO2'][0]
@@ -544,7 +544,7 @@ class IFitWorker(SpecWorker):
             cds.append(self.column_density['SO2'])
 
         for cd in cds:
-            self.SpecLogger.info(f'CDs (ppmm): {np.array(cd) / self.ppmm_conv:.0f}')
+            self.SpecLogger.debug(f'CDs (ppmm): {np.array(cd) / self.ppmm_conv:.0f}')
 
         # Save results
         self.save_results()
@@ -574,7 +574,7 @@ class IFitWorker(SpecWorker):
             elif isinstance(self.results.fit_errs, np.ndarray):
                 self.results.fit_errs = np.append(self.results.fit_errs, cd_err)
             else:
-                self.SpecLogger.info('ERROR! Unrecognised datatype for ifit fit errors')
+                self.SpecLogger.error('Unrecognised datatype for ifit fit errors')
 
             # Light dilution
             try:
@@ -827,17 +827,17 @@ class IFitWorker(SpecWorker):
                 #print('IFit worker: Processed file: {}'.format(filename))
 
             elif spec_type == self.spec_specs.file_type['dark']:
-                self.SpecLogger.info(f'Got dark spectrum: {pathname}')
+                self.SpecLogger.debug(f'Got dark spectrum: {pathname}')
                 # If dark spectrum, we load it into
                 self.load_dark_spec(pathname)
                 self.fig_spec.update_dark()
             elif spec_type == self.spec_specs.file_type['clear']:
-                self.SpecLogger.info(f'Got dark spectrum: {pathname}')
+                self.SpecLogger.debug(f'Got dark spectrum: {pathname}')
                 # If dark spectrum, we load it into
                 self.load_clear_spec(pathname)
                 self.fig_spec.update_clear()
             else:
-                self.SpecLogger.info(f'Spectrum type not recognised: {pathname}')
+                self.SpecLogger.debug(f'Spectrum type not recognised: {pathname}')
 
     def stop_sequence_processing(self):
         """Stops processing a sequence"""
@@ -849,7 +849,7 @@ class IFitWorker(SpecWorker):
         Also starts a processing thread, so that the images which arrive can be processed
         """
         if self.watching:
-            self.SpecDirWatchLogger.info(
+            self.SpecDirWatchLogger.warning(
                 f'Already watching for spectra: {self.transfer_dir}\n'
                 f'Please stop watcher before attempting to start new watch. This isssue may be '
                 f'caused by having manual acquisitions running alongside continuous watching'
@@ -877,9 +877,9 @@ class IFitWorker(SpecWorker):
                 # Stop processing thread when we stop watching the directory
                 self.q_spec.put(self.STOP_FLAG)
             else:
-                self.SpecDirWatchLogger.info('No directory watcher to stop')
+                self.SpecDirWatchLogger.warning('No directory watcher to stop')
         else:
-            self.SpecDirWatchLogger.info('Watching was already stopped')
+            self.SpecDirWatchLogger.warning('Watching was already stopped')
 
     def directory_watch_handler(self, pathname, t):
         """Handles new spectra passed from watcher"""
@@ -950,7 +950,7 @@ class IFitWorker(SpecWorker):
 
         # Force updating of ld analysers to use new ILS
         self.update_ld_analysers(force_both=True)
-        self.SpecLogger.info(
+        self.SpecLogger.debug(
             'Updating ILS. Light dilution analysers will be updated. This could cause issues if '
             'lookup grids were generated with a different ILS. Please ensure ILS represents the '
             'lookup grids currently in use')
@@ -988,7 +988,7 @@ class IFitWorker(SpecWorker):
         self.grid_increment_ppmm = increment
         new_so2_grid_ppmm = np.arange(0, max_ppmm, increment)
         if not np.array_equal(self.so2_grid_ppmm, new_so2_grid_ppmm):
-            self.SpecLogger.info('Changing SO2 grid for light dilution correction. If preloading grids, ensure both match this grid.')
+            self.SpecLogger.debug('Changing SO2 grid for light dilution correction. If preloading grids, ensure both match this grid.')
         self.so2_grid_ppmm = new_so2_grid_ppmm
         self.so2_grid = np.multiply(self.so2_grid_ppmm, self.ppmm_conversion)
 
@@ -1061,7 +1061,7 @@ class IFitWorker(SpecWorker):
             ifit_err_0[i] = ld_results[i][3]
             ifit_so2_1[i] = ld_results[i][4]
             ifit_err_1[i] = ld_results[i][5]
-            self.SpecLogger.info(
+            self.SpecLogger.debug(
                 f'LDF: {ldf[i]}\tSO2 real: {so2[i]}\tSO2 window 1: {ifit_so2_0[i]}\tSO2 window 2: {ifit_so2_1[i]}'
             )
 
@@ -1094,7 +1094,7 @@ class IFitWorker(SpecWorker):
         lookup_1 = np.array([ifit_so2_1, ifit_err_1])
 
         # Save files
-        self.SpecLogger.info(f'Saving light dilution grids: {file_path_0}, {file_path_1}')
+        self.SpecLogger.debug(f'Saving light dilution grids: {file_path_0}, {file_path_1}')
         np.save(file_path_0, lookup_0)
         np.save(file_path_1, lookup_1)
 
@@ -1110,7 +1110,7 @@ class IFitWorker(SpecWorker):
         :param use_new_window   bool    If False, we revert back to the previous fit window after loading in the LD data
         :return:
         """
-        self.SpecLogger.info(f'Loading light dilution lookup grid: {file_path}')
+        self.SpecLogger.debug(f'Loading light dilution lookup grid: {file_path}')
 
         dat = np.load(file_path)
         x, y = dat  # unpack data into cd and error grids
@@ -1237,7 +1237,7 @@ class IFitWorker(SpecWorker):
 
         for i, point in enumerate(so2_dat):
             so2_dat_time = spec_time[i].strftime("%Y-%m-%d %H:%M:%S")
-            self.SpecLogger.info(f'Evaluating light dilution for spectrum: {so2_dat_time}')
+            self.SpecLogger.debug(f'Evaluating light dilution for spectrum: {so2_dat_time}')
 
             # Extract error and shapely point on current loop
             point_shapely = points_shapely[i]
@@ -1342,7 +1342,7 @@ class IFitWorker(SpecWorker):
                 # Change analyser values
                 self.analyser0.params['LDF'].set(value=ldf_best)
                 self.analyser1.params['LDF'].set(value=ldf_best)
-            self.SpecLogger.info(f'LDF: {self.analyser0.params["LDF"].value}')
+            self.SpecLogger.debug(f'LDF: {self.analyser0.params["LDF"].value}')
 
             # Fit spectrum for in 2 fit windows
             fit0 = self.analyser0.fit_spectrum([wavelengths[i], spectra[i]], calc_od=['SO2', 'Ring', 'O3'],

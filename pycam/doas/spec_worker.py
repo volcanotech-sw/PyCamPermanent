@@ -216,7 +216,7 @@ class SpecWorker:
         """If dark_dir is changed we need to reset the dark_dict which holds preloaded dark specs"""
         self.dark_dict = {}
         self._dark_dir = value
-        self.SpecLogger.info(f'Dark spectra directory set: {self.dark_dir}')
+        self.SpecLogger.debug(f'Dark spectra directory set: {self.dark_dir}')
 
     @property
     def clear_spec_raw(self):
@@ -318,7 +318,7 @@ class SpecWorker:
         after first interpolating to spectrometer wavelengths
         """
         if self.wavelengths is None:
-            self.SpecLogger.info('No wavelength data to perform convolution')
+            self.SpecLogger.debug('No wavelength data to perform convolution')
             return
 
         # Need an odd sized array for convolution, so if even we omit the last pixel
