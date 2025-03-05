@@ -1261,8 +1261,9 @@ class PyplisWorker:
             img.subtract_dark_image(dark_img)
             img.img[img.img <= 0] = np.finfo(float).eps     # Set zeros and less to smallest value
         else:
-            warnings.warn('No dark image found, image has been loaded without dark subtraction.'
-                          'Note: Image will still be flagged as dark-corrected so processing can proceed.')
+            self.PyplisLogger.warning(
+                'No dark image found, image has been loaded without dark subtraction.'
+                'Note: Image will still be flagged as dark-corrected so processing can proceed.')
             img.subtract_dark_image(0)  # Just subtract 0. This ensures the image is flagged as dark-corr
 
         # Set object attribute to the loaded pyplis image
@@ -1856,9 +1857,9 @@ class PyplisWorker:
                 # wrong dimensions for some reason (seems to be an issue with pyplis)
                 raise
         except:
-            warnings.warn("2D polyfit failed while determination of sensitivity "
-                 "correction mask, using original cell tau image for mask "
-                 "determination")
+            self.PyplisLogger.warning(
+                "2D polyfit failed while determination of sensitivity correction mask, using "
+                "original cell tau image for mask determination")
             cell_img = img_tau
 
         # Generate mask
@@ -1967,7 +1968,7 @@ class PyplisWorker:
         """
         # Check that we have a light dilution model
         if not self.got_light_dil:
-            warnings.warn("No light dilution model is present, cannot correct for light dilution")
+            self.PyplisLogger.warning("No light dilution model is present, cannot correct for light dilution")
             return
 
         # Get all appropriate images anf parameters based on
