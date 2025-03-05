@@ -69,7 +69,12 @@ class PyplisWorker:
     :param  cam_specs:  CameraSpecs     Object containing all details of the camera/images
     :param  spec_specs:  SpecSpecs      Object containing all details of the spectrometer/spectra
     """
+    # Setup loggers for PyplisWorker
+    PyplisLogger = LoggerManager.add_logger("PyplisWorker", "green")
+    PyplisDirWatchLogger = LoggerManager.add_logger("PyplisDirWatcher", "yellow")
+
     def __init__(self, config_path, cam_specs=CameraSpecs(), spec_specs=SpecSpecs()):
+        self.PyplisLogger.debug("Initialising PyplisWorker")
         self._conversion_factor = 2.663 * 1e-6     # Conversion for ppm.m into Kg m-2
         self.ppmm_conv = (self._conversion_factor * N_A * 1000) / (100**2 * MOL_MASS_SO2)  # Conversion for ppm.m to molecules cm-2
 
