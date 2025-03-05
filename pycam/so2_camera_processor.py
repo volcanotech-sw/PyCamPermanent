@@ -2490,8 +2490,8 @@ class PyplisWorker:
             closest_index = self.calibration_series.index.get_indexer([self.img_A.meta['start_acq']], method='nearest')
 
             # Use index to retrieve calibration coeffients
-            intercept = self.calibration_series.iloc[closest_index]['coeff 0'][0]
-            grad = self.calibration_series.iloc[closest_index]['coeff 1'][0]
+            intercept = self.calibration_series.iloc[closest_index]['coeff 0'].iloc[0]
+            grad = self.calibration_series.iloc[closest_index]['coeff 1'].iloc[0]
 
             # Calibrate image
             cal_img = img * grad
@@ -3464,9 +3464,9 @@ class PyplisWorker:
                     # Add predominant flow direction (it will be identical to histo values, so we
                     # only need to do this once per line, and we just always store it in flow_histo)
                     orient_series, upper, lower = props.get_orientation_tseries()
-                    res['flow_histo']._flow_orient.append(orient_series[-1])
-                    res['flow_histo']._flow_orient_upper.append(upper[-1])
-                    res['flow_histo']._flow_orient_lower.append(lower[-1])
+                    res['flow_histo']._flow_orient.append(orient_series.iloc[-1])
+                    res['flow_histo']._flow_orient_upper.append(upper.iloc[-1])
+                    res['flow_histo']._flow_orient_lower.append(lower.iloc[-1])
 
                 # Cross-correlation emission rate retrieval
                 if self.velo_modes['flow_glob']:

@@ -2,7 +2,6 @@
 
 """Contains SSH functions used for some initial communications between pis"""
 
-import paramiko
 
 
 def open_ssh(ip_addr, uname='pi', pwd='raspberry'):
