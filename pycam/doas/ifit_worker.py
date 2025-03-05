@@ -320,10 +320,10 @@ class IFitWorker(SpecWorker):
             if len(spec_dir) > 0 and os.path.exists(spec_dir):
                 self.spec_dir = spec_dir
             else:
-                raise ValueError('Spectrum directory not recognised: {}'.format(spec_dir))
+                raise ValueError(f'Spectrum directory not recognised: {spec_dir}')
         else:
             if self.spec_dir is None:
-                raise ValueError('Spectrum directory not recognised: {}'.format(self.spec_dir))
+                raise ValueError(f'Spectrum directory not recognised: {self.spec_dir}')
 
         # Update first_spec flag TODO possibly not used in DOASWorker, check
         self.first_spec = True
@@ -743,7 +743,7 @@ class IFitWorker(SpecWorker):
 
             # Blocking wait for new file
             pathname = self.q_spec.get(block=True)
-            self.SpecLogger.info('Got new file: {}'.format(pathname))
+            self.SpecLogger.debug(f'Got new file: {pathname}')
 
             # Close thread if requested with 'exit' command
             if pathname == self.STOP_FLAG:
@@ -1108,9 +1108,9 @@ class IFitWorker(SpecWorker):
 
         dat = np.load(file_path)
         x, y = dat  # unpack data into cd and error grids
-        setattr(self, 'ifit_so2_{}'.format(fit_num), x)
-        setattr(self, 'ifit_err_{}'.format(fit_num), y)
-        setattr(self, 'ifit_so2_{}_path'.format(fit_num), file_path)
+        setattr(self, f'ifit_so2_{fit_num}', x)
+        setattr(self, f'ifit_err_{fit_num}', y)
+        setattr(self, f'ifit_so2_{fit_num}_path', file_path)
 
         # Extract grid info from filename
         filename = os.path.split(file_path)[-1]
