@@ -395,7 +395,7 @@ class CameraSpecs(SpecsBase):
         self._ss_idx = 0
         # note the ss_idx here should match the shutter speed against the ss_list set later
 
-        self.attr_to_io = {'int': ['pix_num_x', 'pix_num_y', '_bit_depth', '_shutter_speed', 'raw_num_x', 'raw_num_y'],
+        self.attr_to_io = {'int': ['pix_num_x', 'pix_num_y', '_bit_depth', '_shutter_speed', 'raw_num_x', 'raw_num_y', 'saturation_pixels'],
                            'float': ['pix_size_x', 'pix_size_y', 'fov_x', 'fov_y', 'framerate', '_analog_gain',
                                      'min_saturation', 'max_saturation', 'file_ss_units'],
                            'str': ['save_path', 'file_ext', 'meta_ext', 'file_datestr', 'file_ss', 'band', 'raw_pixel_format'],
@@ -608,7 +608,7 @@ class SpecSpecs(SpecsBase):
                 "max_saturation",
                 "file_int_units",
             ],
-            "str": ["save_path", "file_ext", "file_datestr", "file_ss"],
+            "str": ["model", "save_path", "file_ext", "file_datestr", "file_ss"],
             "dict": ["file_type"],
             "bool": ["auto_int", "file_sort"],
         }

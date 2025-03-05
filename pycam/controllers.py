@@ -18,21 +18,6 @@ from .utils import format_time, set_capture_status
 
 
 try:
-    import seabreeze
-
-    seabreeze.use("pyseabreeze")
-    import seabreeze.spectrometers as sb
-except ModuleNotFoundError:
-    warnings.warn("Working on machine without seabreeze, trying avaspecvolc")
-
-    try:
-        import avaspecvolc.avaspecvolc as sb
-    except ModuleNotFoundError:
-        warnings.warn(
-            "Working on machine without seabreeze or avaspecvolc, functionality of some classes will be lost"
-        )
-
-try:
     import libcamera  # for constants
     from picamera2 import Picamera2
 except ModuleNotFoundError:
@@ -736,8 +721,24 @@ class Spectrometer(SpecSpecs):
         self.spectrum = np.array(self.pix_num)
 
         # Attempt to find spectrometer, if we can't we either raise the error or ignore it depending on ignore_device
+        sb = None
+        if self.model == "Flame-S" or self.model == "Ocean-SR":
+            try:
+                import seabreeze
+                seabreeze.use("pyseabreeze")
+                import seabreeze.spectrometers as sb
+            except ModuleNotFoundError:
+                warnings.warn("Working on machine without seabreeze, functionality of some classes will be lost")
+        elif self.model == "Avantes":
+            try:
+                import avaspecvolc.avaspecvolc as sb
+            except ModuleNotFoundError:
+                warnings.warn(
+                    "Working on machine without avaspecvolc, functionality of some classes will be lost"
+                )
+
         try:
-            self.find_device()
+            self.find_device(sb=sb)
         except ConnectionError:
             if ignore_device:
                 print("Spectrometer unavailable")
@@ -755,11 +756,14 @@ class Spectrometer(SpecSpecs):
         # print("Spectrometer deconstructor")
         self.close()
 
-    def find_device(self):
+    def find_device(self, sb=None):
         """
         Function to search for an attached spectrometer and then initialise it
         """
         try:
+            if sb is None:
+                print("No/unknown spectrometer model specified")
+                raise IndexError
             self.spec = sb.Spectrometer(sb.list_devices()[0])
             if self.spec:
                 print("Spectrometer found")

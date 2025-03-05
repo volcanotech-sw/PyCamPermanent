@@ -17,6 +17,7 @@ max_saturation=0.9
 file_ss_units=1e-06
 save_path=/home/pi/pycam/Images/
 file_ext=.png
+meta_ext=.json
 file_datestr=%Y-%m-%dT%H%M%S
 file_ss={}ss
 band=on
