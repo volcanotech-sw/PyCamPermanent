@@ -261,10 +261,10 @@ class GUICommRecvHandler:
                 # Tell the user the server quit
                 messagebox.showinfo('Disconnected', 'The instrument exited.')
 
-            mess = ''
+            mess = []
             for id in comm:
-                if id != 'IDN':
-                    mess += 'COMM ({}) > {}: {}\n>> '.format(comm['IDN'], id, comm[id])
+                if id != 'IDN' and id != 'DST':
+                    mess.append('COMM ({}) > {}: {}'.format(comm['IDN'], id, comm[id]))
 
             # # Put comms into string for message window
             # mess = 'Received communication from instrument. IDN: {}\n' \

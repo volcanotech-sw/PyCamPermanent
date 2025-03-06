@@ -232,12 +232,23 @@ class MessageWindow:
                                     font=self.main_gui.main_font)
         self.mess_label.grid(row=self.row, column=0, sticky='w')
 
-    def add_message(self, message):
+    def add_message(self, message: str | list[str], max_lines=20):
         """Add message to frame"""
-        message = self.mess_start + message + self.mess_sep
-        self.message_holder = message + self.message_holder.rsplit(self.mess_start, 1)[0]  # Remove first line and append new one
+        if isinstance(message, str):
+            message = [message]
+        message = (
+            self.mess_sep
+            + self.mess_start
+            + (self.mess_sep + self.mess_start).join(message)
+        )
+        self.message_holder = (
+            message + self.message_holder.rsplit(self.mess_start, 1)[0]
+        )  # Remove first line and append new one
+        lines = self.message_holder.split("\n")
+        if len(lines) > max_lines:
+            # truncate at max_lines lines
+            self.message_holder = "\n".join(lines[0:max_lines])
         self.mess_label.configure(text=self.message_holder)
-
 
 class ScrollWindow:
     """Class to a frame within a window which can be scrolled if it doesn't fit on the screen

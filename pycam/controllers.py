@@ -14,7 +14,7 @@ import numpy.typing
 import threading
 
 from .setupclasses import CameraSpecs, SpecSpecs, FileLocator
-from .utils import format_time, set_capture_status
+from .utils import format_time, set_capture_status, append_to_log_file
 
 
 try:
@@ -721,24 +721,8 @@ class Spectrometer(SpecSpecs):
         self.spectrum = np.array(self.pix_num)
 
         # Attempt to find spectrometer, if we can't we either raise the error or ignore it depending on ignore_device
-        sb = None
-        if self.model == "Flame-S" or self.model == "Ocean-SR":
-            try:
-                import seabreeze
-                seabreeze.use("pyseabreeze")
-                import seabreeze.spectrometers as sb
-            except ModuleNotFoundError:
-                warnings.warn("Working on machine without seabreeze, functionality of some classes will be lost")
-        elif self.model == "Avantes":
-            try:
-                import avaspecvolc.avaspecvolc as sb
-            except ModuleNotFoundError:
-                warnings.warn(
-                    "Working on machine without avaspecvolc, functionality of some classes will be lost"
-                )
-
         try:
-            self.find_device(sb=sb)
+            self.find_device()
         except ConnectionError:
             if ignore_device:
                 print("Spectrometer unavailable")
@@ -756,10 +740,29 @@ class Spectrometer(SpecSpecs):
         # print("Spectrometer deconstructor")
         self.close()
 
-    def find_device(self, sb=None):
+    def find_device(self):
         """
         Function to search for an attached spectrometer and then initialise it
         """
+        sb = None
+        if self.model == "Flame-S" or self.model == "Ocean-SR":
+            try:
+                import seabreeze
+
+                seabreeze.use("pyseabreeze")
+                import seabreeze.spectrometers as sb
+            except ModuleNotFoundError:
+                warnings.warn(
+                    "Working on machine without seabreeze, functionality of some classes will be lost"
+                )
+        elif self.model == "Avantes":
+            try:
+                import avaspecvolc.avaspecvolc as sb
+            except ModuleNotFoundError:
+                warnings.warn(
+                    "Working on machine without avaspecvolc, functionality of some classes will be lost"
+                )
+
         try:
             if sb is None:
                 print("No/unknown spectrometer model specified")
@@ -897,24 +900,29 @@ class Spectrometer(SpecSpecs):
         try:
             # Loop through number of coadds
             for i in range(self.coadd):
-                coadded_spectrum += self.spec.intensities()
+                t = self.spec.intensities()
+                coadded_spectrum += t
         except Exception as e:
-            with open(FileLocator.ERROR_LOG_PI, "a") as f:
-                f.write("{}\n".format(e))
+            append_to_log_file(FileLocator.ERROR_LOG_PI, "{}".format(e))
+
+            # something probably went wrong with the spectrometer, so try reconnecting
+            old_spec = (
+                self.spec
+            )  # the original spectrometer device object, hopefully to be replaced
+            try:
+                self.find_device()
+                # we get here if find_device didn't raise a connection error
+                old_spec = None
+            except ConnectionError:
+                # we need to keep a spectrometer device around so functions still at least kind of work
+                if old_spec:
+                    self.spec = old_spec
+            except Exception:
+                # we're probably here now from trying to close the old spectrometer t
+                pass
 
         # Correct for number of coadds to result in a spectrum with correct digital numbers for bit-depth of device
         self.spectrum = coadded_spectrum / self.coadd
-
-    def get_spec_now(self):
-        """
-        Immediately acquire spectrum from spectrometer - does not discard first spectrum (probably never used)
-        """
-        if self.spec:
-            try:
-                self.spectrum = self.spec.intensities()
-            except Exception as e:
-                with open(FileLocator.ERROR_LOG_PI, "a") as f:
-                    f.write("{}\n".format(e))
 
     def get_wavelengths(self):
         """
@@ -1149,8 +1157,9 @@ class Spectrometer(SpecSpecs):
                         try:
                             self.int_time = mess["int_time"]
                         except Exception as e:
-                            with open(FileLocator.ERROR_LOG_PI, "a") as f:
-                                f.write("{}\n".format(e))
+                            append_to_log_file(
+                                FileLocator.ERROR_LOG_PI, "{}\n".format(e)
+                            )
 
                 if "framerate" in mess:
                     # We readjust to requested framerate regardless of if auto_int is True or False

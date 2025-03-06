@@ -836,9 +836,9 @@ class PyplisWorker:
         :return img_time:
         """
         # Make sure filename only contains file and not larger pathname, and remove extension
-        filename = filename.split('\\')[-1].split('/')[-1].split('.')[0]
+        filename = os.path.splitext(filename.split('\\')[-1].split('/')[-1])[0]
 
-        # Extract time string from filename
+        # Extract the image type from the filename
         type_str = filename.split('_')[self.cam_specs.file_type_loc]
 
         return type_str

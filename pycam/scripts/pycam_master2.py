@@ -275,6 +275,18 @@ while running:
                         meta_filename=new_meta,
                         meta_ext=instrument.meta_ext,
                     )
+                    # Backup the image, do this before telling clients of the files existence
+                    # as they might delete the file with an FTP transfer which means we couldn't
+                    # back up the image any more
+                    if storage_mount.is_mounted:
+                        try:
+                            # let's have a small delay to try and avoid too much power consumption
+                            # at once from writing to both the internal and external SSDs simultaneously
+                            time.sleep(0.1)
+                            shutil.copy2(new_file, storage_mount.data_path)
+                            shutil.copy2(new_meta, storage_mount.data_path)
+                        except Exception as e:
+                            print(f"Error copying to backup: {e}")
                     # Tell connected clients about the new image (the master should be first)
                     if (
                         not dark_capture
@@ -294,15 +306,6 @@ while running:
                             sock_serv_ext.send_to_all(
                                 {"IDN": "MAS", "NMB": new_meta, "DST": "EXN"}
                             )
-                    if storage_mount.is_mounted:
-                        try:
-                            # let's have a small delay to try and avoid too much power consumption
-                            # at once from writing to both the internal and external SSDs simultaneously
-                            time.sleep(0.1)
-                            shutil.copy2(new_file, storage_mount.data_path)
-                            shutil.copy2(new_meta, storage_mount.data_path)
-                        except Exception as e:
-                            print(f"Error copying to backup: {e}")
 
                 elif isinstance(instrument, Spectrometer):
                     [filename, spectrum] = instrument.spec_q.get(False)
@@ -312,6 +315,13 @@ while running:
                         instrument.save_path + "/" + filename,
                         file_ext=instrument.file_ext,
                     )
+                    # Backup the new spectra
+                    if storage_mount.is_mounted:
+                        try:
+                            time.sleep(0.1)
+                            shutil.copy2(new_file, storage_mount.data_path)
+                        except Exception as e:
+                            print(f"Error copying to backup: {e}")
                     # Tell connected clients about the new spectra
                     if (
                         not dark_capture
@@ -320,12 +330,6 @@ while running:
                         sock_serv_ext.send_to_all(
                             {"IDN": "MAS", "NIS": new_file, "DST": "EXN"}
                         )
-                    if storage_mount.is_mounted:
-                        try:
-                            time.sleep(0.1)
-                            shutil.copy2(new_file, storage_mount.data_path)
-                        except Exception as e:
-                            print(f"Error copying to backup: {e}")
 
             # TODO save/copy to backup location
 

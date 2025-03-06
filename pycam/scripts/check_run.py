@@ -17,7 +17,7 @@ from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator, ConfigInfo
 from pycam.networking.sockets import SocketClient, ExternalSendConnection, ExternalRecvConnection
 from pycam.networking.ssh import open_ssh, close_ssh, ssh_cmd
 from pycam.io_py import read_script_crontab, write_script_crontab
-from pycam.utils import read_file, StorageMount
+from pycam.utils import read_file, StorageMount, append_to_log_file
 
 
 def check_acq_mode():
@@ -43,20 +43,19 @@ def check_data(sleep=150, storage_mount=StorageMount(), date_fmt="%Y-%m-%d"):
     # Check we can look for new data on the SSD - don't want to look in the pycam/Images folder as this will be being
     # deleted as the pi_dbx_upload.py moves files to the cloud
     if not storage_mount.is_mounted:
-        # with open(FileLocator.ERROR_LOG_PI, 'a') as f:
-        #     f.write('{} ERROR! check_run.py: Storage is not mounted. Drive will now be mounted\n'.format(datetime.datetime.now()))
-        # print('ERROR! check_run.py: Storage is not mounted, cannot check for new data\n')
+        # append_to_log_file(FileLocator.ERROR_LOG_PI, '{} ERROR! check_run.py: Storage is not mounted. Cannot check for new data'.format(datetime.datetime.now()))
         # raise Exception
         storage_mount.mount_dev()
 
     # Get specifications of spectrometer and camera settings
     spec_specs = SpecSpecs()
-    cam_specs = CameraSpecs()
+    cam_specs_on = CameraSpecs(band='on')
+    cam_specs_off = CameraSpecs(band='off')
 
     # Create dictionary where each key is the string to look for and the value is the location of the string in the filename
     data_dict = {spec_specs.file_coadd: spec_specs.file_coadd_loc,
-                      cam_specs.file_filterids['on']: cam_specs.file_fltr_loc,
-                      cam_specs.file_filterids['off']: cam_specs.file_fltr_loc}
+                      cam_specs_on.file_filterids['on']: cam_specs_on.file_fltr_loc,
+                      cam_specs_off.file_filterids['off']: cam_specs_off.file_fltr_loc}
 
     # Get current list of images in
     date_1 = datetime.datetime.now().strftime(date_fmt)
@@ -160,8 +159,7 @@ elif start_script_time > stop_script_time:
         stop_script_time = stop_script_time.replace(hour=scripts[stop_script][0],
                                                     minute=scripts[stop_script][1], second=0, microsecond=0)
 else:
-    with open(FileLocator.ERROR_LOG_PI, 'a') as f:
-        f.write('ERROR! check_run.py: Pycam start and stop times are the same, this is likely to lead to unexpected behaviour. \n')
+    append_to_log_file(FileLocator.ERROR_LOG_PI, 'ERROR! check_run.py: Pycam start and stop times are the same, this is likely to lead to unexpected behaviour.')
     sys.exit()
 
 # Check data, if True is returned we have all data so no issues
@@ -210,9 +208,12 @@ try:
 
 
 except ConnectionError:
-    with open(FileLocator.ERROR_LOG_PI, 'a') as f:
-        f.write('check_run.py: Error connecting to pycam on port {}.\n'.format(int(cfg[ConfigInfo.port_ext])))
+    append_to_log_file(
+        FileLocator.ERROR_LOG_PI,
+        "check_run.py: Error connecting to pycam on port {}.".format(
+            int(cfg[ConfigInfo.port_ext])
+        ),
+    )
 
 except BaseException as e:
-    with open(FileLocator.ERROR_LOG_PI, 'a') as f:
-        f.write('check_run.py: Error {}.\n'.format(e))
+    append_to_log_file(FileLocator.ERROR_LOG_PI, "check_run.py: Error {}.".format(e))

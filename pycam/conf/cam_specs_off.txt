@@ -6,6 +6,7 @@ bit_depth=10
 shutter_speed=10000
 raw_num_x=2592
 raw_num_y=1944
+saturation_pixels=100
 pix_size_x=5.6e-06
 pix_size_y=5.6e-06
 fov_x=28.0

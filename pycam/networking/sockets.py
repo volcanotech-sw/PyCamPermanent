@@ -5,7 +5,7 @@ Socket setup and control for Raspberry Pi network and connection to the remote c
 """
 
 from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator
-from pycam.utils import check_filename, read_file
+from pycam.utils import check_filename, read_file, append_to_log_file
 from pycam.networking.commands import AcquisitionComms
 
 import socket
@@ -614,8 +614,12 @@ class SocketClient(SocketMeths):
                 self.send_handshake()
 
         except Exception as e:
-            with open(FileLocator.ERROR_LOG_PI, 'a') as f:
-                f.write(time.strftime("%Y-%m-%dT%H:%M:%S%z", time.gmtime()) + ' ERROR: ' + str(e) + '\n')
+            append_to_log_file(
+                FileLocator.ERROR_LOG_PI,
+                time.strftime("%Y-%m-%dT%H:%M:%S%z", time.gmtime())
+                + " ERROR: "
+                + str(e),
+            )
         return
 
     def connect_socket_timeout(self, timeout: int | None = None):
