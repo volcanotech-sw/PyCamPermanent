@@ -19,6 +19,6 @@ parameterized
 dropbox
 pywin32 ; sys_platform == 'win32'
 pyinotify ; sys_platform == 'linux'
-pyplis @ git+https://github.com/volcanotech-sw/pyplis.git@sources_fix
-pydoas @ git+https://github.com/volcanotech-sw/pydoas.git
+pyplis @ git+https://github.com/volcanotech-sw/pyplis.git@sources_fix_312
+pydoas @ git+https://github.com/volcanotech-sw/pydoas.git@typing_updates
 iFit @ git+https://github.com/volcanotech-sw/iFit.git@make-pip-install
