@@ -449,6 +449,7 @@ def save_emission_rates_as_txt(path, emission_dict, ICA_dict, only_last_value=Fa
             # Save as csv
             emission_df.to_csv(pathname, mode='a', header=header)
 
+
 def get_last_emission_vals(emission_obj):
     """
     Gets the most recent values from an EmissionRate object and returns them
@@ -459,47 +460,6 @@ def get_last_emission_vals(emission_obj):
                     for key, value in emission_obj.to_dict().items()}
     del last_vals["_start_acq"]
     return DataFrame(last_vals, index = index)
-
-
-def write_schedule_file(filename, time_on, time_off):
-    """
-    Writes a file for scheduling capture
-    :param filename:    str              Full path to file for writing
-    :param time_on:     datetime.time    Time to start capture each day
-    :param time_off:    datetime.time    Time to stop capture each day
-    """
-    time_fmt = '%H:%M'
-
-    with open(filename, 'w', newline='\n') as f:
-        f.write('# Raspberry Pi start-up/shut-down schedule script\n')
-
-        # Add lines for quicker/easier access when reading file
-        f.write('on_time={}\n'.format(time_on.strftime(time_fmt)))
-        f.write('off_time={}\n'.format(time_off.strftime(time_fmt)))
-
-
-def read_schedule_file(filename):
-    """
-    Read schedule file
-    Returns (on_time: datetime.time, off_time: datetime.time)
-    """
-    on_time = None
-    off_time = None
-
-    with open(filename, 'r', newline='\n') as f:
-        for line in f:
-            if 'on_time=' in line:
-                on_time_str = line.split('=')[1].strip()
-                on_time = datetime.time.fromisoformat(on_time_str)
-            elif 'off_time=' in line:
-                off_time_str = line.split('=')[1].strip()
-                off_time = datetime.time.fromisoformat(off_time_str)
-
-    if on_time is None or off_time is None:
-        print('File not in expected format to retrieve start-up/shut-down information for instrument')
-        on_time = datetime.time(7,0)
-        off_time = datetime.time(22,0)
-    return (on_time, off_time)
 
 
 def write_script_crontab(filename, cmd, time_on):

@@ -190,7 +190,7 @@ class MessageWindow:
         self.mess_sep = '\n'
         self.mess_start = '>> '
         self.message_holder = self.mess_start + self.mess_sep
-        self.num_messages = 30
+        self.num_messages = 300
 
         self.text = tk.Text(self.frame)
 
@@ -232,7 +232,7 @@ class MessageWindow:
                                     font=self.main_gui.main_font)
         self.mess_label.grid(row=self.row, column=0, sticky='w')
 
-    def add_message(self, message: str | list[str], max_lines=20):
+    def add_message(self, message: str | list[str]):
         """Add message to frame"""
         if isinstance(message, str):
             message = [message]
@@ -245,9 +245,9 @@ class MessageWindow:
             message + self.message_holder.rsplit(self.mess_start, 1)[0]
         )  # Remove first line and append new one
         lines = self.message_holder.split("\n")
-        if len(lines) > max_lines:
-            # truncate at max_lines lines
-            self.message_holder = "\n".join(lines[0:max_lines])
+        if len(lines) > self.num_messages:
+            # truncate at self.num_messages lines
+            self.message_holder = "\n".join(lines[0:self.num_messages])
         self.mess_label.configure(text=self.message_holder)
 
 class ScrollWindow:

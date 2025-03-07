@@ -425,7 +425,6 @@ class FTPClient:
         # Transfer capture file and script schedule file to local, so GUI is accurate when it's opened
         # TODO THIS HASN'T BEEN TESTED!!!!! (18/04/2023)
         self.get_file(FileLocator.SCRIPT_SCHEDULE_PI, FileLocator.SCRIPT_SCHEDULE, rm=False)
-        self.get_file(FileLocator.SCHEDULE_FILE_PI, FileLocator.SCHEDULE_FILE, rm=False)
         print('Retrieved instrument schedule files')
 
         # Also get the port of the remote PI

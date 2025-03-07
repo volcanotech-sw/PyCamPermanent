@@ -5,7 +5,7 @@
 import pycam.gui.cfg as cfg
 from pycam.networking.ssh import open_ssh, close_ssh, ssh_cmd
 from pycam.setupclasses import FileLocator, ConfigInfo
-from pycam.io_py import write_schedule_file, read_schedule_file, write_script_crontab, read_script_crontab
+from pycam.io_py import write_script_crontab, read_script_crontab
 from pycam.utils import read_file
 
 import tkinter as tk
@@ -314,8 +314,6 @@ class InstrumentConfiguration:
         self._off_hour = tk.IntVar()        # Hour to shutdown pi
         self._off_min = tk.IntVar()
 
-        self._use_second_shutdown = tk.IntVar()     # If True, the second shutdown/startup sequence is used
-
         self._capt_start_hour = tk.IntVar()     # Hour to start capture
         self._capt_start_min = tk.IntVar()
 
@@ -328,24 +326,22 @@ class InstrumentConfiguration:
         self._temp_logging = tk.IntVar()        # Temperature logging frequency (minutes)
         self._check_disk_space = tk.IntVar()    # Check disk space frequency (minutes)
 
-        on_time, off_time = read_schedule_file(FileLocator.SCHEDULE_FILE)
-        self.use_second_shutdown = 0 # TODO remove as 2nd pi elements are removed
-        self.on_hour = on_time.strftime('%H')
-        self.on_min = on_time.strftime('%M')
-        self.off_hour = off_time.strftime('%H')
-        self.off_min = off_time.strftime('%M')
-
         # Read cronfile looking for defined scripts. ADD SCRIPT TO LIST HERE TO SEARCH FOR IT
         results = read_script_crontab(FileLocator.SCRIPT_SCHEDULE,
                                       [self.start_script, self.stop_script, self.dark_script,
                                        self.temp_script, self.disk_space_script])
 
-        self.capt_start_hour, self.capt_start_min = results[self.start_script]
-        self.capt_stop_hour, self.capt_stop_min = results[self.stop_script]
-        self.dark_capt_hour, self.dark_capt_min = results[self.dark_script]
+        if self.start_script in results:
+            self.capt_start_hour, self.capt_start_min = results[self.start_script]
+        if self.stop_script in results:
+            self.capt_stop_hour, self.capt_stop_min = results[self.stop_script]
+        if self.dark_script in results:
+            self.dark_capt_hour, self.dark_capt_min = results[self.dark_script]
 
-        self.temp_logging = results[self.temp_script][1]     # Only interested in minutes for temperature logging
-        self.check_disk_space = results[self.disk_space_script][1]     # Only interested in minutes for disk space check
+        if self.temp_script in results:
+            self.temp_logging = results[self.temp_script][1]     # Only interested in minutes for temperature logging
+        if self.disk_space_script in results:
+            self.check_disk_space = results[self.disk_space_script][1]     # Only interested in minutes for disk space check
 
     def generate_frame(self):
         """Generates frame containing GUI widgets"""
@@ -358,34 +354,6 @@ class InstrumentConfiguration:
         self.frame.title('Instrument configuration')
         self.frame.protocol('WM_DELETE_WINDOW', self.close_frame)
         self.in_frame = True
-
-        frame_on = tk.LabelFrame(self.frame, text='Start-up/Shut-down times', relief=tk.RAISED, borderwidth=2, font=self.main_gui.main_font)
-        frame_on.grid(row=0, column=0, sticky='nsew', padx=2, pady=2)
-
-        lab = ttk.Label(frame_on, text='Start-up (hour:minutes):', font=self.main_gui.main_font)
-        lab.grid(row=0, column=0, sticky='w', padx=2, pady=2)
-        lab = ttk.Label(frame_on, text='Shut-down (hour:minutes):', font=self.main_gui.main_font)
-        lab.grid(row=1, column=0, sticky='w', padx=2, pady=2)
-
-        hour_start = ttk.Spinbox(frame_on, textvariable=self._on_hour, from_=00, to=23, increment=1, width=2, font=self.main_gui.main_font)
-        # hour_start.set("{:02d}".format(self.on_hour))
-        hour_start.grid(row=0, column=1, padx=2, pady=2)
-        ttk.Label(frame_on, text=':', font=self.main_gui.main_font).grid(row=0, column=2, padx=2, pady=2)
-        min_start = ttk.Spinbox(frame_on, textvariable=self._on_min, from_=00, to=59, increment=1, width=2, font=self.main_gui.main_font)
-        # min_start.set("{:02d}".format(self.on_min))
-        min_start.grid(row=0, column=3, padx=2, pady=2)
-
-        hour_stop = ttk.Spinbox(frame_on, textvariable=self._off_hour, from_=00, to=23, increment=1, width=2, font=self.main_gui.main_font)
-        # hour_stop.set("{:02d}".format(self.off_hour))
-        hour_stop.grid(row=1, column=1, padx=2, pady=2)
-        ttk.Label(frame_on, text=':', font=self.main_gui.main_font).grid(row=1, column=2, padx=2, pady=2)
-        min_stop = ttk.Spinbox(frame_on, textvariable=self._off_min, from_=00, to=59, increment=1, width=2, font=self.main_gui.main_font)
-        # min_stop.set("{:02d}".format(self.off_min))
-        min_stop.grid(row=1, column=3, padx=2, pady=2)
-
-        # Update button
-        butt = ttk.Button(frame_on, text='Update', command=self.update_on_off)
-        butt.grid(row=5, column=0, columnspan=4, sticky='e', padx=2, pady=2)
 
         # ---------------------------------------
         # Start/stop control of acquisition times
@@ -449,68 +417,11 @@ class InstrumentConfiguration:
         butt = ttk.Button(frame_cron, text='Update', command=self.update_acq_time)
         butt.grid(row=row, column=0, columnspan=4, sticky='e', padx=2, pady=2)
 
-    def check_second_shutdown(self):
-        """Checks whether second shutdown sequence is valid (if it is being used)"""
-        if not self.use_second_shutdown:
-            return
-
-    def check_script_time(self, script_time, script_name):
-        """
-        Checks the scheduled time of a script to be run and ensures that the Pi is turned on at this point. If it isn't
-        it raises a warning box indicating that the script probably won't be run. It only highlights this to the user,
-        it does not make any changes to times to enforce compatibility.
-        :param script_time:     datetime.datetime       Scheduled time of script to be run
-        :param script_name:     str                     Name of script - used for flagging it if an issue is found
-        :return:
-        """
-        if self.on_time < self.off_time:
-            if script_time > self.on_time and script_time <= self.off_time:
-                return
-
-        elif self.on_time > self.off_time:
-            if script_time > self.on_time or script_time < self.off_time:
-                return
-        else:
-            # The pi is not being turned off if the time is the same, so we're all good?
-            return
-
-        mess = 'Script start time incompatible with instrument on/off time\n\n' \
-                'Script name: {}\nScript start time: {}\nInstrument start time: {}\n' \
-                'Instruments shutdown time: {}\n'.format(script_name, script_time.strftime('%H:%M'),
-                                                        self.on_time.strftime('%H:%M'),
-                                                        self.off_time.strftime('%H:%M'))
-
-        a = tk.messagebox.showwarning('Configuration incompatible', mess, parent=self.frame)
-        self.frame.attributes('-topmost', 1)
-        self.frame.attributes('-topmost', 0)
-
-    def update_on_off(self):
-        """Controls updating start/stop time of pi"""
-        # Write schedule file locally
-        write_schedule_file(FileLocator.SCHEDULE_FILE, self.on_time, self.off_time)
-
-        # Transfer file to instrument
-        self.ftp.move_file_to_instrument(FileLocator.SCHEDULE_FILE, FileLocator.SCHEDULE_FILE_PI)
-
-        # TODO get master pi to reload the schedule
-
-        a = tk.messagebox.showinfo('Instrument update',
-                                    'Updated capture start-up/shut-down schedule:\n\n'
-                                    'Start-up:\t\t{} UTC\n''Shut-down:\t{} UTC'.format(self.on_time.strftime('%H:%M'),
-                                                                                    self.off_time.strftime('%H:%M')),
-                                    parent=self.frame)
-
-        self.frame.attributes('-topmost', 1)
-        self.frame.attributes('-topmost', 0)
-
     def update_acq_time(self):
         """Updates acquisition period of instrument"""
         # Create strings
         temp_log_str = self.minute_cron_fmt(self.temp_logging)
         disk_space_str = self.minute_cron_fmt(self.check_disk_space)
-
-
-
 
         # Preparation of lists for writing crontab file
         times = [self.start_capt_time, self.stop_capt_time, self.start_dark_time, temp_log_str, disk_space_str]
@@ -526,11 +437,6 @@ class InstrumentConfiguration:
         check_run_str = self.minute_cron_fmt(30)          # Setup check_run.py to run every hour
         times.append(check_run_str)
         cmds.append('python3 {}'.format(self.check_run_script))
-
-        # Check time compatibility (only on scripts which have specific start times, not those run every x minutes)
-        self.check_second_shutdown()
-        for i, script_name in enumerate([self.start_script, self.stop_script, self.dark_script]):
-            self.check_script_time(times[i], script_name)
 
         # Write crontab file
         write_script_crontab(FileLocator.SCRIPT_SCHEDULE, cmds, times)
@@ -573,16 +479,6 @@ class InstrumentConfiguration:
     def close_frame(self):
         self.in_frame = False
         self.frame.destroy()
-
-    @property
-    def on_time(self):
-        """Return datetime object of time to turn pi on. Date is not important, only time, so use arbitrary date"""
-        return datetime.datetime(year=2020, month=1, day=1, hour=self.on_hour, minute=self.on_min)
-
-    @property
-    def off_time(self):
-        """Return datetime object of time to turn pi off. Date is not important, only time, so use arbitrary date"""
-        return datetime.datetime(year=2020, month=1, day=1, hour=self.off_hour, minute=self.off_min)
 
     @property
     def start_capt_time(self):
@@ -630,14 +526,6 @@ class InstrumentConfiguration:
     @off_min.setter
     def off_min(self, value):
         self._off_min.set(value)
-
-    @property
-    def use_second_shutdown(self):
-        return self._use_second_shutdown.get()
-
-    @use_second_shutdown.setter
-    def use_second_shutdown(self, value):
-        self._use_second_shutdown.set(value)
 
     @property
     def capt_start_hour(self):
