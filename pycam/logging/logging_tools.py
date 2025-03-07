@@ -4,7 +4,7 @@ from pathlib import Path
 from logging.handlers import TimedRotatingFileHandler
 
 class LoggerManager:
-    """ Class for manging creation of loggers and creation and deltion of handlers 
+    """ Class for managing creation of loggers and creation and deletion of handlers 
     for PyCam software
     """
 
