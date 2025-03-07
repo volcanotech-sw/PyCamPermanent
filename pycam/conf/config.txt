@@ -20,7 +20,7 @@ port_ext=12347                      # External communication port (laptop etc)
 start_script=/home/pi/pycam/scripts/start_instrument.py
 stop_script=/home/pi/pycam/scripts/stop_instrument.py
 master_script=/home/pi/pycam/scripts/pycam_master2.py
-dark_script=/home/pi/pycam/scripts/pycam_dark_capture.py
+dark_script=/home/pi/pycam/scripts/pycam_master2.py -d
 temp_log=/home/pi/pycam/scripts/log_temperature.sh
 disk_space_script=/home/pi/pycam/scripts/check_disk_space.py
 

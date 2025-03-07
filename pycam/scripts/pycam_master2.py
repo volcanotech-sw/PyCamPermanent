@@ -284,8 +284,8 @@ while running:
                             # let's have a small delay to try and avoid too much power consumption
                             # at once from writing to both the internal and external SSDs simultaneously
                             time.sleep(0.1)
-                            shutil.copy2(new_file, storage_mount.data_path)
-                            shutil.copy2(new_meta, storage_mount.data_path)
+                            shutil.copy2(new_file, storage_mount.backup_path)
+                            shutil.copy2(new_meta, storage_mount.backup_path)
                         except Exception as e:
                             print(f"Error copying to backup: {e}")
                     # Tell connected clients about the new image (the master should be first)
@@ -320,7 +320,7 @@ while running:
                     if storage_mount.is_mounted:
                         try:
                             time.sleep(0.1)
-                            shutil.copy2(new_file, storage_mount.data_path)
+                            shutil.copy2(new_file, storage_mount.backup_path)
                         except Exception as e:
                             print(f"Error copying to backup: {e}")
                     # Tell connected clients about the new spectra

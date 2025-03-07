@@ -26,12 +26,10 @@ def check_acq_mode():
     # may not want to be acquiring data)
     with open(FileLocator.RUN_STATUS_PI, 'r') as f:
         info = f.readlines()
-        if len(info) != 1:
-            print('Unexpected format in {}. Continuing without using this file.'.format(FileLocator.RUN_STATUS_PI))
-        else:
-            if 'automated' in info[0]:
+        for line in info:
+            if 'automated' in line:
                 pass
-            elif 'manual' in info[0]:
+            elif 'manual' in line:
                 print('Instrument is not in automated capture mode, check_run.py is not required.')
                 sys.exit()
 

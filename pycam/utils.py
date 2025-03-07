@@ -127,31 +127,40 @@ def set_capture_status(filename, device, status):
     status: str
         the status being set for the device
     """
+    # length of each line
+    line_length = 20
 
-    # what we want to make sure is in filename - needs trailing newline!
-    update_line = f"{device}:{status}\n"
-    # print(update_line, end="")
+    # what we want to make sure is in filename - needs to be the same width and have trailing newline!
+    update_line = f"{device}:{status}"
+    while len(update_line) < line_length:
+        # pad all lines to the same length
+        update_line += ' '
+    update_line += '\n'
+
+    # work in bytes so we can fseek backwards in the file to the start of the line
+    update_line = update_line.encode('utf-8')
+    device = device.encode('utf-8')
 
     # special case creating fresh
     if not os.path.isfile(filename):
-        with open(filename, 'w') as f:
-            f.writelines(update_line)
+        with open(filename, 'wb') as f:
+            f.write(update_line)
     else:
         # open r+ to minimise the chance something else slips
         # in and changes the file while we work on it
-        with open(filename, 'r+') as f:
-            lines = f.readlines()
-            row = [k for k,v in enumerate(lines) if device in v]
-            if row:
-                # already exists, update
-                lines[row[0]] = update_line
-            else:
-                # doesn't exist, add to file
-                lines.append(update_line)
-            # go back to the beginning of the file & overwrite
-            f.seek(0)
-            f.truncate() # clear data after file pointer
-            f.writelines(lines)
+        with open(filename, 'rb+') as f:
+            line_found = False
+            while not line_found:
+                line = f.readline()
+                if device in line:
+                    line_found = True
+                    f.seek(-line_length-1, 1)  # go back to the start of the line, -1 for \n
+                    f.write(update_line)
+                    break
+                elif len(line) == 0:  # eof
+                    break
+            if not line_found:
+                f.write(update_line)
 
 
 def format_time(time_obj, fmt):
@@ -381,12 +390,21 @@ class StorageMount:
         else:
             return True
 
+    @property
+    def backup_path(self):
+        """Return today's backup folder and create it if it does not exist yet"""
+        date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+        backup_folder = os.path.join(self.data_path, date_str) + '/'
+        if not os.path.exists(backup_folder):
+            os.mkdir(backup_folder)
+        return backup_folder
+
     def find_dev(self):
         """
         Finds device location based on it being /dev/sda of some kind (not necessarily sda1) and sets self.dev_path
         """
         sda_path = None
-        proc = subprocess.Popen(['sudo fdisk -l /dev/sda'], stdout=subprocess.PIPE, shell=True)
+        proc = subprocess.Popen(['sudo fdisk -l /dev/sd*'], stdout=subprocess.PIPE, shell=True)
         stdout_value = proc.communicate()[0]
         stdout_str = stdout_value.decode("utf-8")
         stdout_lines = stdout_str.split('\n')
