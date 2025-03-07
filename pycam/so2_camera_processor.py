@@ -3776,8 +3776,9 @@ class PyplisWorker:
                 if cross_corr or time_gap >= self.cross_corr_recal:
                     self.generate_cross_corr(self.cross_corr_series['time'],
                                              self.cross_corr_series['young'],
-                                             self.cross_corr_series['old'])
-                    self.get_cross_corr_emissions_from_buff()
+                                             self.cross_corr_series['old'],
+                                             plot=plot)
+                    self.get_cross_corr_emissions_from_buff(plot = plot)
 
 
 
