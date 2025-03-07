@@ -274,6 +274,7 @@ while running:
                         metadata=metadata,
                         meta_filename=new_meta,
                         meta_ext=instrument.meta_ext,
+                        compression=True,
                     )
                     # Backup the image, do this before telling clients of the files existence
                     # as they might delete the file with an FTP transfer which means we couldn't

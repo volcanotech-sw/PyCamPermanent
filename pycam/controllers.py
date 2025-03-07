@@ -640,6 +640,8 @@ class Camera(CameraSpecs):
                 # Set seconds value (used as check to prevent 2 images being acquired in same second)
                 prev_sec = time_obj.second
 
+            time.sleep(0.1)
+
     def capture_darks(self):
         """
         Capture dark images from all shutter speeds in <self.ss_list>
@@ -1204,6 +1206,8 @@ class Spectrometer(SpecSpecs):
 
                 # Set seconds value (used as check to prevent 2 images being acquired in same second)
                 prev_sec = time_obj.second
+
+            time.sleep(0.1)
 
     def capture_darks(self):
         """

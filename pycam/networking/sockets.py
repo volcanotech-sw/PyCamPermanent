@@ -187,7 +187,7 @@ class CommsCommandHandler(CommsFuncs):
             try:
                 # Check message queue (taken from tuple at position [1])
                 # Make the whole command available as part of the class for accessing IDN of command sender
-                self.comm_cmd = self.q.get(block=False, timeout=1)
+                self.comm_cmd = self.q.get(block=True, timeout=0.001)
                 if self.comm_cmd:
                     print(f"CommsCommandHandler for {self.id} received {self.comm_cmd}")
                     if "IDN" in self.comm_cmd:

@@ -31,7 +31,7 @@ except ModuleNotFoundError:
 from pandas import DataFrame
 from pathlib import Path
 
-def save_img(img, filename, ext='.png', metadata=None, meta_filename=None, meta_ext='.json'):
+def save_img(img, filename, ext='.png', metadata=None, meta_filename=None, meta_ext='.json', compression=False):
     """Saves image
     img: np.array
         Image array to be saved
@@ -45,8 +45,13 @@ def save_img(img, filename, ext='.png', metadata=None, meta_filename=None, meta_
     lock = filename.replace(ext, '.lock')
     open(lock, 'a').close()
 
+    if compression:
+        png_compression = 9
+    else:
+        png_compression = 0
+
     # Save image
-    cv2.imwrite(filename, img, [cv2.IMWRITE_PNG_COMPRESSION, 0])
+    cv2.imwrite(filename, img, [cv2.IMWRITE_PNG_COMPRESSION, png_compression])
     print(f"Saved {filename}")
 
     # Save metadata
