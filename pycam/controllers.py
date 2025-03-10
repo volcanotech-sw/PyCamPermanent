@@ -905,7 +905,8 @@ class Spectrometer(SpecSpecs):
                 t = self.spec.intensities()
                 coadded_spectrum += t
         except Exception as e:
-            append_to_log_file(FileLocator.ERROR_LOG_PI, "{}".format(e))
+            time_str = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.gmtime())
+            append_to_log_file(FileLocator.ERROR_LOG_PI, "[{}]: {}".format(time_str, e))
 
             # something probably went wrong with the spectrometer, so try reconnecting
             old_spec = (

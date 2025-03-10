@@ -418,7 +418,7 @@ class StorageMount:
                 print('Found SSD device path at {}'.format(self.dev_path))
 
         if sda_path is None:
-            print('Could not find SSD device in /dev/sda')
+            print('Could not find SSD device in /dev/sd*')
 
     def mount_dev(self):
         """Mount device located at self.dev_path to self.mount_path destination"""
@@ -432,6 +432,13 @@ class StorageMount:
 
         if not os.path.exists(self.mount_path):
             subprocess.call(['sudo', 'mkdir', self.mount_path])
+
+        # Make sure something isn't already mounted on the mount path. If something is and it's not our dev, unmount it
+        mnt_output = subprocess.check_output('mount')
+        mnt_stat = mnt_output.find(self.mount_path.rstrip('/').encode())
+        if mnt_stat > -1:
+            # Something's mounted where we are about to try and mount, let's unmount it
+            subprocess.call(['sudo', 'umount', '-l', self.mount_path])
 
         # For better compatibility, Should probably use fdisk -l /dev/sda to find all devices
         # then search this string to determine what value X takes in /dev/sdaX. Then use this

@@ -14,9 +14,8 @@ import os
 import subprocess
 
 from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator, ConfigInfo
-from pycam.networking.sockets import SocketClient, ExternalSendConnection, ExternalRecvConnection
-from pycam.networking.ssh import open_ssh, close_ssh, ssh_cmd
-from pycam.io_py import read_script_crontab, write_script_crontab
+from pycam.networking.sockets import SocketClient, ExternalSendConnection, ExternalRecvConnection, read_network_file
+from pycam.io_py import read_script_crontab
 from pycam.utils import read_file, StorageMount, append_to_log_file
 
 
@@ -34,7 +33,7 @@ def check_acq_mode():
                 sys.exit()
 
 
-def check_data(sleep=150, storage_mount=StorageMount(), date_fmt="%Y-%m-%d"):
+def check_data(sleep=90, storage_mount=StorageMount(), date_fmt="%Y-%m-%d"):
     """Check if data exists"""
     time.sleep(10)
 
@@ -58,7 +57,11 @@ def check_data(sleep=150, storage_mount=StorageMount(), date_fmt="%Y-%m-%d"):
     # Get current list of images in
     date_1 = datetime.datetime.now().strftime(date_fmt)
     data_path = os.path.join(storage_mount.data_path, date_1)
-    all_dat_old = os.listdir(data_path)
+    try:
+        all_dat_old = os.listdir(data_path)
+    except Exception as e:
+        print(e)
+        all_dat_old = []
 
     # Sleep for 1.5 minutes to allow script to start running properly
     time.sleep(sleep)
@@ -74,7 +77,11 @@ def check_data(sleep=150, storage_mount=StorageMount(), date_fmt="%Y-%m-%d"):
         time.sleep(sleep)
 
     # Check data
-    all_dat = os.listdir(data_path)
+    try:
+        all_dat = os.listdir(data_path)
+    except Exception as e:
+        print(e)
+        all_dat = []
     all_dat_new = [x for x in all_dat if x not in all_dat_old]
 
     # Check all 3 data types to make sure we're acquiring everything
@@ -90,8 +97,10 @@ def check_data(sleep=150, storage_mount=StorageMount(), date_fmt="%Y-%m-%d"):
 
     # If we have all data types, there are no issues so close script
     if data_bools == [True] * 3:
+        print("All 3 data types found")
         return True
     else:
+        print("Not all 3 data types found!!!")
         return False
 
 # -----------------------------------------------------------
@@ -170,8 +179,15 @@ check_acq_mode()
 
 # If there are not all data types, we need to connect to the system and correct it
 # Socket client
-sock = SocketClient(host_ip=cfg[ConfigInfo.host_ip], port=int(cfg[ConfigInfo.port_ext]))
+host_ip, port = read_network_file(FileLocator.NET_EXT_FILE_WINDOWS)
+if host_ip is None or "0.0.0.0":
+    host_ip = cfg[ConfigInfo.host_ip]
+if port is None:
+    port = int(cfg[ConfigInfo.port_ext])
+sock = SocketClient(host_ip=host_ip, port=port)
 try:
+    print("Attempting network stop/start of automatic acquisition")
+
     sock.close_socket()
     sock.connect_socket_timeout(5)
 
@@ -179,11 +195,11 @@ try:
     recv_comms = ExternalRecvConnection(sock=sock, acc_conn=False)
     recv_comms.thread_func()
 
-    # # Setup send comms connection object
+    # Setup send comms connection object
     send_comms = ExternalSendConnection(sock=sock, acc_conn=False)
     send_comms.thread_func()
 
-    # Send exit
+    # Stop automatic acquisition
     send_comms.q.put({'SPC': 1, 'SPS': 1})
     resp = recv_comms.q.get(block=True)
 
@@ -200,10 +216,15 @@ try:
         sys.exit()
 
     # Stop pycam
-    send_comms.q.put({'SPC': 1, 'SPS': 1})
-    resp = recv_comms.q.get(block=True)
+    print("Exciting pycam")
     send_comms.q.put({'EXT': 1})
 
+    time.sleep(30)
+
+    # Restart pycam as a last ditch effort
+    print(f"Restarting pycam via {start_script}")
+    subprocess.Popen(f"python3 -u {start_script}", shell=True, executable="/bin/bash")
+    time.sleep(1)
 
 except ConnectionError:
     append_to_log_file(
