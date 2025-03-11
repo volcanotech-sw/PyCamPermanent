@@ -426,17 +426,22 @@ class InstrumentConfiguration:
         # Preparation of lists for writing crontab file
         times = [self.start_capt_time, self.stop_capt_time, self.start_dark_time, temp_log_str, disk_space_str]
         cmds = ['python3 {}'.format(self.start_script), 'python3 {}'.format(self.stop_script),
-                'python3 {}'.format(self.dark_script), self.temp_script, 'python3 {}'.format(self.disk_space_script)]
+                'python3 {}'.format(self.dark_script), 'bash {}'.format(self.temp_script),
+                'python3 {}'.format(self.disk_space_script)]
 
         # Uncomment if we want to run dropbox uploader from crontab
-        dbx_str = self.minute_cron_fmt(60)          # Setup dropbox uploader to run every hour
-        times.append(dbx_str)
-        cmds.append('python3 {}'.format(self.dbx_script))
+        # dbx_str = self.minute_cron_fmt(60)          # Setup dropbox uploader to run every hour
+        # times.append(dbx_str)
+        # cmds.append('python3 {}'.format(self.dbx_script))
 
         # Uncomment if we want to run check_run.py from crontab
         check_run_str = self.minute_cron_fmt(30)          # Setup check_run.py to run every hour
         times.append(check_run_str)
         cmds.append('python3 {}'.format(self.check_run_script))
+
+        # Add on cron logging
+        cron_log = f" >> {FileLocator.CRON_LOG_PI} 2>&1"
+        cmds = [cmd + cron_log if 'python' in cmd else cmd for cmd in cmds]
 
         # Write crontab file
         write_script_crontab(FileLocator.SCRIPT_SCHEDULE, cmds, times)
