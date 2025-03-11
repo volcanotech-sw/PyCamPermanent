@@ -6,7 +6,6 @@ from pycam.doas.cfg import doas_worker
 if __name__ == "__main__":
     args = PyplisWorker.get_args()
     pyplis_worker = PyplisWorker(args.config_path)
-    pyplis_worker.load_config(file_path=args.config_path, conf_name=args.name)
     pyplis_worker.load_pcs_from_config()
     pyplis_worker.apply_config()
     pyplis_worker.plot_iter = False

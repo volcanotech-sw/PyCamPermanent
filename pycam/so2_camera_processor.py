@@ -2794,7 +2794,8 @@ class PyplisWorker:
                 self.add_doas_cal_data(cal_dict, recal=True)
 
             # Update doas figure, but no need to change the correlation image as we haven't changed that
-            self.fig_doas_fov.update_plot(update_img=False, reopen=False)
+            if not self.headless:
+                self.fig_doas_fov.update_plot(update_img=False, reopen=False)
 
     def add_doas_cal_data(self, cal_dict, recal=True):
         """
@@ -3895,8 +3896,9 @@ class PyplisWorker:
 
             # Calculate emission rate - don't update plot, and then we will do that at the end, for speed
             results = self.calculate_emission_rate(img=img_cal, flow=flow, nadeau_speed=nadeau_plumespeed, plot=False)
-
-        self.fig_series.update_plot()
+        
+        if not self.headless:
+            self.fig_series.update_plot()
 
     def process_sequence(self):
         """Start _process_sequence in a thread, so that this can return after starting and the GUI doesn't lock up"""
