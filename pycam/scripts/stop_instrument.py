@@ -25,15 +25,7 @@ def close_pycam(ip, port):
     sock_cli.connect_socket_timeout(timeout=5)
 
     # Test connection
-    print("Testing connection")
-    cmd = sock_cli.encode_comms({"LOG": 0})
-    sock_cli.send_comms(sock_cli.sock, cmd)
-    reply = sock_cli.recv_comms(sock_cli.sock)
-    reply = sock_cli.decode_comms(reply) if reply is not None else {}
-    if not len(reply) == 3 or "LOG" not in reply or not reply["LOG"] == 0:
-        raise RuntimeError("Unrecognised socket reply in response to LOG command")
-    else:
-        print("Got pycam handshake reply")
+    sock_cli.test_connection()
 
     time.sleep(5)
     # Close connection

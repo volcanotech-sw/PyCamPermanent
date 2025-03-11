@@ -674,6 +674,27 @@ class SocketClient(SocketMeths):
         self.send_comms(self.sock, handshake_msg)
         # print('Sent handshake {} to {}'.format(handshake_msg, self.server_addr))
 
+    def test_connection(self):
+        """Send a message to the server and look for a specific response"""
+        print("Testing connection")
+        cmd = self.encode_comms({"LOG": 0})
+        self.send_comms(self.sock, cmd)
+        tries = 6  # five new image messages then a log response
+        while tries > 0:
+            # this should timeout after 5 seconds
+            reply = self.recv_comms(self.sock)
+            reply = self.decode_comms(reply)
+            if not len(reply) == 3 or "LOG" not in reply or not reply["LOG"] == 0:
+                print(f"Unrecognised socket reply: {reply}")
+            else:
+                print("Got pycam handshake reply")
+                break
+            tries -= 1
+        if tries <= 0:
+            raise ConnectionError(
+                "Unrecognised socket reply in response to LOG command"
+            )
+
     def close_socket(self):
         """Closes socket by disconnecting from host"""
         if self.sock:

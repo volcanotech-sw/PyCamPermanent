@@ -138,6 +138,7 @@ start_script_time = start_script_time.replace(hour=scripts[start_script][0],
 stop_script_time = datetime.datetime.now()
 stop_script_time = stop_script_time.replace(hour=scripts[stop_script][0],
                                             minute=scripts[stop_script][1], second=0, microsecond=0)
+print(f"Start at {start_script_time} end at {stop_script_time}")
 
 # Wait until pycam script has been run
 if start_script_time < stop_script_time:
@@ -190,6 +191,7 @@ try:
 
     sock.close_socket()
     sock.connect_socket_timeout(5)
+    sock.test_connection()
 
     # Setup recv comms connection object
     recv_comms = ExternalRecvConnection(sock=sock, acc_conn=False)

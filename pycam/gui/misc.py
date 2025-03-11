@@ -107,17 +107,7 @@ class Indicator:
             # self.sock.connect_socket_try_all(timeout=5)
             self.sock.close_socket()    # Close socket first, might avoid issues
             self.sock.connect_socket_timeout(timeout=5)
-
-            cmd = self.sock.encode_comms({'LOG': 0})
-            self.sock.send_comms(self.sock.sock, cmd)
-            reply = self.sock.recv_comms(self.sock.sock)
-            reply = self.sock.decode_comms(reply)
-            if not len(reply) == 3 or "LOG" not in reply or not reply["LOG"] == 0:
-                print('Unrecognised socket reply:')
-                print(reply)
-                raise ConnectionError
-            else:
-                print('Got pycam handshake reply')
+            self.sock.test_connection()
         except (ConnectionError, socket.error) as e:
             print(e)
             self.indicator_off()

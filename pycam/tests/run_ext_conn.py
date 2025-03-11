@@ -40,6 +40,7 @@ print(f"Connected? {sock_ext.connect_stat}")
 if not sock_ext.connect_stat:
     sock_ext.close_socket()
     exit()
+sock_ext.test_connection()
 
 recv_comms = ExternalRecvConnection(sock=sock_ext, acc_conn=False, return_errors=True)
 recv_comms.thread_func()
