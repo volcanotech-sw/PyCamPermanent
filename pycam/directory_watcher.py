@@ -433,6 +433,9 @@ try:
                 if not path:  # probably an exit request
                     continue
 
+                if '.log' in path:
+                    continue
+
                 # Ignore lock files as otherwise this watcher recreates the file - not good
                 if '.lock' in path:
                     continue
