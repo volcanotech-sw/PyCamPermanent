@@ -23,6 +23,8 @@ if __name__ == "__main__":
     else:
         pyplis_worker.load_BG_img(FileLocator.ONES_MASK, band='A', ones=True)
         pyplis_worker.load_BG_img(FileLocator.ONES_MASK, band='B', ones=True)
+    # Load image registration from class LoadFrame(LoadSaveProcessingSettings):
+    pyplis_worker.img_reg.load_registration(pyplis_worker.img_registration, rerun=False)
     pyplis_worker.update_opt_flow_settings(roi_abs = pyplis_worker.config['roi_abs'])
     pyplis_worker.img_list = pyplis_worker.get_img_list()
     pyplis_worker.set_processing_directory(img_dir=args.output_directory, make_dir=True)
