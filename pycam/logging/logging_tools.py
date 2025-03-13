@@ -20,7 +20,7 @@ class LoggerManager:
         :param str name: Name of the logger to create
         :param str colour: Colour of the text used for logging messages, defaults to white
         :param int level: Logging level to set for the StreamHandler, defaults to logging.DEBUG
-        :return logger: Reference to logger
+        :return logging.Logger: Newly created logger
         """
 
         if name not in LoggerManager._loggers:
@@ -156,13 +156,13 @@ class LoggerManager:
             if isinstance(handler, logging.StreamHandler):
                 logger.removeHandler(handler)
 
-# Set up the root logger
+# Get the root logger
 root_logger = logging.getLogger()
 
 # If the root logger doesn't have a file handler then add one
 if not any(isinstance(handler, logging.FileHandler) for handler in root_logger.handlers):
     # Start by defining the root log path
-    root_log_path = Path.home() / "pycam_logs/root.log"
+    root_log_path = Path.home() / "pycam_logs" / "root.log"
 
     # Add the file handler
     LoggerManager.add_file_handler(root_logger, root_log_path, level = logging.INFO)

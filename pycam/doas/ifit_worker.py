@@ -709,7 +709,7 @@ class IFitWorker(SpecWorker):
 
         # Need to generate output dir at the start of processing to create log file
         self.set_output_dir(self.spec_dir)
-        self.log_path = os.path.join(self.doas_outdir, "SpecWorker.log")
+        self.log_path = Path(self.doas_outdir).joinpath("SpecWorker.log").as_posix()
 
         LoggerManager.add_file_handler(self.SpecLogger, self.log_path)
 
@@ -806,8 +806,7 @@ class IFitWorker(SpecWorker):
 
                 time_1 = time.time()
                 self.process_doas()
-                process_duration = time.time() - time_1
-                self.SpecLogger.info(f'Time taken to process {pathname}: {process_duration:.5f}')
+                self.SpecLogger.info(f'Time taken to process {pathname}: {time.time() - time_1:.5f}')
 
                 # Gather all relevant information and spectra and pass it to PyplisWorker
                 processed_dict = {'processed': True,             # Flag whether this is a complete, processed dictionary
