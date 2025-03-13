@@ -559,9 +559,6 @@ class SpecWorker:
         # Start the processing thread
         self.start_processing_thread()
 
-    def reset_self(self):
-        pass
-
 class SpectraError(Exception):
     """
     Error raised if correct spectra aren't present for processing
