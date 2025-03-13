@@ -59,8 +59,8 @@ path_params = [
 
 # Remove StreamHandlers from pyplis loggers so messages from pyplis just get passed to the
 # root FileHandler
-LoggerManager.remove_stream_handlers(pyplis.print_log)
-LoggerManager.remove_stream_handlers(pyplis.logger)
+LoggerManager.replace_stream_handlers(pyplis.print_log)
+LoggerManager.replace_stream_handlers(pyplis.logger)
 
 class PyplisWorker:
     """
