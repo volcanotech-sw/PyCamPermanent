@@ -27,13 +27,8 @@ class LoggerManager:
             logger = logging.getLogger(name)
             logger.setLevel(logging.DEBUG)
             if not logger.handlers:  # Only configure if no handlers exist
-                # Configure the logger (e.g., set level, add handlers)
-                format_str = f'%(log_color)s%(levelname)-8s%(reset)s%(asctime)s - %({colour})s%(name)s - %(message)s'
-                formatter = colorlog.ColoredFormatter(format_str, '%Y-%m-%d %H:%M:%S')
-                handler = colorlog.StreamHandler() # Output to console
-                handler.setFormatter(formatter)
-                handler.setLevel(level)  # Set the desired logging level
-                logger.addHandler(handler)
+                stream_handler = LoggerManager.create_stream_handler(colour, level)
+                logger.addHandler(stream_handler)
             LoggerManager._loggers[name] = logger
         return LoggerManager._loggers[name]
     
@@ -155,6 +150,31 @@ class LoggerManager:
         for handler in logger.handlers:
             if isinstance(handler, logging.StreamHandler):
                 logger.removeHandler(handler)
+
+    @staticmethod
+    def replace_stream_handlers(logger, colour = "white", level = logging.ERROR):
+        """ Replaces stream handlers to be more consistent with PyCam.
+
+        :param logging.Logger logger: Logger object to modify
+        :param str colour: Colour for output of new stream handler
+        :param int level: Logging level for the stream handler, defaults to logging.WARNING
+        """
+        # Start by removing current handlers
+        LoggerManager.remove_stream_handlers(logger)
+
+        # Now create a new handler
+        stream_handler = LoggerManager.create_stream_handler(colour, level)
+        logger.addHandler(stream_handler)
+
+    @staticmethod
+    def create_stream_handler(colour, level):
+        format_str = f'%(log_color)s%(levelname)-8s%(reset)s%(asctime)s - %({colour})s%(name)s - %(message)s'
+        formatter = colorlog.ColoredFormatter(format_str, '%Y-%m-%d %H:%M:%S')
+        handler = colorlog.StreamHandler() # Output to console
+        handler.setFormatter(formatter)
+        handler.setLevel(level)  # Set the desired logging level
+
+        return handler
 
 # Get the root logger
 root_logger = logging.getLogger()
