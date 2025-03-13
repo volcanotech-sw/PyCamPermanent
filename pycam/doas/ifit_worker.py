@@ -711,14 +711,11 @@ class IFitWorker(SpecWorker):
         self.log_path = os.path.join(self.doas_outdir, "SpecWorker.log")
 
         LoggerManager.add_file_handler(self.SpecLogger, self.log_path)
-        LoggerManager.add_file_handler(self.SpecDirWatchLogger, self.log_path)
 
         # Begin processing
         self._process_loop(continuous_save=False)
 
-        LoggerManager.remove_file_handler(self.SpecLogger, self.log_path)
-        LoggerManager.remove_file_handler(self.SpecDirWatchLogger, self.log_path)
-        LoggerManager.delete_file_handler(self.log_path)
+        LoggerManager.remove_file_handler(self.SpecLogger, self.log_path, delete=True)
 
     def _process_loop(self, continuous_save=True):
         """

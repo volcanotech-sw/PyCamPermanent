@@ -64,32 +64,21 @@ class LoggerManager:
         logger.addHandler(LoggerManager._file_handlers[file_handler_key])
 
     @staticmethod
-    def remove_file_handler(logger, log_path):
+    def remove_file_handler(logger, log_path, delete=False):
         """ Remove Filehandler from an existing logger. Removed based on the path to the log file.
 
         :param logger logger: Existing logger to remove FileHandler from
-        :param (str|Path) log_path: Location of the log file
+        :param (str|Path) log_path: Location of the log file, used as a key to identify a handler
+        :param bool delete: Close and delete the file handler after removal, Defaults to False
         """
-        log_path = Path(log_path).resolve()
-        for handler in logger.handlers:
-            if isinstance(handler, logging.FileHandler):
-                handler_path = Path(handler.baseFilename).resolve()
-                if handler_path == log_path:
-                    logger.removeHandler(handler)
 
-    @staticmethod
-    def delete_file_handler(log_path):
-        """ Close and delete a saved FileHandler
+        log_path = Path(log_path).as_posix()
+        if log_path in LoggerManager._file_handlers:
+            logger.removeHandler(LoggerManager._file_handlers[log_path])
 
-        :param (str|Path) log_path: _description_
-        """
-        log_path = Path(log_path)
-        try:
-            handler = LoggerManager._file_handlers[log_path]
-            handler.close()
-            del LoggerManager._file_handlers[log_path]
-        except KeyError:
-            pass
+            if delete:
+                LoggerManager._file_handlers[log_path].close()
+                del LoggerManager._file_handlers[log_path]
 
     @staticmethod
     def remove_stream_handlers(logger):
