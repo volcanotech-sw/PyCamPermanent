@@ -1,7 +1,7 @@
 import logging
 import colorlog
 from pathlib import Path
-from logging.handlers import TimedRotatingFileHandler
+from logging.handlers import TimedRotatingFileHandler, MemoryHandler
 
 class LoggerManager:
     """ Class for managing creation of loggers and creation and deletion of handlers 
@@ -10,6 +10,7 @@ class LoggerManager:
 
     _loggers = {}  # Store created loggers to prevent duplicates
     _file_handlers = {}  # Store file handlers to avoid duplicates
+    _mem_handlers = {}
     _file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', '%Y-%m-%d %H:%M:%S')
 
     @staticmethod
@@ -97,6 +98,53 @@ class LoggerManager:
             if delete:
                 LoggerManager._file_handlers[log_path].close()
                 del LoggerManager._file_handlers[log_path]
+    
+    @staticmethod
+    def add_mem_handler(logger, log_key, level=logging.DEBUG):
+        """ Add a memory handler to an existing logger.
+        Will create a new hander if one with the same log_key doesn't already exist, otherwise will 
+        use the existing handler.
+
+        :param logging.Logger logger: The logger to add the memory handler to
+        :param str log_key: Key identifying the memory handler
+        :param int level: Logging level for the memory handler, defaults to logging.DEBUG
+        """
+        if log_key not in LoggerManager._mem_handlers:
+            mem_handler = MemoryHandler(capacity=1e4)
+            mem_handler.setFormatter(LoggerManager._file_formatter)
+            mem_handler.setLevel(level)
+
+            LoggerManager._mem_handlers[log_key] = mem_handler
+        
+        logger.addHandler(LoggerManager._mem_handlers[log_key])
+
+    @staticmethod
+    def remove_mem_handler(logger, log_key, delete=False):
+        """ Remove a memory handler from an existing logger.
+
+        :param logging.Logger logger: The logger to remove the memory handler from
+        :param str log_key: Key identifying the specific memory handler
+        :param bool delete: Close and delete the memory handler after removal? defaults to False
+        """
+        if log_key in LoggerManager._mem_handlers:
+            logger.removeHandler(LoggerManager._mem_handlers[log_key])
+
+            if delete:
+                LoggerManager._mem_handlers[log_key].close()
+                del LoggerManager._mem_handlers[log_key]
+
+    @staticmethod
+    def set_mem_handler_target(log_key, target):
+        """ Set a target handler for a memory handler to flush to
+
+        :param str log_key: Key to identify the specific memory handler to add a target to
+        :param logger.Handler target: Handler to set as target for the memory handler
+        :return logger.handlers.memoryHandler: Memory handler with added set target
+        """
+        if log_key in LoggerManager._mem_handlers:
+            LoggerManager._mem_handlers[log_key].setTarget(target)
+
+            return LoggerManager._mem_handlers[log_key]
 
     @staticmethod
     def remove_stream_handlers(logger):
