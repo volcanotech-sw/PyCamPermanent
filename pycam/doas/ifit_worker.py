@@ -14,6 +14,7 @@ import datetime
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from pathlib import Path
 from itertools import compress
 from tkinter import filedialog
 from scipy.interpolate import griddata
@@ -766,12 +767,22 @@ class IFitWorker(SpecWorker):
                 spec_time = self.get_spec_time(filename)
 
                 if not self.first_spec and spec_time.day != self.spec_time.day:
-                    self.SpecLogger.info("new day found")
+                    self.SpecLogger.info(f"Day {self.spec_time.strftime('%Y-%m-%d')} finished")
+                    mem_handler.flush()
+
                     self.reset_self()
-                    # Set output dir
-                    self.set_output_dir(working_dir)
 
                 if self.first_spec:
+                    if self.watching:
+                        self.SpecLogger.info(f"Day {spec_time.strftime('%Y-%m-%d')} started")
+                    
+                        # Set output dir
+                        self.set_output_dir(working_dir)
+                        self.log_path = Path(self.doas_outdir).joinpath("SpecWorker.log").as_posix()
+
+                        file_handler = LoggerManager.create_file_handler(self.log_path)
+                        mem_handler = LoggerManager.set_mem_handler_target("SpecWorker", file_handler)
+                    
                     # Save processing params
                     self.save_doas_params()
                     header = True
@@ -846,6 +857,9 @@ class IFitWorker(SpecWorker):
                 self.fig_spec.update_clear()
             else:
                 self.SpecLogger.debug(f'Spectrum type not recognised: {pathname}')
+            
+            if self.watching:
+                mem_handler.flush()
 
     def stop_sequence_processing(self):
         """Stops processing a sequence"""
@@ -864,9 +878,8 @@ class IFitWorker(SpecWorker):
                 # Stop processing thread when we stop watching the directory
                 self.q_spec.put(self.STOP_FLAG)
 
-                LoggerManager.remove_file_handler(self.SpecLogger, self.log_path)
-                LoggerManager.remove_file_handler(self.SpecDirWatchLogger, self.log_path)
-                LoggerManager.delete_file_handler(self.log_path)
+                LoggerManager.remove_mem_handler(self.SpecLogger, "SpecWorker")
+                LoggerManager.remove_mem_handler(self.SpecDirWatchLogger, "SpecWorker", delete=True)
             else:
                 self.SpecDirWatchLogger.warning('No directory watcher to stop')
         else:

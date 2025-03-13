@@ -544,11 +544,8 @@ class SpecWorker:
             )
             return
         
-        self.set_output_dir(directory)
-        self.log_path = os.path.join(self.doas_outdir, "SpecWorker.log")
-
-        LoggerManager.add_file_handler(self.SpecLogger, self.log_path)
-        LoggerManager.add_file_handler(self.SpecDirWatchLogger, self.log_path)
+        LoggerManager.add_mem_handler(self.SpecLogger, "SpecWorker")
+        LoggerManager.add_mem_handler(self.SpecDirWatchLogger, "SpecWorker")
 
         self.watcher = create_dir_watcher(directory, recursive, self.directory_watch_handler)
         self.watcher.start()
