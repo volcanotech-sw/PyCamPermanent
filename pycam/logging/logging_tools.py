@@ -38,10 +38,11 @@ class LoggerManager:
     
     @staticmethod
     def add_file_handler(logger, log_path, level=logging.DEBUG):
-        """ Add FileHandler to an existing logger. If the log path is new then create a new handler,
-        if not then use the existing one stored in the handler dict.
+        """ Add FileHandler to an existing logger.
+        If the log path is new then create a new handler, otherwise use the existing handler stored 
+        in the _file_handlers dict.
 
-        :param logger logger: Existing logger to add FileHandler to
+        :param logging.Logger logger: Existing logger to add FileHandler to
         :param (str|Path) log_path: Location to write the log file to
         :param int level: Logging level to set for the FileHandler, defaults to logging.DEBUG
         """
@@ -51,17 +52,34 @@ class LoggerManager:
         except Exception as e:
             print(f"Error creating log file: {e}")
 
-        file_handler_key = str(log_path)  # Use log file path as key
+        file_handler_key = log_path.as_posix()  # Use log file path as key
         if file_handler_key not in LoggerManager._file_handlers:
-            if logger.name == 'root':
-                file_handler = TimedRotatingFileHandler(log_path, when = 'D', interval=1, backupCount=5)
-            else:
-                file_handler = logging.FileHandler(log_path)
-            file_handler.setFormatter(LoggerManager._file_formatter)
-            file_handler.setLevel(level)
+            root_logger = logger.name == "root"
+            file_handler = LoggerManager.create_file_handler(log_path, root_logger=root_logger, level=level)
             LoggerManager._file_handlers[file_handler_key] = file_handler
         
         logger.addHandler(LoggerManager._file_handlers[file_handler_key])
+
+    @staticmethod
+    def create_file_handler(log_path, root_logger = False, level=logging.DEBUG):
+        """ Create a new file handler.
+        The type of file handler will depend on the root_logger parameter. If it is True a 
+        TimedRotatingFileHandler will be created, otherwise a FileHandler will be created.
+
+        :param (str|Path) log_path: Path specifying location of the log file
+        :param bool root_logger: Is this for the root logger? defaults to False
+        :param int level: Logging level for the file handler, defaults to logging.DEBUG
+        :return (logging.handlers.TimedRotatingFileHandler, logging.handlers.FileHandler): Newly 
+        created file handler
+        """
+        if root_logger:
+            file_handler = TimedRotatingFileHandler(log_path, when = 'D', interval=1, backupCount=5)
+        else:
+            file_handler = logging.FileHandler(log_path)
+        file_handler.setFormatter(LoggerManager._file_formatter)
+        file_handler.setLevel(level)
+
+        return file_handler
 
     @staticmethod
     def remove_file_handler(logger, log_path, delete=False):
