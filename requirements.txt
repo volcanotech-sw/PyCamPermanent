@@ -22,3 +22,4 @@ pyinotify ; sys_platform == 'linux'
 pyplis @ git+https://github.com/volcanotech-sw/pyplis.git@sources_fix_312
 pydoas @ git+https://github.com/volcanotech-sw/pydoas.git@typing_updates
 iFit @ git+https://github.com/volcanotech-sw/iFit.git@make-pip-install
+colorlog
