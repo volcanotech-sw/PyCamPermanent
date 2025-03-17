@@ -244,6 +244,10 @@ elif dark_capture:
 new_conn_pause_time = 0  # The time we receive a LOG request
 new_conn_pause_delay = 10  # Pause notification for 10 seconds
 
+# Timer to avoid constantly checking disk usage
+disk_usage_check_time = 0
+disk_usage_check_delay = 5
+
 print("Entering main loop")
 
 while running:
@@ -252,6 +256,15 @@ while running:
 
         # TODO print some sort of status output that things are working OK?
         # check when the last save was? what the current shutter/integration time etc are?
+
+        # Check if there's free disk space
+        if time.time() - disk_usage_check_time > disk_usage_check_delay:
+            usage = shutil.disk_usage(FileLocator.IMG_SPEC_PATH)
+            if usage.used / usage.total > 0.8:
+                # Whoa there's not much free space, let's quit...
+                print("Less than 20% of free space available, quitting...")
+                signal.raise_signal(signal.SIGINT)
+            disk_usage_check_time = time.time()
 
         # -----------------------------------------------------------------
         # Save images

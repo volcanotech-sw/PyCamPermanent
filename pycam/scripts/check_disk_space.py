@@ -20,20 +20,21 @@ date_now = datetime.datetime.now()
 day = date_now.day
 
 if day in del_days:
-    file_list = os.listdir(img_path)
+    file_list = [os.path.join(dp, f) for dp, _, fn in os.walk(img_path) for f in fn]
     file_list.sort()
-    for filename in file_list:
-        if len(file_list) < 5000:
-            break
+
+    # delete until we only have 40,000 files left
+    # 40,000 files is about 12 day at 5 second intervals
+    while len(file_list) > 40000:
+        # Get the first image on the list which will be oldest due to ISO date format
+        file_path = file_list.pop(0)
+
         # Catch exception just in case the file disappears before it can be removed
         # (may get transferred then deleted by other program)
         try:
             # If it is a lock file we just ignore it
-            if '.lock' in filename:
+            if '.lock' in file_path:
                 continue
-
-            # Create full path
-            file_path = os.path.join(img_path, filename)
 
             # Check file isn't locked, if it is we just leave it
             _, ext = os.path.splitext(file_path)
@@ -43,7 +44,9 @@ if day in del_days:
 
             # Remove file
             os.remove(file_path)
-            print('Deleting file: {}'.format(filename))
+            print('Deleting file: {}'.format(os.path.basename(file_path)))
         except BaseException as e:
             with open(FileLocator.REMOVED_FILES_LOG_PI, 'a') as f:
                 f.write('{}\n'.format(e))
+else:
+    print("Skipping check disk space")

@@ -51,7 +51,10 @@ def save_img(img, filename, ext='.png', metadata=None, meta_filename=None, meta_
         png_compression = 0
 
     # Save image
-    cv2.imwrite(filename, img, [cv2.IMWRITE_PNG_COMPRESSION, png_compression])
+    success = cv2.imwrite(filename, img, [cv2.IMWRITE_PNG_COMPRESSION, png_compression])
+    if not success:
+        # failed to save!
+        raise IOError("Failed to save PNG!")
     print(f"Saved {filename}")
 
     # Save metadata
