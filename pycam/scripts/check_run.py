@@ -27,7 +27,7 @@ def check_acq_mode():
         info = f.readlines()
         for line in info:
             if 'automated' in line:
-                pass
+                print(f"{line.strip()} - data expected")
             elif 'manual' in line:
                 print('Instrument is not in automated capture mode, check_run.py is not required.')
                 sys.exit()
@@ -35,6 +35,7 @@ def check_acq_mode():
 
 def check_data(sleep=90, storage_mount=StorageMount(), date_fmt="%Y-%m-%d"):
     """Check if data exists"""
+    print("Checking if data is being acquired")
     time.sleep(10)
 
     # Check we can look for new data on the SSD - don't want to look in the pycam/Images folder as this will be being
@@ -119,9 +120,6 @@ for line in stdout_lines:
 if count > 1:
     print('check_run.py already running, so exiting...')
     sys.exit()
-# ------------------------------------------------------
-# Check acquisition mode
-check_acq_mode()
 
 # Setups storage mount to know where to look for data
 storage_mount = StorageMount()
@@ -140,43 +138,37 @@ stop_script_time = stop_script_time.replace(hour=scripts[stop_script][0],
                                             minute=scripts[stop_script][1], second=0, microsecond=0)
 print(f"Start at {start_script_time} end at {stop_script_time}")
 
-# Wait until pycam script has been run
+# Check if the master script should be running
 if start_script_time < stop_script_time:
-    while datetime.datetime.now() < start_script_time or datetime.datetime.now() > stop_script_time:
-        print('Start time: {}'.format(start_script_time))
-        print('End time: {}'.format(stop_script_time))
-        time.sleep(60)
-        # Refresh times in case we move into a new day
-        start_script_time = datetime.datetime.now()
-        start_script_time = start_script_time.replace(hour=scripts[start_script][0],
-                                                      minute=scripts[start_script][1], second=0, microsecond=0)
-        stop_script_time = datetime.datetime.now()
-        stop_script_time = stop_script_time.replace(hour=scripts[stop_script][0],
-                                                    minute=scripts[stop_script][1], second=0, microsecond=0)
-
+    if datetime.datetime.now() < start_script_time or datetime.datetime.now() > stop_script_time:
+        print("Master script not expected to be running")
+        sys.exit()
 elif start_script_time > stop_script_time:
-    while datetime.datetime.now() < start_script_time and datetime.datetime.now() > stop_script_time:
-        print('Start time: {}'.format(start_script_time))
-        print('End time: {}'.format(stop_script_time))
-        time.sleep(60)
-        # Refresh times in case we move into a new day
-        start_script_time = datetime.datetime.now()
-        start_script_time = start_script_time.replace(hour=scripts[start_script][0],
-                                                      minute=scripts[start_script][1], second=0, microsecond=0)
-        stop_script_time = datetime.datetime.now()
-        stop_script_time = stop_script_time.replace(hour=scripts[stop_script][0],
-                                                    minute=scripts[stop_script][1], second=0, microsecond=0)
+    if datetime.datetime.now() < start_script_time and datetime.datetime.now() > stop_script_time:
+        print("Master script not expected to be running")
 else:
     append_to_log_file(FileLocator.ERROR_LOG_PI, 'ERROR! check_run.py: Pycam start and stop times are the same, this is likely to lead to unexpected behaviour.')
     sys.exit()
+
+# Check acquisition mode, it should only be manual if it was set by an operator
+check_acq_mode()
 
 # Check data, if True is returned we have all data so no issues
 if check_data(storage_mount=storage_mount):
     print('check_run.py: Got all data types, instrument is running correctly')
     sys.exit()
 
-# Check mode hasn't changed to manual
-check_acq_mode()
+# Make sure the master script is running
+# Redirect output to NULL so that it doesn't clutter up cron.log
+print(f"Making sure pycam is running using {start_script}")
+subprocess.Popen(
+    f"python3 -u {start_script}",
+    shell=True,
+    executable="/bin/bash",
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+)
+time.sleep(15)
 
 # If there are not all data types, we need to connect to the system and correct it
 # Socket client
@@ -224,8 +216,15 @@ try:
     time.sleep(30)
 
     # Restart pycam as a last ditch effort
+    # Redirect output to NULL so that it doesn't clutter up cron.log
     print(f"Restarting pycam via {start_script}")
-    subprocess.Popen(f"python3 -u {start_script}", shell=True, executable="/bin/bash")
+    subprocess.Popen(
+        f"python3 -u {start_script}",
+        shell=True,
+        executable="/bin/bash",
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     time.sleep(1)
 
 except ConnectionError:
@@ -236,5 +235,5 @@ except ConnectionError:
         ),
     )
 
-except BaseException as e:
+except Exception as e:
     append_to_log_file(FileLocator.ERROR_LOG_PI, "check_run.py: Error {}.".format(e))

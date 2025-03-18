@@ -1022,7 +1022,7 @@ class CamComms(CommsCommandHandler):
         try:
             if value:
                 super().EXT(value, cmd_source)
-                self.camera.capture_q.put({'exit_cont': True})
+                self.camera.capture_q.put({'exit_cont': False})
                 self.camera.capture_q.put({'exit': True})
                 comm = {'EXT': False}  # confirm exiting, but don't trigger another
             else:
@@ -1272,7 +1272,7 @@ class SpecComms(CommsCommandHandler):
         try:
             if value:
                 super().EXT(value, cmd_source)
-                self.spectrometer.capture_q.put({'exit_cont': True})
+                self.spectrometer.capture_q.put({'exit_cont': False})
                 self.spectrometer.capture_q.put({'exit': True})
                 comm = {'EXT': False}  # confirm exiting, but don't trigger another
             else:

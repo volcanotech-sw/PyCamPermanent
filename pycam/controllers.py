@@ -574,10 +574,12 @@ class Camera(CameraSpecs):
 
                 # Exit if requested
                 if "exit_cont" in mess:
+                    print(f"{self.band} camera exiting capturing sequence")
+                    self.continuous_capture = False
                     if mess["exit_cont"]:
-                        print(f"{self.band} camera exiting capturing sequence")
-                        self.continuous_capture = False
-                        # Update file saying we are no longer in automated capture (for check_run.py)
+                        # If true update file saying we are no longer in automated capture
+                        # By default we don't do this so that check_run.py can know to restart the master script
+                        # (i.e., we only want this to be changed intentionally by the operator from the GUI)
                         set_capture_status(
                             FileLocator.RUN_STATUS_PI, self.band, "manual"
                         )
@@ -1140,10 +1142,12 @@ class Spectrometer(SpecSpecs):
 
                 # Exit if requested
                 if "exit_cont" in mess:
+                    print("Spectrometer exiting capturing sequence")
+                    self.continuous_capture = False
                     if mess["exit_cont"]:
-                        print("Spectrometer exiting capturing sequence")
-                        self.continuous_capture = False
-                        # Update file saying we are no longer in automated capture (for check_run.py)
+                        # If true update file saying we are no longer in automated capture
+                        # By default we don't do this so that check_run.py can know to restart the master script
+                        # (i.e., we only want this to be changed intentionally by the operator from the GUI)
                         set_capture_status(FileLocator.RUN_STATUS_PI, "spec", "manual")
                         return
 
