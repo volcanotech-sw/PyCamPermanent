@@ -677,6 +677,9 @@ class Camera(CameraSpecs):
             # Put images in q
             self.img_q.put([img_filename, self.image, self.metadata, meta_filename])
 
+            # Delay a moment for saving
+            time.sleep(1)
+
         print(
             f"Dark {self.band} camera capture time: {time.time() - time_start:0.2f} s"
         )
@@ -1239,6 +1242,9 @@ class Spectrometer(SpecSpecs):
 
             # Put spectra in q
             self.spec_q.put([filename, self.spectrum])
+
+            # Delay for saving
+            time.sleep(1)
 
         print(f"Dark spectrometer capture time: {time.time() - time_start:0.2f} s")
         self.in_dark_capture = False

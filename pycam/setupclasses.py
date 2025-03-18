@@ -586,7 +586,7 @@ class SpecSpecs(SpecsBase):
 
     def __init__(self, filename=None):
         self.filename = filename  # Filename for loading specifications
-        self.band = None  # Needed for saving
+        self.band = 'spec'  # Needed for saving
         self.instrument_type = "spectrometer"
         self.default_filename = FileLocator.CONFIG_SPEC
 

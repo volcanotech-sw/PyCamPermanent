@@ -31,18 +31,18 @@ except ModuleNotFoundError:
 from pandas import DataFrame
 from pathlib import Path
 
-def save_img(img, filename, ext='.png', metadata=None, meta_filename=None, meta_ext='.json', compression=False):
+def save_img(img, filename, file_ext='.png', metadata=None, meta_filename=None, meta_ext='.json', compression=False):
     """Saves image
     img: np.array
         Image array to be saved
     filename: str
         File path for saving
-    ext: str
+    file_ext: str
         File extension for saving, including "."
     """
     Path(filename).parent.mkdir(parents=True, exist_ok=True)  # make sure the folder exists
     # Create lock file to secure file until saving is complete
-    lock = filename.replace(ext, '.lock')
+    lock = filename.replace(file_ext, '.lock')
     open(lock, 'a').close()
 
     if compression:

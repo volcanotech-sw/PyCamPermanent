@@ -16,7 +16,7 @@ import subprocess
 from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator, ConfigInfo
 from pycam.networking.sockets import SocketClient, ExternalSendConnection, ExternalRecvConnection, read_network_file
 from pycam.io_py import read_script_crontab
-from pycam.utils import read_file, StorageMount, append_to_log_file
+from pycam.utils import read_file, StorageMount, append_to_log_file, recursive_files_in_path
 
 
 def check_acq_mode():
@@ -59,7 +59,7 @@ def check_data(sleep=90, storage_mount=StorageMount(), date_fmt="%Y-%m-%d"):
     date_1 = datetime.datetime.now().strftime(date_fmt)
     data_path = os.path.join(storage_mount.data_path, date_1)
     try:
-        all_dat_old = os.listdir(data_path)
+        all_dat_old = recursive_files_in_path(data_path)
     except Exception as e:
         print(e)
         all_dat_old = []
@@ -74,12 +74,12 @@ def check_data(sleep=90, storage_mount=StorageMount(), date_fmt="%Y-%m-%d"):
     # need to check this again after
     if date_2 != date_1:
         data_path = os.path.join(storage_mount.data_path, date_2)
-        all_dat_old = os.listdir(data_path)
+        all_dat_old = recursive_files_in_path(data_path)
         time.sleep(sleep)
 
     # Check data
     try:
-        all_dat = os.listdir(data_path)
+        all_dat = recursive_files_in_path(data_path)
     except Exception as e:
         print(e)
         all_dat = []

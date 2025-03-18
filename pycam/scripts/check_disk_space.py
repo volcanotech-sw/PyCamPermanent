@@ -10,6 +10,7 @@ import datetime
 sys.path.append('/home/pi/')
 
 from pycam.setupclasses import FileLocator
+from pycam.utils import recursive_files_in_path
 
 # Path to image directory
 img_path = FileLocator.IMG_SPEC_PATH
@@ -19,7 +20,7 @@ date_now = datetime.datetime.now()
 day = date_now.day
 
 if day in del_days:
-    file_list = [os.path.join(dp, f) for dp, _, fn in os.walk(img_path) for f in fn]
+    file_list = recursive_files_in_path(img_path)
     file_list.sort()
 
     # delete until we only have 80,000 files left
@@ -44,7 +45,7 @@ if day in del_days:
             # Remove file
             os.remove(file_path)
             print('Deleting file: {}'.format(os.path.basename(file_path)))
-        except BaseException as e:
+        except Exception as e:
             with open(FileLocator.REMOVED_FILES_LOG_PI, 'a') as f:
                 f.write('{}\n'.format(e))
 else:

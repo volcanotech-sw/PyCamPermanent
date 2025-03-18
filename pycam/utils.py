@@ -9,6 +9,7 @@ import subprocess
 import datetime
 import threading
 import shutil
+import time
 
 def check_filename(filename, ext):
     """Checks filename to ensure it is as expected
@@ -356,6 +357,12 @@ def append_to_log_file(log_file: str, s: str):
     with open(log_file, "a", newline="\n") as f:
         f.write(s + "\n")
 
+
+def recursive_files_in_path(data_path):
+    """return a list of all files in a folder and sub-folders (with full path)"""
+    return [os.path.join(dp, f) for dp, _, fn in os.walk(data_path) for f in fn]
+
+
 class StorageMount:
     """
     Basic class to control the handling of mounting external memory and storing details of mounted drive
@@ -373,38 +380,36 @@ class StorageMount:
         if self.dev_path is None:
             self.find_dev()
 
-        # Cache variable to keep track of if we successfully mounted
-        self._mounted = False  # Start out in an unmounted state
-
     @property
     def is_mounted(self):
         """Check whether device is already mounted"""
-        if self._mounted:
-            return True
-        mnt_output = subprocess.check_output('mount')
         if self.dev_path is None:
             return False
-        mnt_stat = mnt_output.find(self.dev_path.encode())
-        if mnt_stat == -1:
-            return False
-        else:
-            return True
+        with open('/proc/mounts', 'r') as f:
+            if self.dev_path in f.read():
+                return True
+            else:
+                return False
 
     @property
     def backup_path(self):
         """Return today's backup folder and create it if it does not exist yet"""
         date_str = datetime.datetime.now().strftime("%Y-%m-%d")
         backup_folder = os.path.join(self.data_path, date_str) + '/'
-        if not os.path.exists(backup_folder):
-            os.mkdir(backup_folder)
+        try:
+            if not os.path.exists(backup_folder):
+                os.mkdir(backup_folder)
+        except Exception:
+            pass
         return backup_folder
 
     def find_dev(self):
         """
-        Finds device location based on it being /dev/sda of some kind (not necessarily sda1) and sets self.dev_path
+        Finds device location based on it being /dev/sd* of some kind (not necessarily sda1) and sets self.dev_path
+        This won't work if any other USB HD/SSD is plugged in
         """
         sda_path = None
-        proc = subprocess.Popen(['sudo fdisk -l /dev/sd*'], stdout=subprocess.PIPE, shell=True)
+        proc = subprocess.Popen(['sudo fdisk -l /dev/sd*'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, shell=True)
         stdout_value = proc.communicate()[0]
         stdout_str = stdout_value.decode("utf-8")
         stdout_lines = stdout_str.split('\n')
@@ -439,6 +444,7 @@ class StorageMount:
         if mnt_stat > -1:
             # Something's mounted where we are about to try and mount, let's unmount it
             subprocess.call(['sudo', 'umount', '-l', self.mount_path])
+            self.fsck_dev()
 
         # For better compatibility, Should probably use fdisk -l /dev/sda to find all devices
         # then search this string to determine what value X takes in /dev/sdaX. Then use this
@@ -450,23 +456,26 @@ class StorageMount:
 
         # If the data directory doesn't exist, make it (after the device has been successfully mounted
         while not self.is_mounted:
-            pass
+            time.sleep(0.1)
+        print(f"Mounted storage: {self.dev_path} on {self.mount_path}")
         if not os.path.exists(self.data_path):
             subprocess.call(['sudo', 'mkdir', self.data_path])
-        # verify we're actually mounted
-        self._mounted = self.is_mounted
-        if self._mounted:
-            print(f"Mounted storage: {self.dev_path} on {self.mount_path}")
 
     def unmount_dev(self):
         """Unmount device located at self.dev_path"""
         # Unmounting through /dev and not /mnt will ensure usb is unmounted
         # even if it has been manually mounted to a different directory. However, this method does mean I may
         # unmount the wrong device - so this needs to be thought about some more.
-        if self.is_mounted:
+        if self.dev_path and self.is_mounted:
             subprocess.call(['sudo', 'umount', self.dev_path])
-            self._mounted = False
             print(f"Unmounted storage: {self.dev_path} from {self.mount_path}")
+
+    def fsck_dev(self):
+        """Run a filesystem check & repair on the device located at self.dev_path"""
+        if self.dev_path and not self.is_mounted:
+            time.sleep(1)
+            subprocess.call(['sudo', 'fsck.exfat', '-p', self.dev_path])
+            time.sleep(1)
 
     def del_all_data(self):
         """
@@ -492,41 +501,38 @@ class StorageMount:
 
         # If there is less space than the required space, we list all directories in the data path and delete
         # Them on by one until space is greater than make_space
-        all_data = os.listdir(self.data_path)
-        all_data.sort()
+        file_list = recursive_files_in_path(self.data_path)
+        file_list.sort()
 
         # Loop around clearing space
-        i = 0
         while space < make_space:
-            full_path = os.path.join(self.data_path, all_data[i])
-            i += 1
+            # Get the first image on the list which will be oldest due to ISO date format
+            file_path = file_list.pop(0)
+
+            # Catch exception just in case the file disappears before it can be removed
+            # (may get transferred then deleted by other program)
             try:
-                shutil.rmtree(full_path)
-            except BaseException as e:
+                # If it is a lock file we just ignore it
+                if ".lock" in file_path:
+                    continue
+
+                # Check file isn't locked, if it is we just leave it
+                _, ext = os.path.splitext(file_path)
+                pathname_lock = file_path.replace(ext, ".lock")
+                if os.path.exists(pathname_lock):
+                    continue
+
+                # Remove file
+                os.remove(file_path)
+                print("Deleting file: {}".format(os.path.basename(file_path)))
+            except Exception as e:
                 print("Error: {}".format(e))
 
             # Find how much space is now left on SSD
             space = self._get_space()
 
     def _get_space(self):
-        """Gets space on SSD"""
-        # Memory location index of 'df -h' output
-        mem_loc = 3
+        """Gets free space on SSD in GB"""
 
-        # Place holder for space - returns None if the device can't be found
-        space = None
-
-        # Get info on SSD space
-        proc = subprocess.Popen(['df -h'], stdout=subprocess.PIPE, shell=True)
-        stdout_value = proc.communicate()[0]
-        stdout_str = stdout_value.decode("utf-8")
-        stdout_lines = stdout_str.split('\n')
-        print(stdout_lines)
-
-        for line in stdout_lines:
-            if self.dev_path in line:
-                details = line.split()
-
-                # Extract number value - one letter (usually G) is at the end so we need to slice the string
-                space = int(details[mem_loc][0:-1])
-        return space
+        usage = shutil.disk_usage(self.data_path)
+        return usage.free / pow(1024, 2)

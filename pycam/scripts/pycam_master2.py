@@ -114,7 +114,6 @@ else:
 # -----------------------------------------------------------------
 # Make USB storage available
 storage_mount = StorageMount()
-storage_mount.mount_dev()
 atexit.register(storage_mount.unmount_dev)  # Unmount device when script closes
 
 # -----------------------------------------------------------------
@@ -244,10 +243,6 @@ elif dark_capture:
 new_conn_pause_time = 0  # The time we receive a LOG request
 new_conn_pause_delay = 10  # Pause notification for 10 seconds
 
-# Timer to avoid constantly checking disk usage
-disk_usage_check_time = 0
-disk_usage_check_delay = 5
-
 print("Entering main loop")
 
 while running:
@@ -257,55 +252,112 @@ while running:
         # TODO print some sort of status output that things are working OK?
         # check when the last save was? what the current shutter/integration time etc are?
 
-        # Check if there's free disk space
-        if time.time() - disk_usage_check_time > disk_usage_check_delay:
-            usage = shutil.disk_usage(FileLocator.IMG_SPEC_PATH)
-            if usage.used / usage.total > 0.8:
-                # Whoa there's not much free space, let's quit...
-                print("Less than 20% of free space available, quitting...")
-                signal.raise_signal(signal.SIGINT)
-            disk_usage_check_time = time.time()
-
-        # -----------------------------------------------------------------
-        # Save images
         for instrument in instruments:
 
             # In general in this section, get the image/spectra from its respective
             # queue, and then save it to disk
 
             try:
+                # Get the image (and metadata) or spectra and create a generic save function for it
                 if isinstance(instrument, Camera):
                     [img_filename, image, metadata, meta_filename] = (
                         instrument.img_q.get(False)
                     )
-                    new_file = instrument.save_path + "/" + img_filename
-                    new_meta = instrument.save_path + "/" + meta_filename
-                    save_img(
-                        image,
-                        new_file,
-                        ext=instrument.file_ext,
-                        metadata=metadata,
-                        meta_filename=new_meta,
-                        meta_ext=instrument.meta_ext,
-                        compression=True,
-                    )
-                    # Backup the image, do this before telling clients of the files existence
-                    # as they might delete the file with an FTP transfer which means we couldn't
-                    # back up the image any more
-                    if storage_mount.is_mounted:
-                        try:
-                            # let's have a small delay to try and avoid too much power consumption
-                            # at once from writing to both the internal and external SSDs simultaneously
-                            time.sleep(0.1)
-                            shutil.copy2(new_file, storage_mount.backup_path)
-                            shutil.copy2(new_meta, storage_mount.backup_path)
-                        except Exception as e:
-                            print(f"Error copying to backup: {e}")
-                    # Tell connected clients about the new image (the master should be first)
+
+                    # wrapper function to save image
+                    def save_img_local(new_file, new_meta):
+                        save_img(
+                            image,
+                            new_file,
+                            file_ext=instrument.file_ext,
+                            metadata=metadata,
+                            meta_filename=new_meta,
+                            meta_ext=instrument.meta_ext,
+                            compression=True,
+                        )
+
+                elif isinstance(instrument, Spectrometer):
+                    [img_filename, spectrum] = instrument.spec_q.get(False)
+                    metadata = None
+                    meta_filename = None
+
+                    # wrapper function to save spectra
+                    def save_img_local(new_file, new_meta):
+                        save_spectrum(
+                            instrument.wavelengths,
+                            spectrum,
+                            new_file,
+                            file_ext=instrument.file_ext,
+                        )
+
+                else:
+                    break
+
+                # Make sure the external SSD storage is mounted
+                save_to_external_ssd = True
+                if not storage_mount.is_mounted:
+                    save_to_external_ssd = False
+                    storage_mount.find_dev()
+                    if storage_mount.dev_path is not None:
+                        storage_mount.mount_dev()
+                        save_to_external_ssd = True
+
+                # Pick out where we're going to try and save
+                if save_to_external_ssd:
+                    save_paths = [storage_mount.backup_path, instrument.save_path]
+                    # instrument.save_path should always be last
+                else:
+                    save_paths = [instrument.save_path]
+
+                saved_successfully = False
+                for save_path in save_paths:
+
+                    new_file = save_path + "/" + img_filename
+                    if metadata:
+                        new_meta = save_path + "/" + meta_filename
+                    else:
+                        new_meta = None
+
+                    try:
+                        # Check if there's free disk space
+                        usage = shutil.disk_usage(save_path)
+                        if usage.used / usage.total > 0.9:
+                            # Whoa there's not much free space we can't really save reliably here, so skip
+                            print(
+                                f"Less than 10% of free space available in {save_path}, skipping..."
+                            )
+                            continue
+                        else:
+                            print(
+                                f"Current disk usage for {save_path} is {100 * usage.used / usage.total:.2f}%"
+                            )
+
+                        # Actually save
+                        save_img_local(new_file, new_meta)
+                        saved_successfully = True
+
+                    except Exception as e:
+                        print(f"Error saving {new_file}: {e}")
+                        if storage_mount.backup_path in new_file:
+                            print(
+                                "Possible issue with external SSD storage, running filesystem check"
+                            )
+                            # possibly an issue with the external SSD, unmount and fsck
+                            # next time we try to save it will remount
+                            storage_mount.unmount_dev()
+                            if not dark_capture:
+                                storage_mount.find_dev()
+                                storage_mount.fsck_dev()
+                                # testing indicates fsck is a bit unreliable in the midst of dark capture
+
+                    # Tell connected clients about the new image saved to the internal SSD
                     if (
-                        not dark_capture
+                        saved_successfully
+                        and save_path == save_paths[-1]
+                        and not dark_capture
                         and time.time() - new_conn_pause_time > new_conn_pause_delay
                     ):
+                        # only do this for the internal SSD
                         if instrument.band == "on":
                             sock_serv_ext.send_to_all(
                                 {"IDN": "MAS", "NIA": new_file, "DST": "EXN"}
@@ -313,39 +365,24 @@ while running:
                             sock_serv_ext.send_to_all(
                                 {"IDN": "MAS", "NMA": new_meta, "DST": "EXN"}
                             )
-                        else:  # off band
+                        elif instrument.band == "off":
                             sock_serv_ext.send_to_all(
                                 {"IDN": "MAS", "NIB": new_file, "DST": "EXN"}
                             )
                             sock_serv_ext.send_to_all(
                                 {"IDN": "MAS", "NMB": new_meta, "DST": "EXN"}
                             )
+                        elif instrument.band == "spec":
+                            sock_serv_ext.send_to_all(
+                                {"IDN": "MAS", "NIS": new_file, "DST": "EXN"}
+                            )
 
-                elif isinstance(instrument, Spectrometer):
-                    [filename, spectrum] = instrument.spec_q.get(False)
-                    new_file = save_spectrum(
-                        instrument.wavelengths,
-                        spectrum,
-                        instrument.save_path + "/" + filename,
-                        file_ext=instrument.file_ext,
-                    )
-                    # Backup the new spectra
-                    if storage_mount.is_mounted:
-                        try:
-                            time.sleep(0.1)
-                            shutil.copy2(new_file, storage_mount.backup_path)
-                        except Exception as e:
-                            print(f"Error copying to backup: {e}")
-                    # Tell connected clients about the new spectra
-                    if (
-                        not dark_capture
-                        and time.time() - new_conn_pause_time > new_conn_pause_delay
-                    ):
-                        sock_serv_ext.send_to_all(
-                            {"IDN": "MAS", "NIS": new_file, "DST": "EXN"}
-                        )
+                if not saved_successfully:
+                    # We didn't manage to save to either the internal or external SSD...
+                    print("Failed to save!!! Trying to quitting...")
+                    signal.raise_signal(signal.SIGINT)
 
-            # TODO save/copy to backup location
+                del save_img_local
 
             except queue.Empty:
                 pass
