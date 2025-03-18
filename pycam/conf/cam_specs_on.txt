@@ -36,4 +36,4 @@ test=Test
 dark_corr=darkcorr
 DICT_END
 auto_ss=True
-file_sort=False
+file_sort=True

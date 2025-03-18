@@ -16,7 +16,7 @@ from .settings import GUISettings
 config = read_file(FileLocator.CONFIG_WINDOWS)
 
 # Socket client
-port = int(config[ConfigInfo.port_ext]) # configured port port
+port = int(config[ConfigInfo.port_ext]) # configured port
 sock = SocketClient(host_ip=config[ConfigInfo.host_ip], port=port)
 
 # Setup recv comms connection object

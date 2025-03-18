@@ -25,4 +25,4 @@ clear=Clear
 test=Test
 DICT_END
 auto_int=True
-file_sort=False
+file_sort=True

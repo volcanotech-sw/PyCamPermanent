@@ -177,6 +177,8 @@ class FileLocator(metaclass=MetaFileLocator):
 class ConfigInfo:
     """Defines important attributes related to config files, allowing references to link to this file rather than being
     explicitly coded elsewhere"""
+    local_data_dir = 'local_data_dir'
+
     listen_ip = 'listen_ip'
     host_ip = 'host_ip'      # Tag for remote pi ip addresses in config file
     port_ext = 'port_ext'
@@ -187,9 +189,7 @@ class ConfigInfo:
     dark_script = 'dark_script'
     temp_log = 'temp_log'
     disk_space_script = 'disk_space_script'
-    cam_specs = 'cam_specs'
-
-    local_data_dir = 'local_data_dir'
+    free_space_ssd_script = 'free_space_ssd_script'
 
 
 class SpecsBase:

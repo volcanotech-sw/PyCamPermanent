@@ -301,6 +301,7 @@ class InstrumentConfiguration:
         self.dark_script = cfg[ConfigInfo.dark_script]
         self.temp_script = cfg[ConfigInfo.temp_log]
         self.disk_space_script = cfg[ConfigInfo.disk_space_script]
+        self.free_space_ssd_script = cfg[ConfigInfo.free_space_ssd_script]
         self.dbx_script = FileLocator.DROPBOX_UPLOAD_SCRIPT
         self.check_run_script = FileLocator.CHECK_RUN
 
@@ -325,11 +326,12 @@ class InstrumentConfiguration:
 
         self._temp_logging = tk.IntVar()        # Temperature logging frequency (minutes)
         self._check_disk_space = tk.IntVar()    # Check disk space frequency (minutes)
+        self._free_space_ssd_external = tk.IntVar()    # Check disk space frequency (minutes)
 
         # Read cronfile looking for defined scripts. ADD SCRIPT TO LIST HERE TO SEARCH FOR IT
         results = read_script_crontab(FileLocator.SCRIPT_SCHEDULE,
                                       [self.start_script, self.stop_script, self.dark_script,
-                                       self.temp_script, self.disk_space_script])
+                                       self.temp_script, self.disk_space_script, self.free_space_ssd_script])
 
         if self.start_script in results:
             self.capt_start_hour, self.capt_start_min = results[self.start_script]
@@ -342,6 +344,8 @@ class InstrumentConfiguration:
             self.temp_logging = results[self.temp_script][1]     # Only interested in minutes for temperature logging
         if self.disk_space_script in results:
             self.check_disk_space = results[self.disk_space_script][1]     # Only interested in minutes for disk space check
+        if self.free_space_ssd_script in results:
+            self.free_space_ssd_external = results[self.free_space_ssd_script][1]     # Only interested in minutes for disk space check
 
     def generate_frame(self):
         """Generates frame containing GUI widgets"""
@@ -402,13 +406,22 @@ class InstrumentConfiguration:
         ttk.Label(frame_cron, text='0=no log', font=self.main_gui.main_font).grid(row=row, column=3, sticky='w', padx=2, pady=2)
 
         # ----------------------------
-        # Temperature check disk space
+        # Check disk space
         # ----------------------------
         row += 1
         ttk.Label(frame_cron, text='Check disk storage [minutes]:', font=self.main_gui.main_font).grid(row=row, column=0, sticky='w', padx=2, pady=2)
         disk_stor = ttk.Spinbox(frame_cron, textvariable=self._check_disk_space, from_=0, to=60, increment=1, width=3, font=self.main_gui.main_font)
         disk_stor.grid(row=row, column=1, columnspan=2, sticky='w', padx=2, pady=2)
-        ttk.Label(frame_cron, text='0=no log', font=self.main_gui.main_font).grid(row=row, column=3, sticky='w', padx=2, pady=2)
+        ttk.Label(frame_cron, text='0=disable', font=self.main_gui.main_font).grid(row=row, column=3, sticky='w', padx=2, pady=2)
+
+        # ----------------------------
+        # Check external SSD disk space
+        # ----------------------------
+        row += 1
+        ttk.Label(frame_cron, text='Check external SSD [minutes]:', font=self.main_gui.main_font).grid(row=row, column=0, sticky='w', padx=2, pady=2)
+        disk_stor_ext = ttk.Spinbox(frame_cron, textvariable=self._free_space_ssd_external, from_=0, to=60, increment=1, width=3, font=self.main_gui.main_font)
+        disk_stor_ext.grid(row=row, column=1, columnspan=2, sticky='w', padx=2, pady=2)
+        ttk.Label(frame_cron, text='0=disable', font=self.main_gui.main_font).grid(row=row, column=3, sticky='w', padx=2, pady=2)
 
         # -------------
         # Update button
@@ -422,12 +435,13 @@ class InstrumentConfiguration:
         # Create strings
         temp_log_str = self.minute_cron_fmt(self.temp_logging)
         disk_space_str = self.minute_cron_fmt(self.check_disk_space)
+        free_space_ssd_external_str = self.minute_cron_fmt(self.free_space_ssd_external)
 
         # Preparation of lists for writing crontab file
-        times = [self.start_capt_time, self.stop_capt_time, self.start_dark_time, temp_log_str, disk_space_str]
+        times = [self.start_capt_time, self.stop_capt_time, self.start_dark_time, temp_log_str, disk_space_str, free_space_ssd_external_str]
         cmds = ['python3 {}'.format(self.start_script), 'python3 {}'.format(self.stop_script),
                 'python3 {}'.format(self.dark_script), 'bash {}'.format(self.temp_script),
-                'python3 {}'.format(self.disk_space_script)]
+                'python3 {}'.format(self.disk_space_script), 'python3 {}'.format(self.free_space_ssd_script)]
 
         # Uncomment if we want to run dropbox uploader from crontab
         # dbx_str = self.minute_cron_fmt(60)          # Setup dropbox uploader to run every hour
@@ -461,11 +475,13 @@ class InstrumentConfiguration:
                                    'Shut-down capture script: {} UTC\n'
                                    'Dark capture time: {} UTC\n'
                                    'Log temperature: {} minutes\n'
-                                   'Check disk space: {} minutes'.format(self.start_capt_time.strftime('%H:%M'),
+                                   'Check disk space: {} minutes\n'
+                                   'Check external SSD: {} minutes'.format(self.start_capt_time.strftime('%H:%M'),
                                                                          self.stop_capt_time.strftime('%H:%M'),
                                                                          self.start_dark_time.strftime('%H:%M'),
                                                                          self.temp_logging,
-                                                                         self.check_disk_space))
+                                                                         self.check_disk_space,
+                                                                         self.free_space_ssd_external))
 
         self.frame.attributes('-topmost', 1)
         self.frame.attributes('-topmost', 0)
@@ -595,3 +611,11 @@ class InstrumentConfiguration:
     @check_disk_space.setter
     def check_disk_space(self, value):
         self._check_disk_space.set(value)
+
+    @property
+    def free_space_ssd_external(self):
+        return self._free_space_ssd_external.get()
+
+    @free_space_ssd_external.setter
+    def free_space_ssd_external(self, value):
+        self._free_space_ssd_external.set(value)

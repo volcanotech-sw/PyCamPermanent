@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 
 """
-Script to check disk space taken up by Pi images and spectra. If it exceeds a predfined threshold the oldest images are
+Script to check disk space taken up by Pi images and spectra. If it exceeds a predefined threshold the oldest images are
 deleted
 """
-import subprocess
 import os
 import sys
 import datetime
@@ -23,9 +22,9 @@ if day in del_days:
     file_list = [os.path.join(dp, f) for dp, _, fn in os.walk(img_path) for f in fn]
     file_list.sort()
 
-    # delete until we only have 40,000 files left
-    # 40,000 files is about 12 day at 5 second intervals
-    while len(file_list) > 40000:
+    # delete until we only have 80,000 files left
+    # 80,000 files is about 2 days at 5 second intervals
+    while len(file_list) > 80000:
         # Get the first image on the list which will be oldest due to ISO date format
         file_path = file_list.pop(0)
 
