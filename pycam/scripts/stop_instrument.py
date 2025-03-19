@@ -17,6 +17,8 @@ from pycam.setupclasses import FileLocator, ConfigInfo
 from pycam.networking.sockets import SocketClient, read_network_file
 import time
 
+print(f"Running {__file__} at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+
 
 def close_pycam(ip, port):
     """Closes pycam by setting up a socket and telling the program to shutdown"""

@@ -65,7 +65,9 @@ import queue
 import shutil
 import signal
 import socket
+import threading
 
+print(f"Running {__file__} at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # -----------------------------------------------------------------
 # Handle arguments
@@ -114,6 +116,7 @@ else:
 # -----------------------------------------------------------------
 # Make USB storage available
 storage_mount = StorageMount()
+storage_mount.fsck_dev()
 atexit.register(storage_mount.unmount_dev)  # Unmount device when script closes
 
 # -----------------------------------------------------------------
@@ -194,6 +197,7 @@ for func in sock_serv_ext.internal_connections:
 
 # Use this to nicely exit the main loop
 running = True
+quit_attempts = 0
 
 for instrument in instruments:
     # Make sure the instruments are handled nicely
@@ -205,15 +209,30 @@ for instrument in instruments:
 
 def signal_handler(signum, frame):
     # Use this to make sure we don't quit in the middle of anything important, e.g., a dark capture
-    global running, dark_capture
+    global running, dark_capture, quit_attempts
     if dark_capture and (signum == signal.SIGTERM or signum == signal.SIGINT):
         print("Dark capture is running, cannot quit")
         return
     if dark_capture and signum == signal.SIGUSR1:
         print("Forced", end=" ")
     print("Quitting")
+    print("Currently running threads:")
+    for thread in threading.enumerate():
+        print(f"    {thread.name}")
     running = False
     sock_serv_ext.send_to_all({"IDN": "NUL", "EXT": 1})
+    quit_attempts += 1
+    if quit_attempts == 5:
+        import traceback
+
+        print("=== Current stack ===")
+        traceback.print_stack()
+        print()
+        for thread in threading.enumerate():
+            print(f"=== Thread {thread.name} stack ====")
+            traceback.print_stack(sys._current_frames()[thread.ident])
+            print()
+        sys.exit()
 
 
 signal.signal(signal.SIGINT, signal_handler)  # Normally a result of Ctrl-C
@@ -340,15 +359,12 @@ while running:
                         print(f"Error saving {new_file}: {e}")
                         if storage_mount.backup_path in new_file:
                             print(
-                                "Possible issue with external SSD storage, running filesystem check"
+                                "Possible issue with external SSD storage, remounting"
                             )
                             # possibly an issue with the external SSD, unmount and fsck
                             # next time we try to save it will remount
                             storage_mount.unmount_dev()
-                            if not dark_capture:
-                                storage_mount.find_dev()
-                                storage_mount.fsck_dev()
-                                # testing indicates fsck is a bit unreliable in the midst of dark capture
+                            # it'd be nice to fsck_dev() here, but that's proven to be unreliable
 
                     # Tell connected clients about the new image saved to the internal SSD
                     if (

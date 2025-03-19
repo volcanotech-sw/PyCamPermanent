@@ -12,6 +12,8 @@ sys.path.append('/home/pi/')
 from pycam.setupclasses import FileLocator
 from pycam.utils import recursive_files_in_path
 
+print(f"Running {__file__} at {datetime.datetime.now()}")
+
 # Path to image directory
 img_path = FileLocator.IMG_SPEC_PATH
 

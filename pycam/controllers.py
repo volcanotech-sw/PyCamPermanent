@@ -235,6 +235,9 @@ class Camera(CameraSpecs):
         # Flag that camera has been initialised
         self.cam_init = True
 
+        # Note the first time this is called a listen thread will be created as part of picamera2.CameraManager
+        # Each time this is called a thread_func will be created that's somewhere inside of the libcamera bindings
+
         # Start the camera
         self.cam.start()
 
@@ -434,6 +437,7 @@ class Camera(CameraSpecs):
                 capt_q,
             ),
         )
+        self.capture_thread.name = f"Interactive capture thread ({self.band} band)"
         self.capture_thread.daemon = True
         self.capture_thread.start()
 
@@ -747,6 +751,57 @@ class Spectrometer(SpecSpecs):
         # print("Spectrometer deconstructor")
         self.close()
 
+    @staticmethod
+    def _safe_spec_decorator(func):
+        """Wrapper function for methods that access the spectrometer to reconnect in the event the spectrometer is missing"""
+
+        def wrapper(*args, **kwargs):
+            # The first arg should be self of the spectrometer class
+            spectrometer = args[0]
+            if type(spectrometer) is not Spectrometer:
+                return
+
+            try:
+                result = func(*args, **kwargs)
+            except IndexError as e:
+                # pass through the setter/getter errors
+                raise e
+            except ValueError as e:
+                # pass through the setter/getter errors
+                raise e
+            except Exception as e:
+                result = None
+                time_str = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.gmtime())
+                append_to_log_file(
+                    FileLocator.ERROR_LOG_PI, "[{}]: {}".format(time_str, e)
+                )
+
+                # something probably went wrong with the spectrometer, so try reconnecting
+
+                # the original spectrometer device object, hopefully to be replaced
+                old_spec = spectrometer.spec
+                try:
+                    # wait a bit for the spectrometer to re-register with the system
+                    time.sleep(5)
+                    print("Trying to re-find the spectrometer...")
+                    spectrometer.find_device()
+                    # we get here if find_device didn't raise a connection error
+                    old_spec = None
+                except ConnectionError:
+                    print("Spectrometer not found :(")
+                    # we need to keep a spectrometer device around so functions still at least kind of work
+                    if old_spec:
+                        spectrometer.spec = old_spec
+                except Exception as e:
+                    # we're probably here now from trying to close the old spectrometer t
+                    print(
+                        f"Exception {e} encountered while trying to reconnect to spectrometer"
+                    )
+
+            return result
+
+        return wrapper
+
     def find_device(self):
         """
         Function to search for an attached spectrometer and then initialise it
@@ -818,10 +873,14 @@ class Spectrometer(SpecSpecs):
         """
         print("Closing spectrometer")
         if self.spec:
-            del self.spec
-            self.spec = None
+            try:
+                del self.spec
+                self.spec = None
+            except Exception as e:
+                print(f"Exception {e} encountered while closing the spectrometer")
 
     @SpecSpecs.int_time_idx.setter
+    @_safe_spec_decorator
     def int_time_idx(self, value: int):
         """
         Update the integration time index and corresponding integration time
@@ -839,6 +898,7 @@ class Spectrometer(SpecSpecs):
             self.spec.integration_time_micros(self._int_time)
 
     @SpecSpecs.int_time.setter
+    @_safe_spec_decorator
     def int_time(self, int_time: int):
         """
         Sets spectrometer integration time
@@ -891,6 +951,7 @@ class Spectrometer(SpecSpecs):
             + self.file_ext
         )
 
+    @_safe_spec_decorator
     def get_spec(self):
         """
         Acquire spectrum from spectrometer
@@ -898,40 +959,21 @@ class Spectrometer(SpecSpecs):
         """
         # TODO I realise I'm currently not discarding the first spectrum - this may mean integration time doesn't always work perfectly
         if self.spec is None:
-            print(f"No spectrometer to capture with")
+            print("No spectrometer to capture with")
             return
 
         # Set array for coadding spectra
         coadded_spectrum = np.zeros(len(self.wavelengths))
 
-        try:
-            # Loop through number of coadds
-            for i in range(self.coadd):
-                t = self.spec.intensities()
-                coadded_spectrum += t
-        except Exception as e:
-            time_str = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.gmtime())
-            append_to_log_file(FileLocator.ERROR_LOG_PI, "[{}]: {}".format(time_str, e))
-
-            # something probably went wrong with the spectrometer, so try reconnecting
-            old_spec = (
-                self.spec
-            )  # the original spectrometer device object, hopefully to be replaced
-            try:
-                self.find_device()
-                # we get here if find_device didn't raise a connection error
-                old_spec = None
-            except ConnectionError:
-                # we need to keep a spectrometer device around so functions still at least kind of work
-                if old_spec:
-                    self.spec = old_spec
-            except Exception:
-                # we're probably here now from trying to close the old spectrometer t
-                pass
+        # Loop through number of coadds
+        for i in range(self.coadd):
+            t = self.spec.intensities()
+            coadded_spectrum += t
 
         # Correct for number of coadds to result in a spectrum with correct digital numbers for bit-depth of device
         self.spectrum = coadded_spectrum / self.coadd
 
+    @_safe_spec_decorator
     def get_wavelengths(self):
         """
         Fetches the spectrometers wavelengths
@@ -1020,6 +1062,7 @@ class Spectrometer(SpecSpecs):
                 capt_q,
             ),
         )
+        self.capture_thread.name = "Interactive capture thread (Spectrometer)"
         self.capture_thread.daemon = True
         self.capture_thread.start()
 

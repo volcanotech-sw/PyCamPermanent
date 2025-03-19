@@ -16,8 +16,9 @@ import subprocess
 from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator, ConfigInfo
 from pycam.networking.sockets import SocketClient, ExternalSendConnection, ExternalRecvConnection, read_network_file
 from pycam.io_py import read_script_crontab
-from pycam.utils import read_file, StorageMount, append_to_log_file, recursive_files_in_path
+from pycam.utils import read_file, StorageMount, append_to_log_file, recursive_files_in_path, kill_process
 
+print(f"Running {__file__} at {datetime.datetime.now()}")
 
 def check_acq_mode():
     """Checks acquisition mode. If it is in manual, this function closes the program"""
@@ -104,6 +105,25 @@ def check_data(sleep=90, storage_mount=StorageMount(), date_fmt="%Y-%m-%d"):
         print("Not all 3 data types found!!!")
         return False
 
+
+def restart_pycam(force=False, master_script_name="pycam_master2"):
+    """(Re)start the pycam process"""
+    if force:
+        # Kill any existing pycam process
+        print(f"Kill -9'ing {master_script_name}")
+        kill_process(master_script_name)
+        time.sleep(10)
+
+    # Redirect output to NULL so that it doesn't clutter up cron.log
+    subprocess.Popen(
+        f"python3 -u {start_script}",
+        shell=True,
+        executable="/bin/bash",
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 # -----------------------------------------------------------
 # First check if check_run is already running - if so, we don't want to run again as we may interrupt the function
 proc = subprocess.Popen(['ps axg'], stdout=subprocess.PIPE, shell=True)
@@ -129,6 +149,7 @@ cfg = read_file(FileLocator.CONFIG)
 start_script = cfg[ConfigInfo.start_script]
 stop_script = cfg[ConfigInfo.stop_script]
 scripts = read_script_crontab(FileLocator.SCRIPT_SCHEDULE_PI, [start_script, stop_script])
+master_script_name = os.path.split(cfg[ConfigInfo.master_script])[-1]
 
 start_script_time = datetime.datetime.now()
 start_script_time = start_script_time.replace(hour=scripts[start_script][0],
@@ -159,15 +180,8 @@ if check_data(storage_mount=storage_mount):
     sys.exit()
 
 # Make sure the master script is running
-# Redirect output to NULL so that it doesn't clutter up cron.log
 print(f"Making sure pycam is running using {start_script}")
-subprocess.Popen(
-    f"python3 -u {start_script}",
-    shell=True,
-    executable="/bin/bash",
-    stdout=subprocess.DEVNULL,
-    stderr=subprocess.DEVNULL,
-)
+restart_pycam()
 time.sleep(15)
 
 # If there are not all data types, we need to connect to the system and correct it
@@ -216,15 +230,7 @@ try:
     time.sleep(30)
 
     # Restart pycam as a last ditch effort
-    # Redirect output to NULL so that it doesn't clutter up cron.log
-    print(f"Restarting pycam via {start_script}")
-    subprocess.Popen(
-        f"python3 -u {start_script}",
-        shell=True,
-        executable="/bin/bash",
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    restart_pycam()
     time.sleep(1)
 
 except ConnectionError:
@@ -234,6 +240,9 @@ except ConnectionError:
             int(cfg[ConfigInfo.port_ext])
         ),
     )
+    # if we can't connect and it's between the time the script is running
+    # something has probably gone really wrong, force a quit and relaunch
+    restart_pycam(force=True, master_script_name=master_script_name)
 
 except Exception as e:
     append_to_log_file(FileLocator.ERROR_LOG_PI, "check_run.py: Error {}.".format(e))

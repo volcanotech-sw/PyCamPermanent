@@ -174,6 +174,7 @@ class CommsCommandHandler(CommsFuncs):
 
     def handle_commands(self):
         self.func_thread = threading.Thread(target=self._handle_commands, args=())
+        self.func_thread.name = f"Comms command handling thread ({self.id})"
         self.func_thread.daemon = True
         self.func_thread.start()
 
@@ -1037,6 +1038,7 @@ class CamComms(CommsCommandHandler):
         # Wait for camera capture thread to close if we're actually quitting
         if value and self.camera.capture_thread:
             self.camera.capture_thread.join()
+            self.camera.close()
 
 
 class SpecComms(CommsCommandHandler):
@@ -1287,6 +1289,7 @@ class SpecComms(CommsCommandHandler):
         # Wait for spectrometer capture thread to close if we're actually quitting
         if value and self.spectrometer.capture_thread:
             self.spectrometer.capture_thread.join()
+            self.spectrometer.close()
 
 
 class SocketServer(SocketMeths):
@@ -1594,6 +1597,7 @@ class Connection:
         self.accepting = True
 
         self.acc_thread = threading.Thread(target=self._acc_connection, args=())
+        self.acc_thread.name = f"{self.__class__.__name__} acceptance thread ({self.sock.listen_ip}:{self.sock.port})"
         self.acc_thread.daemon = True
         self.acc_thread.start()
 
@@ -1622,6 +1626,7 @@ class Connection:
             return
         self.func_thread = threading.Thread(target=self._thread_func,
                                             args=())
+        self.func_thread.name = f"{self.__class__.__name__} connection handling thread ({self.connection_tuple})"
         self.func_thread.daemon = True
         self.event.clear()
         self.working = True

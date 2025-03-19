@@ -17,6 +17,8 @@ from pycam.setupclasses import FileLocator, ConfigInfo
 import subprocess
 import time
 
+print(f"Running {__file__} at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+
 # Read configuration file which contains important information for various things
 config = read_file(FileLocator.CONFIG)
 

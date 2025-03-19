@@ -7,7 +7,6 @@ import os
 import numpy as np
 import subprocess
 import datetime
-import threading
 import shutil
 import time
 
@@ -375,7 +374,6 @@ class StorageMount:
         if mount_path:
             self.mount_path = mount_path
             self.data_path = os.path.join(self.mount_path, 'data')
-        self.lock = threading.Lock()
 
         if self.dev_path is None:
             self.find_dev()
@@ -413,6 +411,7 @@ class StorageMount:
         stdout_value = proc.communicate()[0]
         stdout_str = stdout_value.decode("utf-8")
         stdout_lines = stdout_str.split('\n')
+        # TODO can potentially get stuck here waiting for fdisk
 
         # Check output to find sda
         for line in stdout_lines:
@@ -424,6 +423,7 @@ class StorageMount:
 
         if sda_path is None:
             print('Could not find SSD device in /dev/sd*')
+            self.dev_path = None
 
     def mount_dev(self):
         """Mount device located at self.dev_path to self.mount_path destination"""
@@ -473,9 +473,26 @@ class StorageMount:
     def fsck_dev(self):
         """Run a filesystem check & repair on the device located at self.dev_path"""
         if self.dev_path and not self.is_mounted:
-            time.sleep(1)
-            subprocess.call(['sudo', 'fsck.exfat', '-p', self.dev_path])
-            time.sleep(1)
+            # find the filesystem type
+            blkid_output = (
+                subprocess.check_output(["sudo", "blkid"]).decode("utf-8").split("\n")
+            )
+            blkid_lines = [line for line in blkid_output if self.dev_path in line]
+            if len(blkid_lines) == 0:
+                print("Block device not found for running fsck")
+                return
+            else:
+                blkid_line = blkid_lines[0].lower()
+            if "exfat" in blkid_line:
+                fsck = ["fsck.exfat", "-p"]
+            elif "ntfs" in blkid_line:
+                fsck = ["ntfsfix"]
+            elif "vfat" in blkid_line:
+                fsck = ["fsck.vfat", "-p"]
+            else:
+                print(f"Unkown filesystem type: {blkid_line}")
+                return
+            subprocess.call(["sudo"] + fsck + [self.dev_path], timeout=10)
 
     def del_all_data(self):
         """

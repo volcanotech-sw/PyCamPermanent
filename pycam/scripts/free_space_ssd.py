@@ -10,9 +10,12 @@ Script can be passed an argument which defines the amount of space to make free 
 """
 
 import sys
+import datetime
 sys.path.append('/home/pi/')
 
 from pycam.utils import StorageMount
+
+print(f"Running {__file__} at {datetime.datetime.now()}")
 
 # Default space to create on SSD - this should be a bit more than 10% of the drive
 make_space = 100
