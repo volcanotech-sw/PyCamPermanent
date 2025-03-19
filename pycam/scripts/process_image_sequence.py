@@ -14,15 +14,8 @@ if __name__ == "__main__":
     pyplis_worker.update_cam_geom(pyplis_worker.geom_dict)
     pyplis_worker.measurement_setup(location=pyplis_worker.volcano)
     pyplis_worker.init_results()
-
-    # load clear sky images, from class ProcessSettings(LoadSaveProcessingSettings):
-    if pyplis_worker.config["use_vign_corr"]:
-        pyplis_worker.apply_config(subset=["dark_img_dir"])
-        pyplis_worker.load_BG_img(pyplis_worker.bg_A_path, band='A')
-        pyplis_worker.load_BG_img(pyplis_worker.bg_B_path, band='B')
-    else:
-        pyplis_worker.load_BG_img(FileLocator.ONES_MASK, band='A', ones=True)
-        pyplis_worker.load_BG_img(FileLocator.ONES_MASK, band='B', ones=True)
+    pyplis_worker.load_BG_pair()
+    
     # Load image registration from class LoadFrame(LoadSaveProcessingSettings):
     pyplis_worker.img_reg.load_registration(pyplis_worker.img_registration, rerun=False)
     pyplis_worker.update_opt_flow_settings(roi_abs = pyplis_worker.config['roi_abs'])

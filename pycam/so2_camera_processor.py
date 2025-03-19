@@ -1119,6 +1119,22 @@ class PyplisWorker:
         except IndexError:
             pass
 
+    def load_BG_pair(self, img_A_path = None, img_B_path = None):
+        """
+        Loads band A and band B background images
+        :param img_A_path: str     Path to A band background image
+        :param img_B_path: str     Path to B band background image
+        """
+        if self.config["use_vign_corr"]:
+            if img_A_path is None or img_B_path is None:
+                img_A_path = self.bg_A_path
+                img_B_path = self.bg_B_path
+            self.load_BG_img(img_A_path, band='A')
+            self.load_BG_img(img_B_path, band='B')
+        else:
+            self.load_BG_img(FileLocator.ONES_MASK, band='A', ones=True)
+            self.load_BG_img(FileLocator.ONES_MASK, band='B', ones=True)
+        
     def load_BG_img(self, bg_path, band='A', ones=False):
         """Loads in background file
 
