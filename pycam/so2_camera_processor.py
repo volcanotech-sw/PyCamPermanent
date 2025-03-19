@@ -2348,7 +2348,7 @@ class PyplisWorker:
         :returns
         """
         # Set last image to img_tau_prev, as it is used in optical flow computation
-        # TODO I need to think abiout this this may be being called during times when we want to change processing and
+        # TODO I need to think about this this may be being called during times when we want to change processing and
         # TODO we haven't necessarily loaded a new image, so in this case, I think we don't want to shift the old
         # TODO image back one, as it may end up duplicating images??
         # TODO I think this edit, to use img_path_A as a guide makes this work. img_path_A is only not None if we need
@@ -4348,10 +4348,10 @@ class PyplisWorker:
     @staticmethod
     def get_args():
         parser = argparse.ArgumentParser(description="Process image sequence")
-        parser.add_argument('-i', '--image_directory', type=str)
-        parser.add_argument('-o', '--output_directory', type=str)
-        parser.add_argument('-c', '--config_path', type=str)
-        parser.add_argument('-n', '--name', type=str)
+        parser.add_argument('-i', '--image_directory', type=str, help='Directory containing image sequence')
+        parser.add_argument('-o', '--output_directory', type=str, help='Directory to save processed results and images')
+        parser.add_argument('-c', '--config_path', type=str, help='Path to the YAML configfile')
+        parser.add_argument('-d', '--doas_results', type=str ,help='Path to DOAS results CSV file')
         return parser.parse_args()
     
 class ImageRegistration:

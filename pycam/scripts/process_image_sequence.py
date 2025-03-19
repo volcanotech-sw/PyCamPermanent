@@ -29,5 +29,5 @@ if __name__ == "__main__":
     pyplis_worker.img_list = pyplis_worker.get_img_list()
     pyplis_worker.set_processing_directory(img_dir=args.output_directory, make_dir=True)
     pyplis_worker.doas_worker = doas_worker
-    pyplis_worker.doas_worker.load_results(filename=r"C:\Users\cs1xcw\Documents\volcano\E2E-test-data\test_data_5\Processed_spec_2025-03-07T144717\doas_results_2022-05-20T160520.csv", plot=False)
+    pyplis_worker.doas_worker.load_results(filename=args.doas_results, plot=False)
     pyplis_worker._process_sequence(reset_plot=False)
