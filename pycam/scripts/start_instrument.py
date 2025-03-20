@@ -68,7 +68,8 @@ try:
         f"python3 -u {master_script} {start_cont} |& tee -a {main_log_file} &"
     )
     # Use /bin/bash so that |& works to redirect stdout and stderr to the log file
-    subprocess.Popen([master_script_exec], shell=True, executable="/bin/bash")
+    # Remove the , stdout=subprocess.DEVNULL to show output
+    subprocess.Popen([master_script_exec], shell=True, executable="/bin/bash", stdout=subprocess.DEVNULL)
     time.sleep(1)  # Settle for a moment
 
 except SystemExit:
