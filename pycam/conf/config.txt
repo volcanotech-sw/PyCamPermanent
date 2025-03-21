@@ -5,29 +5,22 @@
 # FTP INFORMATION
 uname=pi                            # Raspberry pi username
 pwd=raspberry                       # Raspberry pi password
+ftppwd=raspftp                      # Raspberry pi FTP password
 data_dir=/home/pi/pycam/Images/     # Directory where images and spectra are saved. NOTE: Currently must mirror FileLocator.IMG_SPEC_PATH
 local_data_dir=./pycam/Data/                   # Local directory for saving data
 
 # IP ADDRESSES
-host_ip=169.254.10.180              # IP address of server pi (server pi runs the spectrometer)
-pi_ip=169.254.10.178                # IP addresses of two camera pis
-local_ip=127.0.0.1                  # Local host ip, used for spectrometer comms
+listen_ip=0.0.0.0                     # IP address of pi to listen on (comma separated for multiple addresses)
+host_ip=192.168.5.5                   # IP address of the pi to connect to from the GUI
 
 # PORTS
-port_comm=12345                     # Communication port
-port_transfer=12346                 # Image/spectra transfer port
 port_ext=12347                      # External communication port (laptop etc)
 
 # SCRIPTS TO BE RUN
 start_script=/home/pi/pycam/scripts/start_instrument.py
 stop_script=/home/pi/pycam/scripts/stop_instrument.py
-master_script=/home/pi/pycam/scripts/pycam_masterpi.py
-remote_scripts=/home/pi/pycam/scripts/kill_process.py     # List of scripts to be run on remote pi, separated by commas
-local_scripts=./kill_process.py      #
-cam_script=/home/pi/pycam/scripts/pycam_camera.py
-spec_script=/home/pi/pycam/scripts/pycam_spectrometer.py
-dark_script=/home/pi/pycam/scripts/pycam_dark_capture.py
+master_script=/home/pi/pycam/scripts/pycam_master2.py
+dark_script=/home/pi/pycam/scripts/pycam_master2.py -d
 temp_log=/home/pi/pycam/scripts/log_temperature.sh
 disk_space_script=/home/pi/pycam/scripts/check_disk_space.py
-
-cam_specs=./cam_specs.txt          # Location of camera specs file on master Pi
+free_space_ssd_script=/home/pi/pycam/scripts/free_space_ssd.py

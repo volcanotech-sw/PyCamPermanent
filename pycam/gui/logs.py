@@ -77,7 +77,9 @@ class LogTemperature:
 
     def plot_temp(self):
         """Plots temperature data in matplotlib figure"""
-        self.ax.scatter(self.dates, self.temps, marker=self.plt_fmt)
+        for temps in self.temps.T:
+            self.ax.scatter(self.dates, temps, marker=self.plt_fmt)
+        self.ax.legend(['CPU', 'SSD', 'ADC'])
 
         # Set x axis
         date_delt = self.dates[-1] - self.dates[0]

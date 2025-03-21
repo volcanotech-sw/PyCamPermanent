@@ -11,6 +11,7 @@ import os
 import datetime
 from datetime import datetime as dt
 import time
+import json
 from tkinter import filedialog
 try:
     import RPi.GPIO as GPIO
@@ -28,27 +29,46 @@ try:
 except ModuleNotFoundError:
     print('OpenCV could not be imported, there may be some issues caused by this')
 from pandas import DataFrame
+from pathlib import Path
 
-def save_img(img, filename, ext='.png'):
+def save_img(img, filename, file_ext='.png', metadata=None, meta_filename=None, meta_ext='.json', compression=False):
     """Saves image
     img: np.array
         Image array to be saved
     filename: str
         File path for saving
-    ext: str
+    file_ext: str
         File extension for saving, including "."
     """
-    lock = filename.replace(ext, '.lock')
+    Path(filename).parent.mkdir(parents=True, exist_ok=True)  # make sure the folder exists
+    # Create lock file to secure file until saving is complete
+    lock = filename.replace(file_ext, '.lock')
     open(lock, 'a').close()
 
+    if compression:
+        png_compression = 9
+    else:
+        png_compression = 0
+
     # Save image
-    cv2.imwrite(filename, img, [cv2.IMWRITE_PNG_COMPRESSION, 0])
+    success = cv2.imwrite(filename, img, [cv2.IMWRITE_PNG_COMPRESSION, png_compression])
+    if not success:
+        # failed to save!
+        raise IOError("Failed to save PNG!")
+    print(f"Saved {filename}")
+
+    # Save metadata
+    if metadata and meta_filename:
+        with open(meta_filename, "w") as f:
+            json.dump(metadata, f, indent=4)
+        print(f"Saved {meta_filename}")
 
     # Remove lock to free image for transfer
     os.remove(lock)
+    return filename
 
 
-def save_spectrum(wavelengths, spectrum, filename):
+def save_spectrum(wavelengths, spectrum, filename, file_ext=None):
     """Saves spectrum as numpy .mat file
     wavelengths: NumPy array-like object
         Wavelength values held in array
@@ -57,8 +77,12 @@ def save_spectrum(wavelengths, spectrum, filename):
     filename: str
         File path for saving
     """
+    Path(filename).parent.mkdir(parents=True, exist_ok=True)  # make sure the folder exists
     # Create lock file to secure file until saving is complete
-    lock = filename.replace(SpecSpecs().file_ext, '.lock')
+    if not file_ext:
+        # read in config again to get extension if one's not provided
+        file_ext = SpecSpecs().file_ext
+    lock = filename.replace(file_ext, '.lock')
     open(lock, 'a').close()
 
     # Pack wavelengths and spectrum into single array
@@ -66,9 +90,11 @@ def save_spectrum(wavelengths, spectrum, filename):
 
     # Save spectrum
     np.save(filename, spec_array)
+    print(f"Saved {filename}")
 
     # Remove lock
     os.remove(lock)
+    return filename
 
 
 def load_spectrum(filename, attempts = 3):
@@ -209,13 +235,13 @@ def load_pcs_line(filename, color='blue', line_id='line'):
     with open(filename, 'r') as f:
         for line in f:
             if 'x=' in line:
-                coords = line.split('x=')[-1].split('\n')[0]
+                coords = line.split('x=')[-1].strip()
                 x0, x1 = [int(x) for x in coords.split(',')]
             elif 'y=' in line:
-                coords = line.split('y=')[-1].split('\n')[0]
+                coords = line.split('y=')[-1].strip()
                 y0, y1 = [int(y) for y in coords.split(',')]
             elif 'orientation=' in line:
-                orientation = line.split('orientation=')[-1].split('\n')[0]
+                orientation = line.split('orientation=')[-1].strip()
 
     pcs_line = LineOnImage(x0=x0, y0=y0, x1=x1, y1=y1,
                            normal_orientation=orientation,
@@ -426,6 +452,7 @@ def save_emission_rates_as_txt(path, emission_dict, ICA_dict, only_last_value=Fa
             # Save as csv
             emission_df.to_csv(pathname, mode='a', header=header)
 
+
 def get_last_emission_vals(emission_obj):
     """
     Gets the most recent values from an EmissionRate object and returns them
@@ -436,157 +463,6 @@ def get_last_emission_vals(emission_obj):
                     for key, value in emission_obj.to_dict().items()}
     del last_vals["_start_acq"]
     return DataFrame(last_vals, index = index)
-
-
-def write_witty_schedule_file(filename, time_on, time_off, time_on_2=None, time_off_2=None):
-    """
-    Writes a file for controlling the Witty Pi on/off scheduling
-    :param filename:    str         Full path to file for writing
-    :param time_on:     datetime    Time to turn pi on each day
-    :param time_off:    datetime    Time to turn pi off each day
-    :param time_on_2:   datetime    Time to turn pi on each day (2nd schedule)
-    :param time_off_2:  datetime    Time to turn pi off each day (2nd schedule)
-    """
-    time_fmt = '%H:%M:%S'
-    time_on_str = time_on.strftime(time_fmt)
-    date_now = datetime.datetime.now()
-    date_now_str = date_now.strftime('%Y-%m-%d')
-
-    if time_off_2 is None or time_on_2 is None:
-        if time_off - time_on > datetime.timedelta(0):
-            time_delt_on = time_off - time_on
-            num_hours_on, rem = divmod(time_delt_on.total_seconds(), 60*60)
-            num_mins_on = rem / 60
-
-            time_delt_off = datetime.timedelta(hours=24) - time_delt_on
-            num_hours_off, rem = divmod(time_delt_off.total_seconds(), 60 * 60)
-            num_mins_off = rem / 60
-
-        elif time_off - time_on < datetime.timedelta(0):
-            time_delt_off = time_on - time_off
-            num_hours_off, rem = divmod(time_delt_off.total_seconds(), 60 * 60)
-            num_mins_off = rem / 60
-
-            time_delt_on = datetime.timedelta(hours=24) - time_delt_off
-            num_hours_on, rem = divmod(time_delt_on.total_seconds(), 60 * 60)
-            num_mins_on = rem / 60
-
-        else:
-            # TODO time_off and time on are the same - we don't ever turn the pi off. Work out how to cancel script use
-            # TODO on witty pi
-            num_hours_on, num_mins_on = 24, 0
-            num_hours_off, num_mins_off = 0, 0
-
-        with open(filename, 'w', newline='\n') as f:
-            f.write('# Raspberry Pi start-up/shut-down schedule script\n')
-
-            # Add lines for quicker/easier access when reading file
-            f.write('# on_time={}\n'.format(time_on.strftime('%H:%M')))
-            f.write('# off_time={}\n'.format(time_off.strftime('%H:%M')))
-
-            f.write('BEGIN {} {}\n'.format(date_now_str, time_on_str))
-            f.write('END 2038-01-01 12:00:00\n')
-            f.write('ON H{:.0f} M{:.0f}\n'.format(num_hours_on, num_mins_on))
-            f.write('OFF H{:.0f} M{:.0f}\n'.format(num_hours_off, num_mins_off))
-
-    else:
-        # Arrange time ons and time offs to be in consecutive order, starting with the earliest time on. The final time
-        # off might be later in the day or at the start of the next day (before the time on) so to account for this we
-        # need to find the time off that follows the first time on - this becomes time_stop_1 regardless of if it was
-        # initially time_off or time_off_2
-        if time_on < time_on_2:
-            time_start_1 = time_on
-            time_start_2 = time_on_2
-            if time_off > time_on:
-                time_stop_1 = time_off
-                time_stop_2 = time_off_2
-            else:
-                time_stop_1 = time_off_2
-                time_stop_2 = time_off
-        else:
-            time_start_1 = time_on_2
-            time_start_2 = time_on
-            if time_off_2 > time_on_2:
-                time_stop_1 = time_off_2
-                time_stop_2 = time_off
-            else:
-                time_stop_1 = time_off
-                time_stop_2 = time_off_2
-
-        # if time_start_1 < time_stop_1:
-        #     key_list = ['time_start_1', 'time_stop_1', 'time_start_2', 'time_stop_2']
-        #     str_list = ['ON', 'OFF', 'ON', 'OFF']
-        # elif time_start_1 > time_stop_1:
-        #     key_list =
-
-        # Time_1 will always have to be time_on < time_off if valid, so easy to calculate first part
-        time_delt_1 = time_stop_1 - time_start_1
-        num_hours_on_1, rem = divmod(time_delt_1.total_seconds(), 60*60)
-        num_mins_on_1 = rem / 60
-
-        # Time off 1 is simlarly easy
-        time_delt_2 = time_start_2 - time_stop_1
-        num_hours_off_1, rem = divmod(time_delt_2.total_seconds(), 60*60)
-        num_mins_off_1 = rem / 60
-
-        if time_stop_2 > time_start_2:
-            time_delt_3 = time_stop_2 - time_start_2
-            num_hours_on_2, rem = divmod(time_delt_3.total_seconds(), 60*60)
-            num_mins_on_2 = rem / 60
-
-            time_delt_4 = datetime.timedelta(hours=24) - (time_delt_1 + time_delt_2 + time_delt_3)
-            num_hours_off_2, rem = divmod(time_delt_4.total_seconds(), 60*60)
-            num_mins_off_2 = rem / 60
-        else:
-            time_delt_3 = time_start_1 - time_stop_2
-            num_hours_off_2, rem = divmod(time_delt_3.total_seconds(), 60*60)
-            num_mins_off_2 = rem / 60
-
-            time_delt_4 = datetime.timedelta(hours=24) - (time_delt_1 + time_delt_2 + time_delt_3)
-            num_hours_on_2, rem = divmod(time_delt_4.total_seconds(), 60*60)
-            num_mins_on_2 = rem / 60
-
-        with open(filename, 'w', newline='\n') as f:
-            f.write('# Raspberry Pi start-up/shut-down schedule script\n')
-
-            # Add lines for quicker/easier access when reading file
-            f.write('# on_time={}\n'.format(time_on.strftime('%H:%M')))
-            f.write('# off_time={}\n'.format(time_off.strftime('%H:%M')))
-            f.write('# on_time_2={}\n'.format(time_on_2.strftime('%H:%M')))
-            f.write('# off_time_2={}\n'.format(time_off_2.strftime('%H:%M')))
-            f.write('BEGIN {} {}\n'.format(date_now_str, time_start_1.strftime(time_fmt)))
-            f.write('END 2038-01-01 12:00:00\n')
-            f.write('ON H{:.0f} M{:.0f}\n'.format(num_hours_on_1, num_mins_on_1))
-            f.write('OFF H{:.0f} M{:.0f}\n'.format(num_hours_off_1, num_mins_off_1))
-            f.write('ON H{:.0f} M{:.0f}\n'.format(num_hours_on_2, num_mins_on_2))
-            f.write('OFF H{:.0f} M{:.0f}\n'.format(num_hours_off_2, num_mins_off_2))
-
-
-def read_witty_schedule_file(filename):
-    """Read witty schedule file"""
-    on_hour, on_min = None, None
-    off_hour, off_min = None, None
-    on_hour_2, on_min_2 = None, None
-    off_hour_2, off_min_2 = None, None
-
-    with open(filename, 'r', newline='\n') as f:
-        for line in f:
-            if 'on_time=' in line:
-                on_time = line.split('=')[1].split('\n')[0]
-                on_hour, on_min = [int(x) for x in on_time.split(':')]
-            elif 'off_time=' in line:
-                off_time = line.split('=')[1].split('\n')[0]
-                off_hour, off_min = [int(x) for x in off_time.split(':')]
-            elif 'on_time_2=' in line:
-                on_time_2 = line.split('=')[1].split('\n')[0]
-                on_hour_2, on_min_2 = [int(x) for x in on_time_2.split(':')]
-            elif 'off_time_2=' in line:
-                off_time_2 = line.split('=')[1].split('\n')[0]
-                off_hour_2, off_min_2 = [int(x) for x in off_time_2.split(':')]
-    try:
-        return (on_hour, on_min), (off_hour, off_min), (on_hour_2, on_min_2), (off_hour_2, off_min_2)
-    except AttributeError:
-        print('File not in expected format to retrieve start-up/shut-down information for instrument')
 
 
 def write_script_crontab(filename, cmd, time_on):
@@ -661,62 +537,15 @@ def read_temp_log(filename):
     temps = []
     with open(filename, 'r', newline='\n') as f:
         for line in f:
-            sep = line.split()
-            date_time = sep[0] + ' ' + sep[1]
-            temp = sep[2].split('°')[0].split('Â')[0]
-            date_obj = datetime.datetime.strptime(date_time, date_fmt)
+            sep = [k.strip() for k in line.split(',')]
+            date_obj = datetime.datetime.strptime(sep[0], date_fmt)
+            cpu_temp = float(sep[2])
+            ssd_temp = float(sep[4])
+            adc_temp = float(sep[6])
             dates.append(date_obj)
-            temps.append(float(temp))
+            temps.append([cpu_temp, ssd_temp, adc_temp])
 
     dates = np.array(dates)
     temps = np.array(temps)
 
     return dates, temps
-
-
-def reboot_remote_pi(channel_off=16, channel_on=23, pi_ip=['169.254.10.178']):
-    """
-    Reboots slave pi using channel_off and channel_on GPIOs
-    NOTE this will not reboot the master pi even if the IP is changed, as the pi is not setup for GPIO off and on
-    """
-    # Use BCM rather than board numbers
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setup(channel_on, GPIO.OUT)
-    GPIO.setup(channel_off, GPIO.OUT)
-
-    # Send pulse to turn off pi
-    GPIO.output(channel_off, GPIO.HIGH)
-    time.sleep(0.2)
-    GPIO.output(channel_off, GPIO.LOW)
-    time.sleep(0.2)
-    GPIO.output(channel_off, GPIO.HIGH)
-    time.sleep(20)
-
-    # ------------------------------------------------------------
-    # Then reboot again
-    stat_dict = {}
-    stat_dict_on = {}
-    for ip in pi_ip:
-        stat_dict_on[ip] = True
-        stat_dict[ip] = False
-
-    while stat_dict != stat_dict_on:
-        # Send pulse to turn off pi
-        GPIO.output(channel_on, GPIO.HIGH)
-        time.sleep(0.2)
-        GPIO.output(channel_on, GPIO.LOW)
-        time.sleep(20)
-
-        # For each pi attempt to connect. If we can't we flag that this pi is now turned off
-        for ip in pi_ip:
-            if not stat_dict[ip]:
-                date_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                ret = os.system("ping -w 1 {}".format(ip))
-                if ret == 0:
-                    with open(FileLocator.MAIN_LOG_PI, 'a', newline='\n') as f:
-                        f.write("{} remote_pi_on.py: {} now turned on\n".format(date_str, ip))
-                    stat_dict[ip] = True
-                else:
-                    with open(FileLocator.MAIN_LOG_PI, 'a', newline='\n') as f:
-                        f.write("{} remote_pi_on.py: {} no longer reachable\n".format(date_str, ip))
-    GPIO.cleanup()

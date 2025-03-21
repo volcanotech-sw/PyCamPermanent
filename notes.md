@@ -1,6 +1,6 @@
 PyCamPermanent
 
-###Check that I don't add too many dependencies to utils and setupclasses - wittypi runs the remote_pi_on/off scripts as root, so root needs to be able to import all modules otherwise it will fail###
+###Check that I don't add too many dependencies to utils and setupclasses - the remote_pi_on/off runs scripts as root, so root needs to be able to import all modules otherwise it will fail###
 
 Software for permanent installation PiCam
 
@@ -12,17 +12,9 @@ To install:
 > sudo apt install exfat-fuse exfat-utils for SSD compatibility on pi
 
 Hardware setup:
-> Connect GPIO 23 (physical pin 16) on masterpi to GPIO 3 (physical pin 5) on slave pi. This allows off/on functionality through wittypi start-up/shutdown scripts
 > If using a 128GB microSD must expand filesystem after copying disk image. sudo raspi-config > advanced options > expand filesystem. All space should then be available to pi
 
 Bug report:
-1. Disconnecting the ext_comm more than once leads to and index error in close_connection (from masterpi)
-   - FIXED
-2. If camera disconnects from masterpi an Index Error is thrown, due to receiving from a connection which doesn't exist possibly?
-3. Every now and then I get a Socket already in use error when starting masterpi, this makes it fail and then the camera continually tries to
-connect. Need to add a loop to the SocketServer somewhere, so that if I get this error I just keep trying to make the socket until it isn't in use. 
-   - I've added a loop to opening sockets in pycam_masterpi.py. This didn't solve the issue
-   - I need to work out how to free up the socket again, or change socket (perhaps jump to another port?) FIXED 
 4. Get broken pipe error on port 12345 after starting manual acquisition then disconnecting from the insturment and trying to reconnect.
 Need to deal with broken pipe in some way - set up server and client to reconnect rather than needing to restart entire system.
    - FIXED generally. But still don't have a clever way of reconnecting if pipes ever do break
@@ -80,25 +72,15 @@ Requirements for GUI:
 
 
 CHANGING IP ADDRESSES
-IP addresses are read in from config files. A few locations need to be changed (on both Pis!):
-> ./pycam/conf/config.txt
-> ./pycam/conf/network_transfer.txt
-> ./pycam/conf/network_comm.txt
-> ./pycam/conf/network_external.txt
-In config.txt you need to change the host_ip (master) and pi_ip (slave) IPs.
+In `./pycam/conf/config.txt` you need to change the host_ip (master) IP.
 > EDIT (04/04/2023). New pi software should only retrieve IP addresses from config.txt so should no longer have to edit
 > network_*.txt files. But this edit may not be rolled out onto all instruments... can check read_network_file() in 
 > sockets.py to see if edits have been made on the instrument - if only "port" is returned, rather than ip_addr and port
 > then the edits have been made.
+> EDIT (09/01/2025). Only one network_*.txt file remains - network_external.txt - which just contains the port the master
+> script is listening on.
 You then need to make changes on the Pi operating system itself, since we have set it up to have a static IP address
 May find online help useful for setting up the static IPs https://elinux.org/RPi_Setting_up_a_static_IP_in_Debian
-Pi 1 (Witty Pi):
-> /etc/network/interfaces - line 18: change to desired host address.
-> May need to the change lines 20 and 21 in above file: network and broadcast to reflect the new IP. Keep the endings the same, just change the first 2 numbers
-> /etc/ntp.conf - line 32: Change "restrict" IP address to desired new Pi 2 Address. 
-> May then need to change the broadcast line lower down to contain the same first 3 numbers (then keep 255 I think)
-Pi 2:
-> /etc/network/interfaces - line 18: Change to desired address. 
-> Again, then probably need to change lines 20 and 21 of above file: network and broadcast.
-> /etc/ntp.conf - line 7: change "server" to Pi 1 IP
+> /etc/network/interfaces.d/eth0 - line 3: change to desired host address.
+> May need to the change line 4 in above file gateway address if using static IPs on an internet routable connection.
 You may then need to change your laptop computer's IP to a static IP in the same subnet, otherwise connection will fail.

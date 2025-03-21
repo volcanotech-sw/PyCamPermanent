@@ -24,7 +24,7 @@ class TestSockets:
         write_file(filename, sock_data)
 
         # Read network file
-        port = read_network_file(filename)
+        _, port = read_network_file(filename)
 
         assert port == sock_data['port']
 
@@ -93,10 +93,10 @@ class TestSockets:
         time_start = time.time()
 
         # Send image over socket
-        sock_cli.send_img(sock_cli.camera.filename, sock_cli.camera.image)
+        sock_cli.send_img(sock_cli.camera.filename, sock_cli.camera.image, sock_cli.camera.metadata)
 
         # Receive image on server
-        img_recv, filename = sock_serv.recv_img()
+        img_recv, filename, metadata = sock_serv.recv_img()
 
         print('Time taken to send and receive image: {:.6f}'.format(time.time() - time_start))
 
@@ -106,6 +106,7 @@ class TestSockets:
         # Compare the sent and received images
         assert img_path == filename
         assert np.array_equal(sock_cli.camera.image, img_recv)
+        assert sock_cli.camera.metadata == metadata
 
     def test_send_recv_spec(self):
         """Tests send and receive funcionality of PiSockets for spectrum and associated information"""
@@ -137,18 +138,6 @@ class TestSockets:
         assert np.array_equal(spectrum, spec[1, :])
         assert np.array_equal(wavelengths, spec[0, :])
         assert filename == spec_path
-
-    def test_get_connection(self):
-        """Tests get connection"""
-        sock_serv, sock_cli = self.open_sockets()
-
-        # Attempt the get_connection() function
-        conn = sock_serv.get_connection(ip='127.0.0.1')
-
-        # Close socket to finish
-        sock_serv.close_socket()
-
-        assert conn == sock_serv.connections[0][0]
 
     def test_close_connection(self):
         """Tests closing and deleting a connection"""
@@ -206,7 +195,7 @@ class TestSockets:
         comms = sock_serv.encode_comms(cmd_dict)
 
         # Get connection
-        conn = sock_serv.get_connection(ip='127.0.0.1')
+        conn = sock_serv.connections[0]
 
         # Send data over connection
         sock_serv.send_comms(conn, comms)
@@ -244,13 +233,13 @@ class TestSockets:
         # Open two sockets and connect them
         sock_serv, sock_cli = self.open_sockets()
 
-        recv_thread = threading.Thread(target=recv_comms, args=(sock_serv, sock_serv.get_connection(conn_num=0),))
+        recv_thread = threading.Thread(target=recv_comms, args=(sock_serv, sock_serv.connections[0]))
         recv_thread.daemon = True
         recv_thread.start()
 
         time.sleep(2)
 
-        sock_serv.close_connection(connection=sock_serv.get_connection(conn_num=0))
+        sock_serv.close_connection(connection=sock_serv.connections[0][0])
         sock_serv.close_socket()
         recv_thread.join()
         assert not recv_thread.is_alive()

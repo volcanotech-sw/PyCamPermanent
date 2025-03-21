@@ -8,17 +8,10 @@ Created on Mon Apr 27 17:04:57 2020
 import logging
 import numpy as np
 
-try:
-    import seatease.spectrometers as st
-except ImportError:
-    msg = 'seatease module not found, unable to use virtual spectrometer'
-    logging.debug(msg)
-    
-import seabreeze.spectrometers as sb
 
 class Spectrometer():
     
-    def __init__(self, serial=None, integration_time=100, coadds=10):
+    def __init__(self, serial=None, type='Flame-S', integration_time=100, coadds=10):
         
         '''
         Wrapper around the python-seabreeze library for controlling Ocean
@@ -41,10 +34,30 @@ class Spectrometer():
         '''
         
         # Connect to the spectrometer
-        if serial == 'virtual':
+        if type == 'virtual':
+            try:
+                import seatease.spectrometers as st
+            except ImportError:
+                msg = 'seatease module not found, unable to use virtual spectrometer'
+                logging.debug(msg)
             self.spec = st.Spectrometer.from_first_available()
             
-        else:
+        elif type == "Flame-S" or type == "Ocean-SR":
+            try:
+                import seabreeze
+                seabreeze.use("pyseabreeze")
+                import seabreeze.spectrometers as sb
+            except ModuleNotFoundError:
+                warnings.warn("Working on machine without seabreeze, functionality of some classes will be lost")
+            self.spec = sb.Spectrometer.from_serial_number(serial=serial)
+
+        elif type == "Avantes":
+            try:
+                import avaspecvolc.avaspecvolc as sb
+            except ModuleNotFoundError:
+                warnings.warn(
+                    "Working on machine without avaspecvolc, functionality of some classes will be lost"
+                )
             self.spec = sb.Spectrometer.from_serial_number(serial=serial)
             
         # Set the initial integration time and coadds
@@ -87,7 +100,7 @@ if __name__ == '__main__':
     
     import matplotlib.pyplot as plt
     
-    spec = Spectrometer('virtual')
+    spec = Spectrometer(type='virtual')
     
     x, y0 = spec.get_spectrum()
     
