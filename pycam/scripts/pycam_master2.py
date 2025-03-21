@@ -346,10 +346,10 @@ while running:
                                 f"Less than 10% of free space available in {save_path}, skipping..."
                             )
                             continue
-                        else:
-                            print(
-                                f"Current disk usage for {save_path} is {100 * usage.used / usage.total:.2f}%"
-                            )
+                        # else:
+                        #     print(
+                        #         f"Current disk usage for {save_path} is {100 * usage.used / usage.total:.2f}%"
+                        #     )
 
                         # Actually save
                         save_img_local(new_file, new_meta)
@@ -512,7 +512,7 @@ while running:
                     signal.raise_signal(signal.SIGINT)
 
         # Sleep for a short period and then check the lock again
-        time.sleep(0.005)
+        time.sleep(0.001)
 
     except KeyboardInterrupt:
         # Try to quit nicely when ctrl-c'd

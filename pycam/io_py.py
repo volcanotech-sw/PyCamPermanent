@@ -46,7 +46,7 @@ def save_img(img, filename, file_ext='.png', metadata=None, meta_filename=None, 
     open(lock, 'a').close()
 
     if compression:
-        png_compression = 9
+        png_compression = 5
     else:
         png_compression = 0
 
