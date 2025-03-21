@@ -469,7 +469,7 @@ class PyplisWorker:
                 self.cross_corr_lines[line_type] = line
             self.PCS_lines_all.append(line)
             self.PCS_lines_all[-1].line_id = str(i)
-
+        self.PCS_lines = [pcs_line for pcs_line in self.PCS_lines_all if not pcs_line == self.cross_corr_lines['old']]
 
     def save_all_dil(self, save_dir):
         dil_lines = []
