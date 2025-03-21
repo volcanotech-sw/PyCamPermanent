@@ -555,10 +555,13 @@ class PyplisWorker:
     def save_config_plus(self, file_path, file_name = None):
         """Save extra data associated with config file along with config"""
         self.save_all_pcs(file_path)
-        self.save_all_dil(file_path)
         self.save_img_reg(file_path)
         self.save_cam_geom(file_path)
         self.save_doas_params()
+
+        # DIL lines are saved in the dilution figure object
+        if not self.headless:
+            self.save_all_dil(file_path)
         if file_name is None:
             self.save_config(file_path)
         else:
