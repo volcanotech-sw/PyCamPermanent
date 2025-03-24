@@ -87,17 +87,19 @@ if ! mountpoint "$X_DRIVE_MOUNT_FOLDER" >/dev/null; then
 
 fi
 
-# Copy the remote images to the X drive
-echo "Starting file transfer from $REMOTE_USER@$REMOTE_ADDRESS:$REMOTE_PORT"
-echo "    Copying from $REMOTE_IMAGE_SOURCE/"
-echo "    Copying to   $X_DRIVE_DESTINATION/"
-echo "You will need to enter the remote SSH password"
-
 if [ "$REMOTE_REMOVE" = true ]; then
     RSYNC_EXTRA="--remove-source-files"
+    MOVE_TYPE="Moving"
 else
     RSYNC_EXTRA=""
+    MOVE_TYPE="Copying"
 fi
+
+# Copy the remote images to the X drive
+echo "Starting file transfer from $REMOTE_USER@$REMOTE_ADDRESS:$REMOTE_PORT"
+echo "    $MOVE_TYPE from $REMOTE_IMAGE_SOURCE/"
+echo "    $MOVE_TYPE to   $X_DRIVE_DESTINATION/"
+echo "You will need to enter the remote SSH password"
 
 # User zstd level 22 for maximum compression
 rsync -rav --zc=zstd --zl=22 --progress $RSYNC_EXTRA -e "ssh -p $REMOTE_PORT" $REMOTE_USER@$REMOTE_ADDRESS:$REMOTE_IMAGE_SOURCE/ $X_DRIVE_DESTINATION/
