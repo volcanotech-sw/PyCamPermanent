@@ -44,6 +44,7 @@ from skimage import transform as tf
 import warnings
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
+from pathlib import Path
 
 from inspect import cleandoc
 warnings.simplefilter("ignore", UserWarning)
@@ -3913,6 +3914,9 @@ class PyplisWorker:
         """Start _process_sequence in a thread, so that this can return after starting and the GUI doesn't lock up"""
         self.set_processing_directory(make_dir=True)
 
+        self.log_path = Path(self.processed_dir).joinpath("PyplisWorker.log").as_posix()
+        LoggerManager.add_file_handler(self.PyplisLogger, self.log_path)
+
         # If a calibration has been preloaded then resave it
         if self.cal_type_int == 3:
             self.save_preloaded_cal()
@@ -4042,6 +4046,8 @@ class PyplisWorker:
         proc_time = time.time() - time_proc
         self.PyplisLogger.info('Processing time: {:.1f}'.format(proc_time))
         self.PyplisLogger.info('Time per image: {:.2f}'.format(proc_time / len(self.img_list)))
+
+        LoggerManager.remove_file_handler(self.PyplisLogger, self.log_path, delete = True)
 
         self.in_processing = False
 
