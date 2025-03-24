@@ -36,7 +36,7 @@ REMOTE_REMOVE=false
 
 # Create the mount folder
 if [ ! -d "$X_DRIVE_MOUNT_FOLDER" ]; then
-    echo "Making $X_DRIVE_MOUNT_FOLDER"
+    echo "Making $X_DRIVE_MOUNT_FOLDER, you will need to enter your SUDO password"
     sudo mkdir -p "$X_DRIVE_MOUNT_FOLDER"
 fi
 
@@ -99,7 +99,11 @@ fi
 echo "Starting file transfer from $REMOTE_USER@$REMOTE_ADDRESS:$REMOTE_PORT"
 echo "    $MOVE_TYPE from $REMOTE_IMAGE_SOURCE/"
 echo "    $MOVE_TYPE to   $X_DRIVE_DESTINATION/"
+echo "This will take a while"
 echo "You will need to enter the remote SSH password"
 
-# User zstd level 22 for maximum compression
-rsync -rav --zc=zstd --zl=22 --progress $RSYNC_EXTRA -e "ssh -p $REMOTE_PORT" $REMOTE_USER@$REMOTE_ADDRESS:$REMOTE_IMAGE_SOURCE/ $X_DRIVE_DESTINATION/
+# Use -ra to recursive copy maintaining attributes
+# Use -m to not copy empty directories
+# Use zstd level 22 (--zc=zstd --zl=22) for maximum compression
+# Use --info=progress2 to give nicer to read progress transfer
+rsync -ram --zc=zstd --zl=22 --info=progress2 $RSYNC_EXTRA -e "ssh -p $REMOTE_PORT" $REMOTE_USER@$REMOTE_ADDRESS:$REMOTE_IMAGE_SOURCE/ $X_DRIVE_DESTINATION/
