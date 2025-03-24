@@ -4115,6 +4115,12 @@ class PyplisWorker:
                 if self.first_image:
                     img_dir = os.path.dirname(img_path_A)
                     self.set_processing_directory(img_dir, make_dir=True)
+
+                    self.log_path = Path(self.processed_dir).joinpath("PyplisWorker.log").as_posix()
+
+                    file_handler = LoggerManager.create_file_handler(self.log_path)
+                    mem_handler = LoggerManager.set_mem_handler_target("PyplisWorker", file_handler)
+                    
                     self.save_config_plus(self.processed_dir)
                     save_last_val_only = False
 
@@ -4159,6 +4165,9 @@ class PyplisWorker:
             # Incremement current index so that buffer is in the right place
             self.idx_current += 1
 
+            if self.watching:
+                mem_handler.flush()
+
     def start_watching(self, directory=None, recursive=True):
         """
         Setup directory watcher for images - note this is not for watching spectra - use DOASWorker for that
@@ -4173,6 +4182,10 @@ class PyplisWorker:
 
         if self.cal_type_int == 3:
             raise InvalidCalibration("Preloaded calibration is invalid for real-time processing")
+
+        
+        LoggerManager.add_mem_handler(self.PyplisLogger, "PyplisWorker")
+        LoggerManager.add_mem_handler(self.PyplisDirWatchLogger, "PyplisWorker")
 
         if directory is not None:
             self.transfer_dir = directory
@@ -4198,6 +4211,9 @@ class PyplisWorker:
 
             # Stop processing thread when we stop watching the directory
             self.q.put([self.STOP_FLAG, None])
+
+            LoggerManager.remove_mem_handler(self.PyplisLogger, "PyplisWorker")
+            LoggerManager.remove_mem_handler(self.PyplisDirWatchLogger, "PyplisWorker", delete=True)
         else:
             self.PyplisDirWatchLogger.debug('No directory watcher to stop')
 
