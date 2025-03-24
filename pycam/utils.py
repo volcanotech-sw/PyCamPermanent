@@ -512,7 +512,7 @@ class StorageMount:
     def free_up_space(self, make_space=50):
         """
         Frees up some space on the storage device (not a full delete)
-        :param make_space:  int     Amount of space to make on SSD
+        :param make_space:  int     Amount of space to make on SSD in GB
         """
         space = self._get_space()
 
@@ -552,4 +552,4 @@ class StorageMount:
         """Gets free space on SSD in GB"""
 
         usage = shutil.disk_usage(self.data_path)
-        return usage.free / pow(1024, 2)
+        return usage.free / pow(1024, 3)
