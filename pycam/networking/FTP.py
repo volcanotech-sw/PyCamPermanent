@@ -352,6 +352,7 @@ class FTPClient:
             self.host_ip = self.config[ConfigInfo.host_ip]
             self.user = self.config[ConfigInfo.uname]
             self.pwd = self.config[ConfigInfo.ftppwd]
+            self.port = int(self.config[ConfigInfo.ftp_port])
             self.dir_data_remote = copy.deepcopy(self.config[ConfigInfo.data_dir])
             print('Directory data remote: {}'.format(self.dir_data_remote))
             self.local_dir = self.config[ConfigInfo.local_data_dir]
@@ -368,7 +369,7 @@ class FTPClient:
 
         # Open connection if we have a host_ip
         if len(self.host_ip) > 0:
-            self.open_connection(self.host_ip, self.user, self.pwd) and self.retrieve_schedule_files()
+            self.open_connection(self.host_ip, self.port, self.user, self.pwd) and self.retrieve_schedule_files()
 
 
     def _default_specs(self):
@@ -380,10 +381,11 @@ class FTPClient:
         self.dir_img_local = ''
         self.dir_spec_local = ''
 
-    def open_connection(self, ip, username=None, password=None):
+    def open_connection(self, ip, port=21, username=None, password=None):
         """Opens FTP connection to host machine and moves to correct working directory"""
         try:
-            self.connection = ftplib.FTP(ip, timeout=10)
+            self.connection = ftplib.FTP(timeout=10)
+            self.connection.connect(host=ip, port=port)
             self.connection.login(user=username, passwd=password)
             self.connection.cwd(self.dir_data_remote)
             print('Got FTP connection from {}. File transfer now available.'.format(ip))
@@ -402,7 +404,7 @@ class FTPClient:
         try:
             self.connection.voidcmd('NOOP')
         except BaseException as e:
-            conn = self.open_connection(self.host_ip, username=self.user, password=self.pwd)
+            conn = self.open_connection(self.host_ip, self.port, username=self.user, password=self.pwd)
             return conn
         return True
 

@@ -186,6 +186,7 @@ class ConfigInfo:
     listen_ip = 'listen_ip'
     host_ip = 'host_ip'      # Tag for remote pi ip addresses in config file
     port_ext = 'port_ext'
+    ftp_port = 'ftp_port'
 
     start_script = 'start_script'
     stop_script = 'stop_script'
