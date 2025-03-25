@@ -352,7 +352,7 @@ class FTPClient:
             self.host_ip = self.config[ConfigInfo.host_ip]
             self.user = self.config[ConfigInfo.uname]
             self.pwd = self.config[ConfigInfo.ftppwd]
-            self.dir_data_remote = copy.deepcopy(ConfigInfo.data_dir)
+            self.dir_data_remote = copy.deepcopy(self.config[ConfigInfo.data_dir])
             print('Directory data remote: {}'.format(self.dir_data_remote))
             self.local_dir = self.config[ConfigInfo.local_data_dir]
             self.dir_img_local = os.path.join(self.local_dir, 'Images/')
