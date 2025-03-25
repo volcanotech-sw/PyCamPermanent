@@ -432,6 +432,7 @@ class FTPClient:
         # Also get the port of the remote PI
         # (not a schedule, but this function is already called everywhere this is needed)
         self.get_file(FileLocator.NET_EXT_FILE, FileLocator.NET_EXT_FILE_WINDOWS, rm=False)
+        return True
 
     def move_file_to_instrument(self, local_file, remote_file):
         """Move specific file from local_file location to remote_file location"""
