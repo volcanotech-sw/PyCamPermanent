@@ -197,21 +197,6 @@ def kill_process(process='pycam_master2'):
             subprocess.call(['kill', '-9', line.split()[0]])
 
 
-def kill_all(ips, script_name='/home/pi/pycam/scripts/kill_process.py'):
-    """
-    Kills local and remote pycam scripts (mainly for use at the end of pycam_master2.py to ensure everything is
-    shutdown - a bit of a fail-safe
-    """
-    print('Attempting to kill any scripts still running')
-    # Remote pis
-    for ip in ips:
-        ssh_client = open_ssh(ip)
-        ssh_cmd(ssh_client, 'python3 {}'.format(script_name))
-        close_ssh(ssh_client)
-
-    subprocess.run(['python3', script_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
 def make_circular_mask_line(h, w, cx, cy, radius, tol=0.008):
     """Create a circular access mask for accessing certain pixels in an image. T
     aken from pyplis.helpers.make_circular_mask and adapted to only produce a line mask, rather than a filled circle

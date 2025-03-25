@@ -177,6 +177,10 @@ class FileLocator(metaclass=MetaFileLocator):
 class ConfigInfo:
     """Defines important attributes related to config files, allowing references to link to this file rather than being
     explicitly coded elsewhere"""
+    uname = 'uname'
+    pwd = 'pwd'
+    ftppwd = 'ftppwd'
+    data_dir = 'data_dir'
     local_data_dir = 'local_data_dir'
 
     listen_ip = 'listen_ip'

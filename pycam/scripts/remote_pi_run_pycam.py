@@ -20,8 +20,12 @@ cfg = read_file(FileLocator.CONFIG)
 # Get master IP from config info
 master_ip = cfg[ConfigInfo.host_ip]
 
+# Pi login details
+uname = config[ConfigInfo.uname]
+pwd = config[ConfigInfo.pwd]
+
 #  Reboot master pi
-ssh_cli = open_ssh(master_ip)
+ssh_cli = open_ssh(master_ip, uname=uname, pwd=pwd)
 stdin, stdout, stderr = ssh_cmd(ssh_cli, 'sudo reboot')
 try:
     close_ssh(ssh_cli)

@@ -349,10 +349,10 @@ class FTPClient:
             self.config = network_info
 
             # Do unpacking of config dictionary here
-            self.host_ip = self.config['host_ip']
-            self.user = self.config['uname']
-            self.pwd = self.config['ftppwd']
-            self.dir_data_remote = copy.deepcopy(self.config['data_dir'])
+            self.host_ip = self.config[ConfigInfo.host_ip]
+            self.user = self.config[ConfigInfo.uname]
+            self.pwd = self.config[ConfigInfo.ftppwd]
+            self.dir_data_remote = copy.deepcopy(ConfigInfo.data_dir)
             print('Directory data remote: {}'.format(self.dir_data_remote))
             self.local_dir = self.config[ConfigInfo.local_data_dir]
             self.dir_img_local = os.path.join(self.local_dir, 'Images/')

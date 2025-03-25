@@ -30,9 +30,13 @@ def run_pycam(ip, auto_capt=1):
         # Path to start_script executable
         pycam_path = config[ConfigInfo.start_script]
 
+        # Pi login details
+        uname = config[ConfigInfo.uname]
+        pwd = config[ConfigInfo.pwd]
+
         try:
             # Open ssh connection
-            connection = open_ssh(ip)
+            connection = open_ssh(ip, uname=uname, pwd=pwd)
         except TimeoutError:
             messagebox.showerror('Connection Timeout', 'Attempt to run pycam on {} timed out. Please ensure that the'
                                                        'instrument is accesible at that IP address'.format(ip))
