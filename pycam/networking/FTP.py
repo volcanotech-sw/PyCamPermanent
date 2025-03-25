@@ -383,7 +383,7 @@ class FTPClient:
     def open_connection(self, ip, username=None, password=None):
         """Opens FTP connection to host machine and moves to correct working directory"""
         try:
-            self.connection = ftplib.FTP(ip)
+            self.connection = ftplib.FTP(ip, timeout=10)
             self.connection.login(user=username, passwd=password)
             self.connection.cwd(self.dir_data_remote)
             print('Got FTP connection from {}. File transfer now available.'.format(ip))
