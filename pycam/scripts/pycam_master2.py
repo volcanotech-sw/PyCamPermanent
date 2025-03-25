@@ -370,7 +370,6 @@ while running:
                     if (
                         saved_successfully
                         and save_path == save_paths[-1]
-                        and not dark_capture
                         and time.time() - new_conn_pause_time > new_conn_pause_delay
                     ):
                         # only do this for the internal SSD
