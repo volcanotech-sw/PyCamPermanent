@@ -4,6 +4,7 @@
 
 import pycam.gui.cfg as cfg
 from pycam.networking.ssh import open_ssh, close_ssh, ssh_cmd
+from pycam.networking.sockets import read_network_file
 from pycam.setupclasses import FileLocator, ConfigInfo
 from pycam.io_py import write_script_crontab, read_script_crontab
 from pycam.utils import read_file
@@ -114,7 +115,7 @@ class ConnectionGUI:
         lab.grid(row=1, column=0, padx=self.pdx, pady=self.pdy, sticky='e')
         entry = ttk.Entry(self.frame, width=15, textvariable=self._host_ip, font=self.main_gui.main_font)
         entry.grid(row=0, column=1, padx=self.pdx, pady=self.pdy, sticky='ew')
-        ttk.OptionMenu(self.frame, self._port, self.port_list[0], *self.port_list).grid(row=1, column=1, padx=self.pdx, pady=self.pdy, sticky='ew')
+        ttk.OptionMenu(self.frame, self._port, self.port, *self.port_list).grid(row=1, column=1, padx=self.pdx, pady=self.pdy, sticky='ew')
         # ttk.Entry(self.frame, width=6, textvariable=self._port).grid(row=1, column=1, padx=self.pdx, pady=self.pdy, sticky='ew')
 
         self.test_butt = ttk.Button(self.frame, text='Test Connection', command=self.test_connection)
@@ -155,6 +156,11 @@ class ConnectionGUI:
         """Updates socket address information"""
         cfg.sock.update_address(self.host_ip, self.port)
         cfg.ftp_client.update_connection(self.host_ip)
+        # update connection pulls down the new remote port
+        _, port = read_network_file(FileLocator.NET_EXT_FILE_WINDOWS)
+        if port:
+            self.port = port
+            cfg.sock.update_address(host_ip=self.host_ip, port=self.port)
 
     def test_connection(self):
         """Tests that IP address is available"""
