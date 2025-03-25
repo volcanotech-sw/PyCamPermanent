@@ -467,8 +467,12 @@ class InstrumentConfiguration:
         # Transfer file to instrument
         self.ftp.move_file_to_instrument(FileLocator.SCRIPT_SCHEDULE, FileLocator.SCRIPT_SCHEDULE_PI)
 
+        # Pi login details
+        uname = cfg.config[ConfigInfo.uname]
+        pwd = cfg.config[ConfigInfo.pwd]
+
         # Setup crontab
-        ssh_cli = open_ssh(self.ftp.host_ip)
+        ssh_cli = open_ssh(self.ftp.host_ip, uname=uname, pwd=pwd)
 
         std_in, std_out, std_err = ssh_cmd(ssh_cli, 'crontab ' + FileLocator.SCRIPT_SCHEDULE_PI, background=False)
         close_ssh(ssh_cli)

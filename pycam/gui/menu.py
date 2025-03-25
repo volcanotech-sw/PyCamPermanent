@@ -13,7 +13,7 @@ import pycam.gui.settings as settings
 from pycam.networking.FTP import FileTransferGUI
 from pycam.cfg import pyplis_worker, process_defaults_loc
 from pycam.doas.cfg import doas_worker
-from pycam.setupclasses import FileLocator
+from pycam.setupclasses import FileLocator, ConfigInfo
 from pycam.networking.ssh import open_ssh, ssh_cmd, close_ssh
 from pycam.utils import truncate_path
 from pycam.exceptions import InvalidCalibration
@@ -125,10 +125,10 @@ class PyMenu:
         self.submenu_data.add_separator()
         self.submenu_data.add_command(label='Get temperature log', command=temp_log.generate_frame)
         self.submenu_data.add_separator()
-        self.submenu_data.add_command(label='Mount SSD', command=lambda: self.mount_ssd(cfg.ftp_client.host_ip))
-        self.submenu_data.add_command(label='Unmount SSD', command=lambda: self.unmount_ssd(cfg.ftp_client.host_ip))
+        self.submenu_data.add_command(label='Mount SSD', command=lambda: self.mount_ssd(cfg.ftp_client.host_ip, username=cfg.config[ConfigInfo.uname], password=cfg.config[ConfigInfo.pwd]))
+        self.submenu_data.add_command(label='Unmount SSD', command=lambda: self.unmount_ssd(cfg.ftp_client.host_ip, username=cfg.config[ConfigInfo.uname], password=cfg.config[ConfigInfo.pwd]))
         # self.submenu_data.add_command(label='SSD full download', command=cfg.ftp_client.full_ssd_download)
-        # self.submenu_data.add_command(label='Clear SSD data', command=lambda: self.clear_ssd(cfg.ftp_client.host_ip))
+        # self.submenu_data.add_command(label='Clear SSD data', command=lambda: self.clear_ssd(cfg.ftp_client.host_ip, username=cfg.config[ConfigInfo.uname], password=cfg.config[ConfigInfo.pwd]))
         # self.submenu_data.add_command(label='Free space on SSD', command=lambda: self.free_ssd(cfg.ftp_client.host_ip))
         self.menus[tab].add_separator()
 
@@ -331,13 +331,17 @@ class PyMenu:
         lab = ttk.Label(self.space_frame, text='Create space (GB):')
         lab.grid(row=1, column=0)
 
+        # Pi login details
+        uname = cfg.config[ConfigInfo.uname]
+        pwd = cfg.config[ConfigInfo.pwd]
+
         # Free space entry
         free_space = tk.IntVar()
         free_space.set(50)
         entry = ttk.Spinbox(self.space_frame, from_=0, to=1000, increment=5, textvariable=free_space)
         entry.grid(row=1, column=1, sticky='nsew')
 
-        butt = ttk.Button(self.space_frame,text='Create space', command=lambda: self._free_ssd(ip, free_space.get()))
+        butt = ttk.Button(self.space_frame,text='Create space', command=lambda: self._free_ssd(ip, free_space.get(), username=uname, password=pwd))
         butt.grid(row=2, column=0, sticky='nsew')
         butt = ttk.Button(self.space_frame, text='Cancel', command=self.space_frame.destroy)
         butt.grid(row=2, column=1, sticky='nsew')
