@@ -155,12 +155,12 @@ class ConnectionGUI:
     def update_connection(self):
         """Updates socket address information"""
         cfg.sock.update_address(self.host_ip, self.port)
-        cfg.ftp_client.update_connection(self.host_ip)
-        # update connection pulls down the new remote port
-        _, port = read_network_file(FileLocator.NET_EXT_FILE_WINDOWS)
-        if port:
-            self.port = port
-            cfg.sock.update_address(host_ip=self.host_ip, port=self.port)
+        if cfg.ftp_client.update_connection(self.host_ip):
+            # update connection pulls down the new remote port
+            _, port = read_network_file(FileLocator.NET_EXT_FILE_WINDOWS)
+            if port:
+                self.port = port
+                cfg.sock.update_address(host_ip=self.host_ip, port=self.port)
 
     def test_connection(self):
         """Tests that IP address is available"""

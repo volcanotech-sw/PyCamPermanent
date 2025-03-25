@@ -420,7 +420,7 @@ class FTPClient:
             time.sleep(0.5)
 
         # Test the new connection
-        self.test_connection() and self.retrieve_schedule_files()
+        return self.test_connection() and self.retrieve_schedule_files()
 
     def retrieve_schedule_files(self):
         """Retrieves capture and crontab schedule files"""
