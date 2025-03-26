@@ -4078,7 +4078,12 @@ class PyplisWorker:
         Main processing function for continuous processing
         """
         # Reset self
-        self.reset_self()
+        if self.headless:
+            plot = False
+        else:
+            plot = True
+
+        self.reset_self(reset_plot=plot)
 
         # TODO I may need to think about whether I use this to look for images and perform load_sequence() - whihc also
         # TODO sets the processing directory with set_processing_directory(). Otherwise i need the watcher function
@@ -4371,6 +4376,7 @@ class PyplisWorker:
         parser.add_argument('-o', '--output_directory', type=str, help='Directory to save processed results and images')
         parser.add_argument('-c', '--config_path', type=str, help='Path to the YAML configfile')
         parser.add_argument('-d', '--doas_results', type=str ,help='Path to DOAS results CSV file')
+        parser.add_argument('-w', '--watcher', action='store_true', help='Watch the image directory for new images')
         return parser.parse_args()
     
 class ImageRegistration:

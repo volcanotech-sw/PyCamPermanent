@@ -23,5 +23,8 @@ if __name__ == "__main__":
     pyplis_worker.set_processing_directory(img_dir=args.output_directory, make_dir=True)
     pyplis_worker.doas_worker = doas_worker
     pyplis_worker.doas_worker.load_results(filename=args.doas_results, plot=False)
-    pyplis_worker._process_sequence(reset_plot=False)
+    if args.watcher:
+        pyplis_worker.start_watching_dir()
+    else:
+        pyplis_worker._process_sequence(reset_plot=False)
     pyplis_worker.save_config_plus(pyplis_worker.processed_dir)
