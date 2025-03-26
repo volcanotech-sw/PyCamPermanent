@@ -3,6 +3,7 @@
 """Contains a number of miscellaneous GUI classes for use"""
 import pycam.gui.cfg as cfg
 from pycam.setupclasses import pycam_details, FileLocator
+from pycam.logging.logging_tools import LoggerManager
 
 import tkinter as tk
 from tkinter import messagebox
@@ -12,6 +13,7 @@ from PIL import ImageTk, Image
 import time
 import socket
 
+GuiLogger = LoggerManager.add_logger("GUI")
 
 class About:
     """Class to create a tkinter frame containing the details of PyCam"""
@@ -109,7 +111,7 @@ class Indicator:
             self.sock.connect_socket_timeout(timeout=5)
             self.sock.test_connection()
         except (ConnectionError, socket.error) as e:
-            print(e)
+            GuiLogger.error(e)
             self.indicator_off()
             messagebox.showerror('Connection failed', 'Unable to connect to instrument.\n\n'
                                                       'Please check connection settings are correct \n'
@@ -250,7 +252,8 @@ class ScrollWindow:
 
         # If both paremeters are set to false we raise warning and return
         if not vertical and not horizontal:
-            print('Scroll bar not used as both vertical and horizontal variables are set to False')
+            GuiLogger.info('Scroll bar not used as both vertical and horizontal variables are set '
+                           'to False')
             return
 
         # Set up y direction scroll bar

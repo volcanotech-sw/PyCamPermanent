@@ -22,11 +22,14 @@ from pycam.gui.settings import GUISettings
 from pycam.gui.misc import LoadSaveProcessingSettings
 from pycam.utils import truncate_path
 from pycam.setupclasses import FileLocator
+from pycam.logging.logging_tools import LoggerManager
 
 # plt.style.use('dark_background')
 plt.style.use('default')
 
 refresh_rate = 200
+
+GuiLogger = LoggerManager.add_logger("GUI")
 
 class DirIndicator:
     """
@@ -309,7 +312,7 @@ class SpectraPlot:
             if update == 1:
                 self.canv.draw()
             else:
-                print('Closing canvas drawing')
+                GuiLogger.info('Closing canvas drawing')
                 return
         except queue.Empty:
             pass
@@ -630,7 +633,7 @@ class DOASFigure:
         try:
             self.ax.set_ylim(ylims)
         except BaseException as e:
-            print('Could not set axis limits: {}'.format(ylims))
+            GuiLogger.warning(f'Could not set axis limits: {ylims}')
 
         if isinstance(self.doas_worker, DOASWorker):
             self.ax.set_title('SO2 Column density [ppm.m]: {}          STD Error: {}'.format(
@@ -752,7 +755,7 @@ class CDSeries:
             if update == 1:
                 self.canv.draw()
             else:
-                print('Closing canvas drawing')
+                GuiLogger.info('Closing canvas drawing')
                 return
         except queue.Empty:
             pass
@@ -963,12 +966,12 @@ class RefPlot:
 
     def conv_ref(self):
         if self.doas_worker.ILS is None:
-            print('No ILS to convolved reference spectrum with')
+            GuiLogger.info('No ILS to convolved reference spectrum with')
             return
 
         # If reference spectrum dictionary is empty - return
         if not self.doas_worker.ref_spec:
-            print('No reference spectrum loaded')
+            GuiLogger.info('No reference spectrum loaded')
             return
 
         # Convolve reference spectrum
@@ -1265,7 +1268,7 @@ class ILSFrame:
     def save_ILS(self):
         """Saves ILS to text file"""
         if self.doas_worker.ILS is None or self.doas_worker.ILS_wavelengths is None:
-            print('No instrument line shape data to save')
+            GuiLogger.info('No instrument line shape data to save')
             return
 
         time = datetime.now().strftime('%Y-%m-%dT%H%M%S')

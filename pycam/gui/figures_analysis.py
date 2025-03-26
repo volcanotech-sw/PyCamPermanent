@@ -13,6 +13,7 @@ from pycam.doas.ifit_worker import IFitWorker
 from pycam.so2_camera_processor import UnrecognisedSourceError
 from pycam.utils import make_circular_mask_line, truncate_path
 from pycam.exceptions import InvalidCalibration
+from pycam.logging.logging_tools import LoggerManager
 
 from pyplis import LineOnImage, Img
 from pyplis.helpers import make_circular_mask, shifted_color_map
@@ -43,6 +44,7 @@ import copy
 
 refresh_rate = 200    # Refresh rate of draw command when in processing thread
 
+GuiLogger = LoggerManager.add_logger("GUI")
 
 class SequenceInfo:
     """
@@ -719,7 +721,8 @@ class ImageSO2(LoadSaveProcessingSettings):
                     line_idx = self.current_ica - 1
                     self.del_ica(line_idx)
                 else:
-                    print('No space to add PCS line, please use force_add or delete a line before adding another')
+                    GuiLogger.info('No space to add PCS line, please use force_add or delete a '
+                    'line before adding another')
                     return
 
         # Make line
@@ -874,7 +877,7 @@ class ImageSO2(LoadSaveProcessingSettings):
 
             self.img_canvas.draw()
         else:
-            print('Clicked outside axes bounds but inside plot window')
+            GuiLogger.info('Clicked outside axes bounds but inside plot window')
 
     def del_ica(self, line_num, update_all=True, permanent = False):
         """Searches axis for line object relating to pyplis line object and removes it
@@ -913,8 +916,8 @@ class ImageSO2(LoadSaveProcessingSettings):
             pyplis_worker.config['auto_nadeau_pcs'] = 0
             if pyplis_worker.auto_nadeau_line:
                 self.root.after_idle(self.show_auto_nadeau_warn)
-                print("The ICA line selected for Nadeau line autogeneration was removed. "
-                      "Reverting to ICA line 1 for Nadeau line autogeneration")
+                GuiLogger.info("The ICA line selected for Nadeau line autogeneration was removed. "
+                               "Reverting to ICA line 1 for Nadeau line autogeneration")
 
         if update_all:
             # Gather variables
@@ -980,7 +983,7 @@ class ImageSO2(LoadSaveProcessingSettings):
         if draw:
             # If in processing, the canvas is drawn a lot, so we don't draw it here
             if not self.pyplis_worker.in_processing:
-                print('Drawing canvas')
+                GuiLogger.debug('Drawing canvas')
                 self.img_canvas.draw()
 
     def plt_opt_flow(self, draw=True):
@@ -1407,7 +1410,8 @@ class TimeSeriesFigure:
                                 markersize=self.ER_markersize,
                                 in_kg=False)
                     except KeyError:
-                        print('No emission rate analysis data available for {}'.format(self.line_plot))
+                        GuiLogger.debug(f'No emission rate analysis data available '
+                                        f'for {self.line_plot}')
 
         # Plot the summed total
         if self.plot_total and len(self.total_lines) > 1:
@@ -1426,7 +1430,8 @@ class TimeSeriesFigure:
                                 marker=self.marker,
                                 in_kg=False)
                     except KeyError:
-                        print('No emission rate analysis data available for sum of all ICA lines')
+                        GuiLogger.debug('No emission rate analysis data available for sum of all '
+                                        'ICA lines')
 
         # Adjust ylimits and do general plot tidying
         self.axes[0].autoscale(axis='y')
@@ -3412,7 +3417,7 @@ class ProcessSettings(LoadSaveProcessingSettings):
     def set_cell_cal_dir(self, cal_dir):
         """Directly sets cell calibration directory without filedialog"""
         if not os.path.exists(cal_dir):
-            print('Cannot set calibration directory as requested directory does not exist')
+            GuiLogger.info('Cannot set calibration directory as requested directory does not exist')
             return
         self.cell_cal_dir = cal_dir
         pyplis_worker.config['cell_cal_dir'] = self.cell_cal_dir
@@ -3896,8 +3901,8 @@ class DOASFOVSearchFrame(LoadSaveProcessingSettings):
             else:
                 raise  IndexError
         except (IndexError, TypeError):
-            print('Error when attempting to set DOAS FOV centre pixel. Aborting setting.\n'
-                  'Expected list with length 2, got type: {}'.format(type(value)))
+            GuiLogger.warning(f'Error when attempting to set DOAS FOV centre pixel. Aborting '
+                              f'setting. Expected list with length 2, got type: {type(value)}')
 
     @property
     def fov_rad(self):
@@ -3973,9 +3978,9 @@ class DOASFOVSearchFrame(LoadSaveProcessingSettings):
                 #TODO This plotting isn't working as I want - not updating. Maybe just save each data point to an array
                 #TODO in pyplis_worker and then update the plot each time by clearing the axes and replotting the full
                 #TODO arrays, rather than doing one by one? This would also mean I could save the full arrays later
-                print('Calib time: {}'.format(self.pyplis_worker.img_tau.meta['start_acq']))
-                print('Calib coeffs: {}'.format(self.pyplis_worker.calib_pears.calib_coeffs))
-                print('Calib err: {}'.format(self.pyplis_worker.calib_pears.err()))
+                GuiLogger.debug(f'Calib time: {self.pyplis_worker.img_tau.meta['start_acq']}')
+                GuiLogger.debug(f'Calib coeffs: {self.pyplis_worker.calib_pears.calib_coeffs}')
+                GuiLogger.debug(f'Calib err: {self.pyplis_worker.calib_pears.err()}')
 
                 # Plot slope coefficient
                 self.ax_cal_params_1.plot(self.pyplis_worker.fit_data[:, 0],
@@ -3988,7 +3993,7 @@ class DOASFOVSearchFrame(LoadSaveProcessingSettings):
                 self.ax_cal_params_1.margins(0.05)
                 self.ax_cal_params_2.margins(0.05)
             except (AttributeError, ValueError, TypeError) as e:
-                print('Error in calibration parameter fit plot: {}'.format(e))
+                GuiLogger.warning(f'Error in calibration parameter fit plot: {e}')
 
         # Update correlation image plot
         if update_img:
@@ -4544,7 +4549,7 @@ class CrossCorrelationSettings(LoadSaveProcessingSettings):
             self.label_lag_secs.configure(text='{:.1f}'.format(info['lag']))
             self.label_speed.configure(text='{:.1f}'.format(info['velocity']))
         except KeyError:
-            print('No cross-correlation info to update')
+            GuiLogger.warning('No cross-correlation info to update')
 
     def __draw_canv__(self):
         """Draws canvas periodically"""
@@ -4892,8 +4897,8 @@ class NadeauFlowSettings(LoadSaveProcessingSettings):
             else:
                 raise IndexError
         except (IndexError, TypeError):
-            print('Error when attempting to set gas source coordinates. Aborting setting.\n'
-                  'Expected list with length 2, got type: {}'.format(type(value)))
+            GuiLogger.warning(f'Error when attempting to set gas source coordinates. Aborting '
+                              f'setting. Expected list with length 2, got type: {type(value)}')
 
     def update_source_plot(self):
         """Draws source coordinate marker on plot"""
@@ -6339,7 +6344,8 @@ class LightDilutionSettings(LoadSaveProcessingSettings):
         """Draws grid figure with current doas_worker grid"""
         if self.doas_worker.ifit_so2_0 is not None and self.doas_worker.ifit_so2_1 is not None:
             if self.doas_worker.ifit_so2_0.shape != self.doas_worker.ifit_so2_1.shape:
-                print('Grids for two fit windows are not compatible, canot plot light dilution grid.')
+                GuiLogger.info('Grids for two fit windows are not compatible, cannot plot light '
+                               'dilution grid.')
                 return
 
             self.ax_grid.clear()
