@@ -151,6 +151,9 @@ class PyCam(ttk.Frame):
         """Closes application"""
         if messagebox.askokcancel("Quit", "Are you sure you want to quit?"):
 
+            # Stop FTP transfer / directory watchers
+            self.menu.ftp_transfer.stop_transfer()
+
             # If we are connected to the instrument we should disconnect now.
             if cfg.indicator.connected:
                 cfg.indicator.disconnect_sock()
