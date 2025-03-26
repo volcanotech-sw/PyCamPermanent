@@ -9,7 +9,7 @@ pandas
 paramiko
 Pillow
 scipy
-Shapely 
+Shapely
 ttkthemes
 scikit-image
 ruamel.yaml

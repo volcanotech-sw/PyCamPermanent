@@ -26,6 +26,7 @@ from pyplis.fluxcalc import det_emission_rate, MOL_MASS_SO2, N_A, EmissionRates
 from pyplis.doascalib import DoasCalibData, DoasFOV
 from pyplis.exceptions import ImgMetaError
 
+from pathlib import Path
 import pandas as pd
 from math import log10, floor
 import datetime
@@ -545,6 +546,7 @@ class PyplisWorker:
         current_params = {key: getattr(self.doas_worker, value)
                           for key, value in doas_params.items()}
         self.config.update(current_params)
+        self.config['spec_dir'] = str(doas_params['spec_dir'])
 
     def save_config_plus(self, file_path, file_name = None):
         """Save extra data associated with config file along with config"""
@@ -568,7 +570,7 @@ class PyplisWorker:
             vals = {key: self.config[key] for key in subset if key in self.config.keys()}
             self.raw_configs["default"].update(vals)
 
-        full_path = os.path.join(file_path, file_name)
+        full_path = str(Path(file_path) / file_name)
 
         with open(full_path, "w") as file:
             yaml.dump(self.raw_configs["default"], file)
