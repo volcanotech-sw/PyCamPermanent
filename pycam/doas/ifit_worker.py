@@ -420,7 +420,7 @@ class IFitWorker(SpecWorker):
         if self._start_stray_pix is None or self._end_stray_pix is None:
             self.start_stray_wave = self.start_stray_wave
             self.end_stray_wave = self.end_stray_wave
-        print(f'DARK CORRECTED STATUS: {self.dark_corrected_plume}')
+        self.SpecLogger.debug(f'DARK CORRECTED STATUS: {self.dark_corrected_plume}')
         if not self.dark_corrected_plume:
             if self.dark_spec is None:
                 self.SpecLogger.warning('No dark spectrum present, processing without dark subtraction')
