@@ -1277,7 +1277,7 @@ class PyplisWorker:
 
         # Add to plot queue if requested
         if plot:
-            self.PyplisLogger.info(f'Updating plot {band}')
+            self.PyplisLogger.debug(f'Updating plot {band}')
             getattr(self, f'fig_{band}').update_plot(img_path)
 
     def find_dark_img(self, img_dir, ss, band='on', find_nearest=True):
