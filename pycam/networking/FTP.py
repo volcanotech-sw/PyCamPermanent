@@ -518,13 +518,19 @@ class FTPClient:
         else:
             # Create lockfile
             lock_file = local_name.replace(ext, '.lock')
-            open(lock_file, 'a').close()
+            with open(lock_file, 'a') as f:
+                # flush & sync the file to ensure it's on disk
+                f.flush()
+                os.fsync(f.fileno())
 
             # Download file
             with open(local_name, 'wb') as f:
                 start_time = time.time()
                 self.connection.retrbinary('RETR ' + data_name, f.write)
                 elapsed_time = time.time() - start_time
+                # flush & sync the file to ensure it's on disk
+                f.flush()
+                os.fsync(f.fileno())
             print('Transferred file {} from instrument to {}. Transfer time: {:.4f}s'.format(filename, local_date_dir,
                                                                                          elapsed_time))
 

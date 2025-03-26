@@ -261,13 +261,21 @@ def load_light_dil_line(filename, color='blue', line_id='line'):
     line = load_pcs_line(filename, color, line_id)
     return line
 
-def load_picam_png(file_path, meta={}, **kwargs):
+def load_picam_png(file_path, meta={}, attempts=3, **kwargs):
     """Load PiCam png files and import meta information"""
 
-    raw_img = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
+    while attempts > 0:
+        raw_img = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
+
+        # Image successfully loaded
+        if raw_img is not None:
+            break
     
-    # cv2 returns None if file failed to load
-    if raw_img is None:
+        # cv2 returns None if file failed to load
+        if raw_img is None:
+            time.sleep(0.2)
+            attempts -= 1
+    else:
         raise FileNotFoundError(f"Image from {file_path} could not be loaded.") 
 
     img = np.array(raw_img)
