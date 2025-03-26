@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 
 """Contains SSH functions used for some initial communications between pis"""
+from pycam.logging.logging_tools import LoggerManager
 
+networkLogging = LoggerManager.add_logger("Networking")
 
 
 def open_ssh(ip_addr, uname='pi', pwd='raspberry'):
@@ -49,7 +51,7 @@ def ssh_cmd(client, cmd, background=True):
         cmd += ' &'
 
     # Run command
-    print('Sending SSH command: {}'.format(cmd))
+    networkLogging.info('Sending SSH command: {}'.format(cmd))
     stdin, stdout, stderr = client.exec_command(cmd)
 
     return stdin, stdout, stderr

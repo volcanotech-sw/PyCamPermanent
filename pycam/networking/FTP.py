@@ -4,6 +4,7 @@
 
 from pycam.utils import StorageMount
 from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator, ConfigInfo
+from pycam.logging.logging_tools import LoggerManager
 import ftplib
 import os
 import time
@@ -15,6 +16,7 @@ import tkinter.ttk as ttk
 from tkinter import messagebox
 import copy
 
+networkLogging = LoggerManager.add_logger("Networking")
 
 class CurrentDirectories:
     """
@@ -141,7 +143,7 @@ class CurrentDirectories:
 
         # Check image type from filename and then place it in the correct folder from that
         img_type = filename.split('_')[self.specs.file_type_loc]
-        print('FTP transferring image type: {}'.format(img_type))
+        networkLogging.info('FTP transferring image type: {}'.format(img_type))
         if img_type == self.specs.file_type['test']:
             local_date_dir = self.test_dir
             if local_date_dir is None:
@@ -191,10 +193,10 @@ class CurrentDirectories:
         ignore = ['Images', 'saved_objects', 'Spectra']
         subdirs = [x for x in subdirs if x not in ignore]
         subdirs = [x for x in subdirs if os.path.isdir(os.path.join(directory, x))]
-        print('Found directories: {}'.format(subdirs))
+        networkLogging.info('Found directories: {}'.format(subdirs))
 
         for date_dir in subdirs:
-            print('Unpacking directory: {}'.format(date_dir))
+            networkLogging.info('Unpacking directory: {}'.format(date_dir))
             full_path = os.path.join(directory, date_dir)
             data_list = os.listdir(full_path)
 
@@ -203,14 +205,15 @@ class CurrentDirectories:
 
             # Loop through data list dealing with each file individually
             for filename in my_data:
-                print('Moving file: {}'.format(filename))
+                networkLogging.info('Moving file: {}'.format(filename))
                 new_dir = self.get_file_dir(filename)
                 full_file_new = os.path.join(new_dir, filename)
                 full_file_old = os.path.join(full_path, filename)
 
                 # Check if file exists - dont overwrite it if so
                 if os.path.exists(full_file_new):
-                    print('File already exists in correct place, unpacking aborted: {}'.format(filename))
+                    networkLogging.info(f'File already exists in correct place, unpacking '
+                                        f'aborted: {filename}')
                     os.remove(full_file_old)
                 else:
                     # Create lockfile
@@ -287,7 +290,7 @@ class FileTransferGUI:
             self.recv_handler = recv_handler
             self.recv_handler.ftp_client = self.ftp_client
 
-            print('FTP: Starting continuous transfer')
+            networkLogging.info('FTP: Starting continuous transfer')
             if not self.ftp_client.test_connection():
                 if reconnect:
                     pass
@@ -317,7 +320,7 @@ class FileTransferGUI:
         if self.recv_handler:
             # Take away the client from recv comms and it can't download files any more
             self.recv_handler.ftp_client = None
-            print('FTP: Stop continuous transfer')
+            networkLogging.info('FTP: Stop continuous transfer')
 
 
 class FTPClient:
@@ -353,7 +356,7 @@ class FTPClient:
             self.user = self.config['uname']
             self.pwd = self.config['ftppwd']
             self.dir_data_remote = copy.deepcopy(self.config['data_dir'])
-            print('Directory data remote: {}'.format(self.dir_data_remote))
+            networkLogging.info(f'Directory data remote: {self.dir_data_remote}')
             self.local_dir = self.config[ConfigInfo.local_data_dir]
             self.dir_img_local = os.path.join(self.local_dir, 'Images/')
             if not os.path.exists(self.dir_img_local):
@@ -386,11 +389,11 @@ class FTPClient:
             self.connection = ftplib.FTP(ip)
             self.connection.login(user=username, passwd=password)
             self.connection.cwd(self.dir_data_remote)
-            print('Got FTP connection from {}. File transfer now available.'.format(ip))
+            networkLogging.info(f'Got FTP connection from {ip}. File transfer now available.')
             return True
         except BaseException as e:
-            print('FTP connection encountered error - file transfer is inactive')
-            print(e)
+            networkLogging.warning('FTP connection encountered error - file transfer is inactive')
+            networkLogging.warning(e)
             return False
 
     def close_connection(self):
@@ -412,8 +415,8 @@ class FTPClient:
 
         # If watchign directory and we want to change the IP we need to first stop watching
         if self.watching_dir:
-            print('Warning! Directory watcher was running whilst the connection IP was updated. '
-                  'Directory watcher will be stopped')
+            networkLogging.warning('Directory watcher was running whilst the connection IP was '
+                                   'updated. Directory watcher will be stopped')
             self.stop_watch()
             time.sleep(0.5)
 
@@ -425,7 +428,7 @@ class FTPClient:
         # Transfer capture file and script schedule file to local, so GUI is accurate when it's opened
         # TODO THIS HASN'T BEEN TESTED!!!!! (18/04/2023)
         self.get_file(FileLocator.SCRIPT_SCHEDULE_PI, FileLocator.SCRIPT_SCHEDULE, rm=False)
-        print('Retrieved instrument schedule files')
+        networkLogging.info('Retrieved instrument schedule files')
 
         # Also get the port of the remote PI
         # (not a schedule, but this function is already called everywhere this is needed)
@@ -434,19 +437,20 @@ class FTPClient:
     def move_file_to_instrument(self, local_file, remote_file):
         """Move specific file from local_file location to remote_file location"""
         if not os.path.exists(local_file):
-            print('File does not exist, cannot perform FTP transfer: {}'.format(local_file))
+            networkLogging.warning(f'File does not exist, cannot perform FTP '
+                                   f'transfer: {local_file}')
             return
 
         # Test FTP connection
         if not self.test_connection():
-            print('Cannot establish FTP connection. File cannot be transferred')
+            networkLogging.warning('Cannot establish FTP connection. File cannot be transferred')
             return
 
         # Move file to location
         with open(local_file, 'rb') as f:
             self.connection.storbinary('STOR ' + remote_file, f)
 
-        print('FTP moved file from {} to {}'.format(local_file, remote_file))
+        networkLogging.info('FTP moved file from {} to {}'.format(local_file, remote_file))
 
     def get_file(self, remote, local, rm=True):
         """
@@ -458,7 +462,7 @@ class FTPClient:
         """
         # Test FTP connection
         if not self.test_connection():
-            print('Cannot establish FTP connection. File cannot be transferred')
+            networkLogging.warning('Cannot establish FTP connection. File cannot be transferred')
             return
 
         filename = os.path.split(remote)[-1]
@@ -468,15 +472,14 @@ class FTPClient:
             start_time = time.time()
             self.connection.retrbinary('RETR ' + remote, f.write)
             elapsed_time = time.time() - start_time
-            print('Transferred file {} from instrument to {}. Transfer time: {:.4f}s'.format(filename, local,
-                                                                                             elapsed_time))
-        # Delete file after it has been transferred
+            networkLogging.info(f'Transferred file {filename} from instrument to {local}. '
+                                f'Transfer time: {elapsed_time:.4f}s')
         if rm:
             try:
                 self.connection.delete(remote)
-                print('Deleted file {} from instrument'.format(filename))
+                networkLogging.info(f'Deleted file {filename} from instrument')
             except ftplib.error_perm as e:
-                print(e)
+                networkLogging.error(e)
 
     def get_data(self, data_name, rm=True):
         """Downloads image/spectrum
@@ -487,7 +490,7 @@ class FTPClient:
         """
         # Test FTP connection
         if not self.test_connection():
-            print('Cannot establish FTP connection. File cannot be transferred')
+            networkLogging.warning('Cannot establish FTP connection. File cannot be transferred')
             return
 
         # Filename organisation for local machine
@@ -511,7 +514,7 @@ class FTPClient:
 
         # Check if file exists - dont overwrite it if so
         if os.path.exists(local_name):
-            print('File already exists on local machine, transfer aborted: {}'.format(file))
+            networkLogging.warning(f'File already exists on local machine, transfer aborted: {file}')
         else:
             # Create lockfile
             lock_file = local_name.replace(ext, '.lock')
@@ -522,14 +525,14 @@ class FTPClient:
                 start_time = time.time()
                 self.connection.retrbinary('RETR ' + data_name, f.write)
                 elapsed_time = time.time() - start_time
-            print('Transferred file {} from instrument to {}. Transfer time: {:.4f}s'.format(filename, local_date_dir,
-                                                                                         elapsed_time))
+            networkLogging.info(f'Transferred file {filename} from instrument to {local_date_dir}. '
+                                f'Transfer time: {elapsed_time:.4f}s')
 
             while os.path.exists(lock_file):
                 try:
                     os.remove(lock_file)
                 except PermissionError:
-                    print('Got permission error trying to delete lock file')
+                    networkLogging.warning('Got permission error trying to delete lock file')
                     time.sleep(0.02)
                 except FileNotFoundError:
                     break   # If the file doesn't exist then just ignore trying to delete it
@@ -538,15 +541,15 @@ class FTPClient:
         if rm:
             try:
                 self.connection.delete(data_name)
-                print('Deleted file {} from instrument'.format(filename))
+                networkLogging.info('Deleted file {} from instrument'.format(filename))
             except (ftplib.error_perm, EOFError) as e:
-                print(e)
+                networkLogging.error(e)
 
         return local_name, local_date_dir
 
     def watch_dir(self, lock='.lock', new_only=False, reconnect=True):
         """Public access thread starter for _watch_dir"""
-        print('FTP: Start watching directory')
+        networkLogging.info('FTP: Start watching directory')
         if not self.test_connection():
             if reconnect:
                 pass
@@ -585,7 +588,7 @@ class FTPClient:
                 ignore_list.sort()
                 # print('Ignoring files already on instrument: {}'.format(ignore_list))
             except (ftplib.error_perm, EOFError) as e:
-                print(e)
+                networkLogging.error(e)
                 ignore_list = []
 
         # Setup up old file list to check against new one - so we don't waste time looping through everything if
@@ -598,7 +601,7 @@ class FTPClient:
                 mess = self.watch_q.get(block=False)
                 if mess:
                     self.watching_dir = False
-                    print('Stopped FTP file watching ')
+                    networkLogging.info('Stopped FTP file watching ')
                     return
             except queue.Empty:
                 pass
@@ -606,11 +609,11 @@ class FTPClient:
             # Test the connection - if there isn't one, wait 1 second then try to reconnect
             if not self.test_connection():
                 if reconnect:
-                    print('FTP connection lost - attempting to reconnect...')
+                    networkLogging.warning('FTP connection lost - attempting to reconnect...')
                     time.sleep(2)
                     continue
                 else:
-                    print('FTP connection lost - stopping instrument directory watcher')
+                    networkLogging.warning('FTP connection lost - stopping instrument directory watcher')
                     self.watching_dir = False
                     return
 
@@ -618,7 +621,7 @@ class FTPClient:
             try:
                 file_list = self.connection.nlst()
             except (ftplib.error_perm, EOFError) as e:
-                print(e)
+                networkLogging.error(e)
                 continue
 
             # Sort file list so oldest times come first (so they will be transferred first)
@@ -633,7 +636,7 @@ class FTPClient:
                     mess = self.watch_q.get(block=False)
                     if mess:
                         self.watching_dir = False
-                        print('Stopped FTP file watching')
+                        networkLogging.info('Stopped FTP file watching')
                         return
                 except queue.Empty:
                     pass
@@ -647,7 +650,7 @@ class FTPClient:
                 if new_only:
                     if file in ignore_list:
                         continue
-                print('Ignore list time taken: {:.3f}'.format(time.time() - start_1))
+                networkLogging.debug(f'Ignore list time taken: {time.time() - start_1:.3f}')
 
                 # Extract filename to generate lock file
                 filename, ext = os.path.splitext(file)
@@ -655,7 +658,7 @@ class FTPClient:
                 if lock_file in file_list:      # Don't download image if it is still locked
                     continue
                 else:
-                    print('Getting file: {}'.format(file))
+                    networkLogging.info('Getting file: {}'.format(file))
                     local_file, local_date_dir = self.get_data(os.path.join(self.dir_data_remote, file))
 
             # Now that this file list has been checked for new images, we set it to this variable, so any list that is
@@ -667,7 +670,7 @@ class FTPClient:
 
     def stop_watch(self):
         """Stops FTP file transfer"""
-        print('FTP: Stop watching directory')
+        networkLogging.info('FTP: Stop watching directory')
         if self.watching_dir:
             self.watch_q.put(1)
 
@@ -678,8 +681,9 @@ class FTPClient:
         :param delete:  bool    If True, all of the data is cleared from the SSD after transfer
         """
         if self.watching_dir:
-            print('Cannot perform full download whilst FTP client is already watching for new data.')
-            print('Please stop watching the directory and retry.')
+            networkLogging.warning('Cannot perform full download whilst FTP client is already '
+                                   'watching for new data. Please stop watching the directory '
+                                   'and retry.')
             return
 
         # Change working directory to mounted SSD device
@@ -696,9 +700,9 @@ class FTPClient:
         try:
             dir_list = self.connection.nlst()
             dir_list.sort()
-            print('Getting files from dates: {}'.format(dir_list))
+            networkLogging.info(f'Getting files from dates: {dir_list}')
         except ftplib.error_perm as e:
-            print(e)
+            networkLogging.error(e)
 
         # Remove unwanted navigation points from the listed directory
         ignore = ['.', '..']
@@ -723,7 +727,7 @@ class FTPClient:
         for dir_num, date_dir in enumerate(dir_list):
             # Set directory
             current_dir = self.storage_mount_data_path + '/' + date_dir
-            print('Getting data from date: {}'.format(date_dir))
+            networkLogging.info(f'Getting data from date: {date_dir}')
 
             # Change working directory to date directory with data in
             self.connection.cwd(date_dir)
@@ -744,7 +748,7 @@ class FTPClient:
                 if lock_file in file_list:      # Don't download image if it is still locked
                     continue
                 else:
-                    print('Getting file: {}'.format(file))
+                    networkLogging.info(f'Getting file: {file}')
                     local_file, local_date_dir = self.get_data(current_dir + '/' + file, rm=False)
                     num_files += 1
 
