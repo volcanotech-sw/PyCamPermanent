@@ -18,18 +18,24 @@ try:
 except ImportError:
     pass
 from tkinter import filedialog
+from pandas import DataFrame
+from pathlib import Path
+
+from pycam.logging.logging_tools import LoggerManager
+
+pycamLogger = LoggerManager.add_logger("Pycam")
+
 try:
     from pyplis import LineOnImage
     from pyplis.fluxcalc import EmissionRates
     import scipy.io
 except ImportError:
-    print('Working on a machine without pyplis. Processing will not be possible')
+    pycamLogger.warning('Working on a machine without pyplis. Processing will not be possible')
+
 try:
     import cv2
 except ModuleNotFoundError:
-    print('OpenCV could not be imported, there may be some issues caused by this')
-from pandas import DataFrame
-from pathlib import Path
+    pycamLogger.warning('OpenCV could not be imported, there may be some issues caused by this')
 
 def save_img(img, filename, file_ext='.png', metadata=None, meta_filename=None, meta_ext='.json', compression=False):
     """Saves image
@@ -55,13 +61,13 @@ def save_img(img, filename, file_ext='.png', metadata=None, meta_filename=None, 
     if not success:
         # failed to save!
         raise IOError("Failed to save PNG!")
-    print(f"Saved {filename}")
+    pycamLogger.info(f"Saved {filename}")
 
     # Save metadata
     if metadata and meta_filename:
         with open(meta_filename, "w") as f:
             json.dump(metadata, f, indent=4)
-        print(f"Saved {meta_filename}")
+        pycamLogger.info(f"Saved {meta_filename}")
 
     # Remove lock to free image for transfer
     os.remove(lock)
@@ -90,7 +96,7 @@ def save_spectrum(wavelengths, spectrum, filename, file_ext=None):
 
     # Save spectrum
     np.save(filename, spec_array)
-    print(f"Saved {filename}")
+    pycamLogger.info(f"Saved {filename}")
 
     # Remove lock
     os.remove(lock)
@@ -157,7 +163,7 @@ def create_video(directory=None, band='on', save_dir=None, fps=60, overwrite=Tru
     videoname = '{}/{}_{}_{}.mp4'.format(save_dir, start_datetime, end_datetime, band_str)
     if not overwrite:
         if os.path.exists(videoname):
-            print('Video file already exists, not overwriting: {}'.format(videoname))
+            pycamLogger.info(f'Video file already exists, not overwriting: {videoname}')
             return
 
     # Setup video writer object
@@ -173,7 +179,7 @@ def create_video(directory=None, band='on', save_dir=None, fps=60, overwrite=Tru
     # Loop through image files, loading them then writing them to the video object
     for i, filename in enumerate(band_files):
         if i % 50 == 0:
-            print('Writing frame {} of {}'.format(i+1, num_frames))
+            pycamLogger.info(f'Writing frame {i+1} of {num_frames}')
         file_path = os.path.join(directory, filename)
         img = np.array(cv2.imread(file_path, -1))
         img = np.round((img / ((2**cam_spec.bit_depth)-1) * 255))
@@ -189,7 +195,7 @@ def create_video(directory=None, band='on', save_dir=None, fps=60, overwrite=Tru
         out.write(img)
 
     out.release()
-    print('Video write completed: {}'.format(videoname))
+    pycamLogger.info(f'Video write completed: {videoname}')
 
 
 def spec_txt_2_npy(directory):
@@ -206,7 +212,8 @@ def spec_txt_2_npy(directory):
 
             save_spectrum(wavelengths, spectrum, directory + file.replace('txt', 'npy'))
         except BaseException:
-            print('Error converting {} from .txt to .npy. It may not be in the expected format'.format(file))
+            pycamLogger.error(f'Error converting {flie} from .txt to .npy. '
+                              f'It may not be in the expected format')
 
 
 def save_pcs_line(line, filename):
@@ -229,7 +236,7 @@ def load_pcs_line(filename, color='blue', line_id='line'):
     :return:
     """
     if not os.path.exists(filename):
-        print('Cannot get line from filename as no file exists at this path')
+        pycamLogger.warning(f'Cannot get line from filename: {filename} as no file exists at this path')
         return
 
     with open(filename, 'r') as f:
@@ -321,7 +328,7 @@ def save_so2_img_raw(path, img, filename=None, img_end='cal', ext='.mat'):
 
     # Check we have a valid filename
     if ext not in save_funcs:
-        print('Unrecognised file extension for saving SO2 image. Image will not be saved')
+        pycamLogger.warning('Unrecognised file extension for saving SO2 image. Image will not be saved')
         return
 
     if filename is None:
@@ -336,7 +343,7 @@ def save_so2_img_raw(path, img, filename=None, img_end='cal', ext='.mat'):
         full_path = os.path.join(path, filename)
 
         if os.path.exists(full_path):
-            print('Overwriting file to save image: {}'.format(full_path))
+            pycamLogger.info(f'Overwriting file to save image: {full_path}')
 
         # If we are saving as a matlab file we need to make a dictionary to save for the scipy.io.savemat argument
         if ext == '.mat':
@@ -363,7 +370,7 @@ def save_so2_img(path, img, filename=None, compression=0, max_val=None):
         filename = '{}_SO2_img.png'.format(time_str)
     full_path = os.path.join(path, filename)
     if os.path.exists(full_path):
-        print('Overwriting file to save image: {}'.format(full_path))
+        pycamLogger.info(f'Overwriting file to save image: {full_path}')
 
     # Scale image and convert to 8-bit
     if max_val is None:
@@ -411,8 +418,8 @@ def save_emission_rates_as_txt(path, emission_dict, ICA_dict, only_last_value=Fa
         try:
             os.makedirs(line_path, exist_ok=True)
         except BaseException as e:
-            print('Could not save emission rate data as path definition is not valid:\n'
-                  '{}'.format(e))
+            pycamLogger.error('Could not save emission rate data as path definition is not valid.')
+            pycamLogger.error(e)
         
         index = -1 if only_last_value else 0
 
@@ -473,7 +480,7 @@ def write_script_crontab(filename, cmd, time_on):
     :param  cmd:        list    List of commands relating to times
     """
     if len(cmd) != len(time_on):
-        print('Lengths of lists of crontab commands and times must be equal')
+        pycamLogger.warning('Lengths of lists of crontab commands and times must be equal')
         return
 
     with open(filename, 'w', newline='\n') as f:
