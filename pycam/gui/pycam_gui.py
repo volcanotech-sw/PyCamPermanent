@@ -13,9 +13,6 @@
 
 from pycam.gui.menu import PyMenu
 from pycam.gui.windows import CameraWind, SpecWind, AnalysisWind
-from pycam.networking.sockets import SocketClient
-from pycam.setupclasses import ConfigInfo
-from pycam.utils import read_file
 from pycam.gui.cfg_menu_frames import geom_settings, process_settings, plume_bg, doas_fov, opti_flow, \
     light_dilution, cross_correlation, basic_acq_handler, automated_acq_handler, instrument_cfg, calibration_wind,\
     comm_recv_handler, cell_calib, nadeau_flow
@@ -59,7 +56,7 @@ class PyCam(ttk.Frame):
         cfg.indicator.add_font(self.bold_font)
 
         # Setup socket
-        self.sock = SocketClient(host_ip=self.config[ConfigInfo.host_ip], port=int(self.config[ConfigInfo.port_ext]))
+        self.sock = cfg.sock
 
         # Setup style
         self.style = ThemedStyle(self.root)

@@ -8,9 +8,11 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from astropy.convolution import convolve
+from pycam.directory_watcher import create_dir_watcher
 from pycam.setupclasses import SpecSpecs
 from pydoas.analysis import DoasResults
 from pycam.io_py import load_spectrum
+from pycam.logging.logging_tools import LoggerManager
 
 try:
     from scipy.constants import N_A
@@ -21,8 +23,12 @@ class SpecWorker:
     """
     Parent class for IfitWorker and DoasWorker
     """
+    SpecLogger = LoggerManager.add_logger("SpecWorker", "blue")
+    SpecDirWatchLogger = LoggerManager.add_logger("SpecDirWatcher", "purple")
+
     def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir=None, dark_dir=None,
                  q_doas=queue.Queue()):
+        self.SpecLogger.debug("Initialising SpecWorker")
         self.routine = routine          # Defines routine to be used, either (1) Polynomial or (2) Digital Filtering
         self.spec_specs = spec_specs    # Spectrometer specifications
 
@@ -215,7 +221,7 @@ class SpecWorker:
         """If dark_dir is changed we need to reset the dark_dict which holds preloaded dark specs"""
         self.dark_dict = {}
         self._dark_dir = value
-        print('Dark spectra directory set: {}'.format(self.dark_dir))
+        self.SpecLogger.debug(f'Dark spectra directory set: {self.dark_dir}')
 
     @property
     def clear_spec_raw(self):
@@ -317,7 +323,7 @@ class SpecWorker:
         after first interpolating to spectrometer wavelengths
         """
         if self.wavelengths is None:
-            print('No wavelength data to perform convolution')
+            self.SpecLogger.debug('No wavelength data to perform convolution')
             return
 
         # Need an odd sized array for convolution, so if even we omit the last pixel
@@ -443,8 +449,6 @@ class SpecWorker:
 
     def start_processing_thread(self):
         """Public access thread starter for _processing"""
-        # Reset self
-        self.reset_self()
 
         self.processing_in_thread = True
         self.process_thread = threading.Thread(target=self._process_loop, args=())
@@ -475,14 +479,14 @@ class SpecWorker:
             f.write('Light dilution correction used (on/off)={}\n'.format(self.corr_light_dilution))
             f.write('Light dilution recal time [mins]={}\n'.format(self.recal_ld_mins))
 
-        print('DOAS processing parameters saved: {}'.format(filepath))
+        self.SpecLogger.info(f'DOAS processing parameters saved: {filepath}')
 
     def save_results(self, pathname=None, start_time=None, end_time=None, save_last=False, header=True):
         """Saves doas results"""
 
         # Only continue if there are results to save
         if len(self.results) < 1:
-            print('No DOAS results to save')
+            self.SpecLogger.info('No DOAS results to save')
             return
 
         # Need to generate a filename if one doesn't already exist/isn't provided
@@ -525,8 +529,36 @@ class SpecWorker:
         df.to_csv(pathname, mode = 'a', header = header, index = False)
 
         # Not sure we want to print every time
-        print('DOAS results saved: {}'.format(pathname))
+        self.SpecLogger.info(f'DOAS results saved: {pathname}')
 
+    def start_watching(self, directory, recursive=True):
+        """
+        Setup directory watcher for images - note this is not for watching spectra - use DOASWorker for that
+        Also starts a processing thread, so that the images which arrive can be processed
+        """
+
+        # Reset self
+        self.reset_self()
+
+        if self.watching:
+            self.SpecDirWatchLogger.info(
+                f'Already watching for spectra: {self.transfer_dir}\n'
+                f'Please stop watcher before attempting to start new watch. This isssue may be '
+                f'caused by having manual acquisitions running alongside continuous watching'
+            )
+            return
+        
+        LoggerManager.add_mem_handler(self.SpecLogger, "SpecWorker")
+        LoggerManager.add_mem_handler(self.SpecDirWatchLogger, "SpecWorker")
+
+        self.watcher = create_dir_watcher(directory, recursive, self.directory_watch_handler)
+        self.watcher.start()
+        self.transfer_dir = directory
+        self.watching = True
+        self.SpecDirWatchLogger.info(f'Watching {self.transfer_dir[-30:]} for new spectra')
+
+        # Start the processing thread
+        self.start_processing_thread()
 
 class SpectraError(Exception):
     """

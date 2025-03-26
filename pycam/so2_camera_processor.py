@@ -5,6 +5,7 @@
 Scripts are an edited version of the pyplis example scripts, adapted for use with the PiCam"""
 from __future__ import (absolute_import, division)
 
+from pycam.logging.logging_tools import LoggerManager
 from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator
 from pycam.utils import calc_dt, get_horizontal_plume_speed
 from pycam.io_py import (
@@ -56,6 +57,11 @@ path_params = [
     "pcs_lines", "img_registration", "dil_lines", "ld_lookup_1", "ld_lookup_2", "ILS_path", "default_cam_geom", "cal_series_path",
     "species_paths"
 ]
+
+# Remove StreamHandlers from pyplis loggers so messages from pyplis just get passed to the
+# root FileHandler
+LoggerManager.replace_stream_handlers(pyplis.print_log)
+LoggerManager.replace_stream_handlers(pyplis.logger)
 
 class PyplisWorker:
     """
@@ -487,7 +493,7 @@ class PyplisWorker:
 
                 # Extract key-value pair, remove the newline character from the value, then recast
                 key, value = line.split('=')
-                value = value.replace('\n', '')
+                value = value.strip()
                 if key == 'volcano':
                     self.volcano = value
                 elif key == 'altitude':
@@ -838,9 +844,9 @@ class PyplisWorker:
         :return img_time:
         """
         # Make sure filename only contains file and not larger pathname, and remove extension
-        filename = filename.split('\\')[-1].split('/')[-1].split('.')[0]
+        filename = os.path.splitext(filename.split('\\')[-1].split('/')[-1])[0]
 
-        # Extract time string from filename
+        # Extract the image type from the filename
         type_str = filename.split('_')[self.cam_specs.file_type_loc]
 
         return type_str
@@ -2846,7 +2852,7 @@ class PyplisWorker:
         #Extract number of headers
         with open(filename, 'r') as f:
             headerline = f.readline()
-            num_headers = int(headerline.split('=')[-1].split(',')[0].split('\n')[0])
+            num_headers = int(headerline.split('=')[-1].split(',')[0].strip())
 
         # Load in csv to dataframe
         self.calibration_series = pd.read_csv(filename, header=num_headers)

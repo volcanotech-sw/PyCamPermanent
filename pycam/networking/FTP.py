@@ -2,7 +2,7 @@
 
 """Contains FTP classes for controlling transfer of images and spectra from remote camera to local processing machine"""
 
-from pycam.utils import read_file, StorageMount
+from pycam.utils import StorageMount
 from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator, ConfigInfo
 import ftplib
 import os
@@ -13,7 +13,6 @@ import datetime
 import tkinter as tk
 import tkinter.ttk as ttk
 from tkinter import messagebox
-import pathlib
 import copy
 
 
@@ -244,6 +243,9 @@ class FileTransferGUI:
 
         self.in_frame = False
 
+        # We need to attach the FTPClient to the GUICommRecvHandler for downloading images
+        self.recv_handler = None
+
     def generate_frame(self):
         """Generates options frame for FTP transfer"""
         if self.in_frame:
@@ -268,32 +270,54 @@ class FileTransferGUI:
     def disp_images(self, value):
         self._disp_images.set(value)
 
-    def start_transfer(self, new_only=False, reconnect=True):
+    def start_transfer(self, new_only=False, reconnect=True, recv_handler=None, indicator=None):
         """
         Starts automatic image transfer from instrument
         new_only    bool    If True, existing images on the instrument are ignored and only new images are transferred
         reconnect   bool    If True, if connection is lost to the instrument we attempt to reconnect (for if pi turns
                             off at night)
         """
+
+        # We need the indicator to know if we're connected to the Pi
+        if indicator and not indicator.connected:
+            messagebox.showerror('Connection Error', 'Need to be connected to the Pi to transfer images!')
+            return
+
+        if recv_handler:
+            self.recv_handler = recv_handler
+            self.recv_handler.ftp_client = self.ftp_client
+
+            print('FTP: Starting continuous transfer')
+            if not self.ftp_client.test_connection():
+                if reconnect:
+                    pass
+                else:
+                    raise ConnectionError
+
         if self.disp_images:
             if not self.pyplis_worker.plot_iter and not self.pyplis_worker.display_only:
                 self.pyplis_worker.display_only = 1
                 self.menu.disp_var.set(1)
-            
+
             self.pyplis_worker.start_watching_dir()
 
-        try:
-            self.ftp_client.watch_dir(new_only=new_only, reconnect=reconnect)
-        except ConnectionError:
-            print('FTP client failed. Cannot transfer data back to host machine')
-            self.pyplis_worker.stop_watching_dir()
-            return
+        # try:
+        #     self.ftp_client.watch_dir(new_only=new_only, reconnect=reconnect)
+        # except ConnectionError:
+        #     print('FTP client failed. Cannot transfer data back to host machine')
+        #     # self.pyplis_worker.stop_watching_dir()
+        #     return
 
     def stop_transfer(self):
         """Stop automatic image transfer from instrument"""
         if self.disp_images:
             self.pyplis_worker.stop_watching_dir()
-        self.ftp_client.stop_watch()
+        # self.ftp_client.stop_watch()
+
+        if self.recv_handler:
+            # Take away the client from recv comms and it can't download files any more
+            self.recv_handler.ftp_client = None
+            print('FTP: Stop continuous transfer')
 
 
 class FTPClient:
@@ -327,7 +351,7 @@ class FTPClient:
             # Do unpacking of config dictionary here
             self.host_ip = self.config['host_ip']
             self.user = self.config['uname']
-            self.pwd = self.config['pwd']
+            self.pwd = self.config['ftppwd']
             self.dir_data_remote = copy.deepcopy(self.config['data_dir'])
             print('Directory data remote: {}'.format(self.dir_data_remote))
             self.local_dir = self.config[ConfigInfo.local_data_dir]
@@ -397,12 +421,15 @@ class FTPClient:
         self.test_connection() and self.retrieve_schedule_files()
 
     def retrieve_schedule_files(self):
-        """Retrieves witty pi and crontab schedule files"""
-        # Transfer wittypi file and script schedule file to local, so GUI is accurate when it's opened
+        """Retrieves capture and crontab schedule files"""
+        # Transfer capture file and script schedule file to local, so GUI is accurate when it's opened
         # TODO THIS HASN'T BEEN TESTED!!!!! (18/04/2023)
         self.get_file(FileLocator.SCRIPT_SCHEDULE_PI, FileLocator.SCRIPT_SCHEDULE, rm=False)
-        self.get_file(FileLocator.SCHEDULE_FILE_PI, FileLocator.SCHEDULE_FILE, rm=False)
         print('Retrieved instrument schedule files')
+
+        # Also get the port of the remote PI
+        # (not a schedule, but this function is already called everywhere this is needed)
+        self.get_file(FileLocator.NET_EXT_FILE, FileLocator.NET_EXT_FILE_WINDOWS, rm=False)
 
     def move_file_to_instrument(self, local_file, remote_file):
         """Move specific file from local_file location to remote_file location"""
@@ -470,6 +497,8 @@ class FTPClient:
 
         # Get correct directory to save to from the directory handler object
         if ext == self.cam_specs.file_ext:
+            local_date_dir = self.img_dir.get_file_dir(filename)
+        elif ext == self.cam_specs.meta_ext:
             local_date_dir = self.img_dir.get_file_dir(filename)
         elif ext == self.spec_specs.file_ext:
             local_date_dir = self.spec_dir.get_file_dir(filename)

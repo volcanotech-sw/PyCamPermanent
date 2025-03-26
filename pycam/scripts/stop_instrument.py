@@ -1,92 +1,96 @@
 # -*- coding: utf-8 -*-
 
 """
-This script stops the pycam software on the instrument, to be used by crontab to schedule turning the instrument off
-at night.
+This script stops the pycam software on the instrument.
+It is intended to be used by crontab to schedule turning the instrument off at night.
+(But it can also be used from a remote computer to stop the pycam software.)
 """
 
 # Update python path so that pycam module can be found
 import sys
-sys.path.append('/home/pi/')
+import os
 
-from pycam.utils import read_file
+sys.path.append(os.path.expanduser("~"))  # e.g., /home/pi on the pi
+
+from pycam.utils import read_file, append_to_log_file
 from pycam.setupclasses import FileLocator, ConfigInfo
 from pycam.networking.sockets import SocketClient, read_network_file
-import subprocess
-import os
-import socket
-import datetime
 import time
 
+print(f"Running {__file__} at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 def close_pycam(ip, port):
     """Closes pycam by setting up a socket and telling the program to shutdown"""
-    # TODO need to setup a socket and connect to pycam then send it exit code
     sock_cli = SocketClient(host_ip=ip, port=port)
-    print('Connecting client')
+    print("Connecting client")
     sock_cli.connect_socket_timeout(timeout=5)
 
     # Test connection
-    print('Testing connection')
-    cmd = sock_cli.encode_comms({'LOG': 0})
-    sock_cli.send_comms(sock_cli.sock, cmd)
-    reply = sock_cli.recv_comms(sock_cli.sock)
-    reply = sock_cli.decode_comms(reply)
-    if reply != {'LOG': 0}:
-        print('Unrecognised socket reply')
-        raise ConnectionError
-    else:
-        print('Got pycam handshake reply')
-
+    sock_cli.test_connection()
 
     time.sleep(5)
     # Close connection
-    print('Sending exit command')
-    encoded_comm = sock_cli.encode_comms({'EXT': 1})
+    print("Sending exit command")
+    encoded_comm = sock_cli.encode_comms({"EXT": 1})
     sock_cli.send_comms(sock_cli.sock, encoded_comm)
-    print('Sent exit command')
-    response = sock_cli.recv_comms(sock_cli.sock)
-    print('Got {} from pycam'.format(response))
+    print("Sent exit command")
+
+    # There should be four responses from the server, one for the master and one for each camera/spectrometer
+    reply = {}
+    count = 0
+    while not "GBY" in reply and count < 5:
+        # Wait for the master script to acknowledge it's exiting
+        reply = sock_cli.recv_comms(sock_cli.sock)  # this waits 5 seconds
+        reply = sock_cli.decode_comms(reply) if not reply is None else ""
+        count += 1
+    if count == 5:
+        # count matches the limit on the while loops, so we have timed out
+        raise RuntimeError("Timed out waiting for exit acknowledgement")
+    print("Got {} from pycam".format(reply))
 
 
 # Read configuration file which contains important information for various things
-config = read_file(FileLocator.CONFIG)
+config = read_file(FileLocator.CONFIG_WINDOWS)
 host_ip = config[ConfigInfo.host_ip]
-port = read_network_file(FileLocator.NET_EXT_FILE)
+_, port = read_network_file(FileLocator.NET_EXT_FILE_WINDOWS)
 
-# Start_script
-start_script = config[ConfigInfo.master_script]
-start_script_name = os.path.split(start_script)[-1]
+# Timestamp
+date_str = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.gmtime())
+error_date_str = date_str + " ERROR IN STOP SCRIPT:"
 
-date_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+# Log file locations
+main_log_file = FileLocator.MAIN_LOG_PI
+error_log_file = FileLocator.ERROR_LOG_PI
 
-# If pycam is running we stop the script
+# Try to connect and execute he stop command
 try:
-    proc = subprocess.Popen(['ps axg'], stdout=subprocess.PIPE, shell=True)
-    stdout_value = proc.communicate()[0]
-    stdout_str = stdout_value.decode("utf-8")
-    stdout_lines = stdout_str.split('\n')
+    close_pycam(host_ip, port)
+    append_to_log_file(
+        main_log_file,
+        f"{date_str} Pycam shutdown",
+    )
 
-    # Check ps axg output lines to see whether pycam is actually running
-    for line in stdout_lines:
-        if start_script_name in line:
-            try:
-                close_pycam(host_ip, port)
-                with open(FileLocator.MAIN_LOG_PI, 'a', newline='\n') as f:
-                    f.write('{} Pycam shutdown\n'.format(date_str))
-            except BaseException as e:
-                with open(FileLocator.MAIN_LOG_PI, 'a', newline='\n') as f:
-                    f.write('{} Got error while attempting pycam close (possibly fine): {}\n'.format(date_str, e))
-            sys.exit()
+except ConnectionResetError as e:
+    append_to_log_file(
+        error_log_file,
+        f'{error_date_str} Warning, connection closed unexpectedly, this is probably OK "{str(e)}"',
+    )
 
-    # If we get to the end without finding the running script we write a warning to the log file
-    with open(FileLocator.ERROR_LOG_PI, 'a', newline='\n') as f:
-        f.write('{} ERROR IN STOP SCRIPT: Warning, pycam script was not '
-                'running when stop_instrument.py commenced\n'.format(date_str))
+except ConnectionError as e:
+    append_to_log_file(
+        error_log_file,
+        f'{error_date_str} Warning, unable to connect to pycam "{str(e)}"',
+    )
 
-except BaseException as e:
-    print(e)
-    with open(FileLocator.ERROR_LOG_PI, 'a', newline='\n') as f:
-        f.write('{} ERROR IN STOP SCRIPT: {}\n'.format(date_str, e))
+except RuntimeError as e:
+    append_to_log_file(
+        error_log_file,
+        f'{error_date_str} Communications problem while attempting to stop pycam "{str(e)}"',
+    )
 
+except Exception as e:
+    append_to_log_file(
+        error_log_file,
+        f'{error_date_str} Got Exception "{str(e)}" while attempting to stop pycam',
+    )

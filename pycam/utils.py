@@ -7,8 +7,8 @@ import os
 import numpy as np
 import subprocess
 import datetime
-import threading
 import shutil
+import time
 
 def check_filename(filename, ext):
     """Checks filename to ensure it is as expected
@@ -41,7 +41,7 @@ def check_filename(filename, ext):
     return
 
 
-def write_file(filename, my_dict):
+def write_file(filename, my_dict, description=None):
     """Writes all attributes of dictionary to file
 
     Parameters
@@ -58,11 +58,14 @@ def write_file(filename, my_dict):
         raise
 
     with open(filename, 'w') as f:
+        f.write('# -*- coding: utf-8 -*-\n')
+        if description:
+            f.write(f'# {description}\n')
+        f.write('\n')
         # Loop through dictionary and write to file
         for key in my_dict:
             string = '{}={}\n'.format(key, my_dict[key])
             f.write(string)
-    return
 
 
 def read_file(filename, separator='=', ignore='#'):
@@ -105,9 +108,59 @@ def read_file(filename, separator='=', ignore='#'):
 
             # Add attribute to dictionary, first removing any unwanted information at the end of the line
             # (including whitespace and #)
-            data[key] = attr.split(ignore)[0].strip('\n').strip()
+            data[key] = attr.split(ignore)[0].strip()
 
     return data
+
+
+def set_capture_status(filename, device, status):
+    """
+    Updates the capture status file with the capture status of the current device
+    Writes to filename a line that is device:status
+
+    Parameters
+    ----------
+    filename: str
+        file name to be written to
+    device: str
+        an identifier for the device/class reporting its status
+    status: str
+        the status being set for the device
+    """
+    # length of each line
+    line_length = 20
+
+    # what we want to make sure is in filename - needs to be the same width and have trailing newline!
+    update_line = f"{device}:{status}"
+    while len(update_line) < line_length:
+        # pad all lines to the same length
+        update_line += ' '
+    update_line += '\n'
+
+    # work in bytes so we can fseek backwards in the file to the start of the line
+    update_line = update_line.encode('utf-8')
+    device = device.encode('utf-8')
+
+    # special case creating fresh
+    if not os.path.isfile(filename):
+        with open(filename, 'wb') as f:
+            f.write(update_line)
+    else:
+        # open r+ to minimise the chance something else slips
+        # in and changes the file while we work on it
+        with open(filename, 'rb+') as f:
+            line_found = False
+            while not line_found:
+                line = f.readline()
+                if device in line:
+                    line_found = True
+                    f.seek(-line_length-1, 1)  # go back to the start of the line, -1 for \n
+                    f.write(update_line)
+                    break
+                elif len(line) == 0:  # eof
+                    break
+            if not line_found:
+                f.write(update_line)
 
 
 def format_time(time_obj, fmt):
@@ -125,7 +178,7 @@ def format_time(time_obj, fmt):
     # return time_obj.isoformat().replace(':', '')
 
 
-def kill_process(process='pycam_camera'):
+def kill_process(process='pycam_master2'):
     """Kills process on raspberry pi machine
 
     Parameters
@@ -146,7 +199,7 @@ def kill_process(process='pycam_camera'):
 
 def kill_all(ips, script_name='/home/pi/pycam/scripts/kill_process.py'):
     """
-    Kills local and remote pycam scripts (mainly for use at the end of pycam_masterpi to ensure everything is
+    Kills local and remote pycam scripts (mainly for use at the end of pycam_master2.py to ensure everything is
     shutdown - a bit of a fail-safe
     """
     print('Attempting to kill any scripts still running')
@@ -298,6 +351,17 @@ def truncate_path(path: str, max_length: int) -> str:
     else:
         return path
 
+def append_to_log_file(log_file: str, s: str):
+    print(s)
+    with open(log_file, "a", newline="\n") as f:
+        f.write(s + "\n")
+
+
+def recursive_files_in_path(data_path):
+    """return a list of all files in a folder and sub-folders (with full path)"""
+    return [os.path.join(dp, f) for dp, _, fn in os.walk(data_path) for f in fn]
+
+
 class StorageMount:
     """
     Basic class to control the handling of mounting external memory and storing details of mounted drive
@@ -310,7 +374,6 @@ class StorageMount:
         if mount_path:
             self.mount_path = mount_path
             self.data_path = os.path.join(self.mount_path, 'data')
-        self.lock = threading.Lock()
 
         if self.dev_path is None:
             self.find_dev()
@@ -318,24 +381,37 @@ class StorageMount:
     @property
     def is_mounted(self):
         """Check whether device is already mounted"""
-        mnt_output = subprocess.check_output('mount')
         if self.dev_path is None:
             return False
-        mnt_stat = mnt_output.find(self.dev_path.encode())
-        if mnt_stat == -1:
-            return False
-        else:
-            return True
+        with open('/proc/mounts', 'r') as f:
+            if self.dev_path in f.read():
+                return True
+            else:
+                return False
+
+    @property
+    def backup_path(self):
+        """Return today's backup folder and create it if it does not exist yet"""
+        date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+        backup_folder = os.path.join(self.data_path, date_str) + '/'
+        try:
+            if not os.path.exists(backup_folder):
+                os.mkdir(backup_folder)
+        except Exception:
+            pass
+        return backup_folder
 
     def find_dev(self):
         """
-        Finds device location based on it being /dev/sda of some kind (not necessarily sda1) and sets self.dev_path
+        Finds device location based on it being /dev/sd* of some kind (not necessarily sda1) and sets self.dev_path
+        This won't work if any other USB HD/SSD is plugged in
         """
         sda_path = None
-        proc = subprocess.Popen(['sudo fdisk -l /dev/sda'], stdout=subprocess.PIPE, shell=True)
+        proc = subprocess.Popen(['sudo fdisk -l /dev/sd*'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, shell=True)
         stdout_value = proc.communicate()[0]
         stdout_str = stdout_value.decode("utf-8")
         stdout_lines = stdout_str.split('\n')
+        # TODO can potentially get stuck here waiting for fdisk
 
         # Check output to find sda
         for line in stdout_lines:
@@ -346,7 +422,8 @@ class StorageMount:
                 print('Found SSD device path at {}'.format(self.dev_path))
 
         if sda_path is None:
-            print('Could not find SSD device in /dev/sda')
+            print('Could not find SSD device in /dev/sd*')
+            self.dev_path = None
 
     def mount_dev(self):
         """Mount device located at self.dev_path to self.mount_path destination"""
@@ -361,6 +438,14 @@ class StorageMount:
         if not os.path.exists(self.mount_path):
             subprocess.call(['sudo', 'mkdir', self.mount_path])
 
+        # Make sure something isn't already mounted on the mount path. If something is and it's not our dev, unmount it
+        mnt_output = subprocess.check_output('mount')
+        mnt_stat = mnt_output.find(self.mount_path.rstrip('/').encode())
+        if mnt_stat > -1:
+            # Something's mounted where we are about to try and mount, let's unmount it
+            subprocess.call(['sudo', 'umount', '-l', self.mount_path])
+            self.fsck_dev()
+
         # For better compatibility, Should probably use fdisk -l /dev/sda to find all devices
         # then search this string to determine what value X takes in /dev/sdaX. Then use this
         # in the mounting process, rather than just assuming the device is at '/dev/sda1'. Should
@@ -371,7 +456,8 @@ class StorageMount:
 
         # If the data directory doesn't exist, make it (after the device has been successfully mounted
         while not self.is_mounted:
-            pass
+            time.sleep(0.1)
+        print(f"Mounted storage: {self.dev_path} on {self.mount_path}")
         if not os.path.exists(self.data_path):
             subprocess.call(['sudo', 'mkdir', self.data_path])
 
@@ -380,8 +466,33 @@ class StorageMount:
         # Unmounting through /dev and not /mnt will ensure usb is unmounted
         # even if it has been manually mounted to a different directory. However, this method does mean I may
         # unmount the wrong device - so this needs to be thought about some more.
-        if self.is_mounted:
+        if self.dev_path and self.is_mounted:
             subprocess.call(['sudo', 'umount', self.dev_path])
+            print(f"Unmounted storage: {self.dev_path} from {self.mount_path}")
+
+    def fsck_dev(self):
+        """Run a filesystem check & repair on the device located at self.dev_path"""
+        if self.dev_path and not self.is_mounted:
+            # find the filesystem type
+            blkid_output = (
+                subprocess.check_output(["sudo", "blkid"]).decode("utf-8").split("\n")
+            )
+            blkid_lines = [line for line in blkid_output if self.dev_path in line]
+            if len(blkid_lines) == 0:
+                print("Block device not found for running fsck")
+                return
+            else:
+                blkid_line = blkid_lines[0].lower()
+            if "exfat" in blkid_line:
+                fsck = ["fsck.exfat", "-p"]
+            elif "ntfs" in blkid_line:
+                fsck = ["ntfsfix"]
+            elif "vfat" in blkid_line:
+                fsck = ["fsck.vfat", "-p"]
+            else:
+                print(f"Unkown filesystem type: {blkid_line}")
+                return
+            subprocess.call(["sudo"] + fsck + [self.dev_path], timeout=10)
 
     def del_all_data(self):
         """
@@ -407,41 +518,38 @@ class StorageMount:
 
         # If there is less space than the required space, we list all directories in the data path and delete
         # Them on by one until space is greater than make_space
-        all_data = os.listdir(self.data_path)
-        all_data.sort()
+        file_list = recursive_files_in_path(self.data_path)
+        file_list.sort()
 
         # Loop around clearing space
-        i = 0
         while space < make_space:
-            full_path = os.path.join(self.data_path, all_data[i])
-            i += 1
+            # Get the first image on the list which will be oldest due to ISO date format
+            file_path = file_list.pop(0)
+
+            # Catch exception just in case the file disappears before it can be removed
+            # (may get transferred then deleted by other program)
             try:
-                shutil.rmtree(full_path)
-            except BaseException as e:
+                # If it is a lock file we just ignore it
+                if ".lock" in file_path:
+                    continue
+
+                # Check file isn't locked, if it is we just leave it
+                _, ext = os.path.splitext(file_path)
+                pathname_lock = file_path.replace(ext, ".lock")
+                if os.path.exists(pathname_lock):
+                    continue
+
+                # Remove file
+                os.remove(file_path)
+                print("Deleting file: {}".format(os.path.basename(file_path)))
+            except Exception as e:
                 print("Error: {}".format(e))
 
             # Find how much space is now left on SSD
             space = self._get_space()
 
     def _get_space(self):
-        """Gets space on SSD"""
-        # Memory location index of 'df -h' output
-        mem_loc = 3
+        """Gets free space on SSD in GB"""
 
-        # Place holder for space - returns None if the device can't be found
-        space = None
-
-        # Get info on SSD space
-        proc = subprocess.Popen(['df -h'], stdout=subprocess.PIPE, shell=True)
-        stdout_value = proc.communicate()[0]
-        stdout_str = stdout_value.decode("utf-8")
-        stdout_lines = stdout_str.split('\n')
-        print(stdout_lines)
-
-        for line in stdout_lines:
-            if self.dev_path in line:
-                details = line.split()
-
-                # Extract number value - one letter (usually G) is at the end so we need to slice the string
-                space = int(details[mem_loc][0:-1])
-        return space
+        usage = shutil.disk_usage(self.data_path)
+        return usage.free / pow(1024, 2)
