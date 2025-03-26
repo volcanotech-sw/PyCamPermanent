@@ -845,7 +845,7 @@ class RefPlot:
     species: str
         Defines the species for reference spectrum
     """
-    def __init__(self, frame=None, doas_work=DOASWorker(), init_dir='./', ref_spec_path=None, species='SO2',
+    def __init__(self, frame=None, doas_work=doas_worker, init_dir='./', ref_spec_path=None, species='SO2',
                  fig_setts=GUISettings()):
         self.frame = frame
         self.doas_worker = doas_work  # DOAS processor
@@ -984,7 +984,7 @@ class ILSFrame:
     """
     Frame containing widgets for ILS extraction from a calibration spectrum
     """
-    def __init__(self, parent=None, doas_work=DOASWorker(), spec_specs=SpecSpecs(), fig_setts=GUISettings(),
+    def __init__(self, parent=None, doas_work=doas_worker, spec_specs=SpecSpecs(), fig_setts=GUISettings(),
                  config=pyplis_worker.config, save_path='C:/'):
         # Setup some main variables
         self.parent = parent

@@ -2,7 +2,6 @@
 
 """Contains SSH functions used for some initial communications between pis"""
 
-import paramiko
 
 
 def open_ssh(ip_addr, uname='pi', pwd='raspberry'):
@@ -18,6 +17,7 @@ def open_ssh(ip_addr, uname='pi', pwd='raspberry'):
         password
     """
     # Set up SSH and log in
+    import paramiko
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     client.connect(ip_addr, username=uname, password=pwd)
@@ -106,6 +106,7 @@ def write_to_file(client_ip, filename, data, uname='pi', pwd='raspberry'):
         Password for login on remote computer
     """
     # Setup connection on SSH port (22)
+    import paramiko
     transport = paramiko.Transport((client_ip, 22))
     transport.connect(username=uname, password=pwd)
     sftp = paramiko.SFTPClient.from_transport(transport)

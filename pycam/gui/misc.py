@@ -9,7 +9,7 @@ from tkinter import messagebox
 import tkinter.ttk as ttk
 
 from PIL import ImageTk, Image
-import os
+import time
 import socket
 
 
@@ -50,8 +50,8 @@ class Indicator:
 
     def initiate_indicator(self):
         """Initates class - only to be done after tk is running, otherwise an error is thrown"""
-        self.img_on = ImageTk.PhotoImage(Image.open(FileLocator.GREEN_LED).resize(self.size, Image.ANTIALIAS))
-        self.img_off = ImageTk.PhotoImage(Image.open(FileLocator.RED_LED).resize(self.size, Image.ANTIALIAS))
+        self.img_on = ImageTk.PhotoImage(Image.open(FileLocator.GREEN_LED).resize(self.size))
+        self.img_off = ImageTk.PhotoImage(Image.open(FileLocator.RED_LED).resize(self.size))
 
     def generate_indicator(self, frame):
         """Generates a new widget"""
@@ -104,19 +104,10 @@ class Indicator:
 
         try:
             # Commented out as not sure this is currently working properly
-            #self.sock.connect_socket_try_all(timeout=5)
+            # self.sock.connect_socket_try_all(timeout=5)
             self.sock.close_socket()    # Close socket first, might avoid issues
             self.sock.connect_socket_timeout(timeout=5)
-
-            cmd = self.sock.encode_comms({'LOG': 0})
-            self.sock.send_comms(self.sock.sock, cmd)
-            reply = self.sock.recv_comms(self.sock.sock)
-            reply = self.sock.decode_comms(reply)
-            if reply != {'LOG': 0}:
-                print('Unrecognised socket reply')
-                raise ConnectionError
-            else:
-                print('Got pycam handshake reply')
+            self.sock.test_connection()
         except (ConnectionError, socket.error) as e:
             print(e)
             self.indicator_off()
@@ -142,7 +133,14 @@ class Indicator:
         if not self.connected:
             messagebox.showerror('Connection Error', 'No connection was present to disconnect from.')
 
+        # Tell the server we are disconnecting and wait a moment for it to receive the message
+        cfg.send_comms.q.put({"GBY": cfg.sock.local_port})
+        time.sleep(0.1)
+
         self.sock.close_socket()
+        # Raise the flags to break out of the threads
+        cfg.recv_comms.event.set()
+        cfg.send_comms.event.set()
 
         # Set indicator to off
         self.indicator_off()
@@ -182,7 +180,7 @@ class MessageWindow:
         self.mess_sep = '\n'
         self.mess_start = '>> '
         self.message_holder = self.mess_start + self.mess_sep
-        self.num_messages = 30
+        self.num_messages = 300
 
         self.text = tk.Text(self.frame)
 
@@ -224,12 +222,23 @@ class MessageWindow:
                                     font=self.main_gui.main_font)
         self.mess_label.grid(row=self.row, column=0, sticky='w')
 
-    def add_message(self, message):
+    def add_message(self, message: str | list[str]):
         """Add message to frame"""
-        message = self.mess_start + message + self.mess_sep
-        self.message_holder = message + self.message_holder.rsplit(self.mess_start, 1)[0]  # Remove first line and append new one
+        if isinstance(message, str):
+            message = [message]
+        message = (
+            self.mess_sep
+            + self.mess_start
+            + (self.mess_sep + self.mess_start).join(message)
+        )
+        self.message_holder = (
+            message + self.message_holder.rsplit(self.mess_start, 1)[0]
+        )  # Remove first line and append new one
+        lines = self.message_holder.split("\n")
+        if len(lines) > self.num_messages:
+            # truncate at self.num_messages lines
+            self.message_holder = "\n".join(lines[0:self.num_messages])
         self.mess_label.configure(text=self.message_holder)
-
 
 class ScrollWindow:
     """Class to a frame within a window which can be scrolled if it doesn't fit on the screen

@@ -1,24 +1,25 @@
-astropy==5.2.1
-geonum==1.4.5
+astropy
+geonum
 LatLon23
-matplotlib==3.5
-basemap==1.3.7
-numpy==1.23
+matplotlib
+basemap
+numpy
 opencv-python
-pandas==1.5.3
-paramiko==3.1.0
-Pillow==9.4.0
-scipy==1.10.1
-Shapely==1.8.5
-ttkthemes==3.2.2
-scikit-image==0.18.3
-ruamel.yaml==0.17.32
+pandas
+paramiko
+Pillow
+scipy
+Shapely
+ttkthemes
+scikit-image
+ruamel.yaml
 srtm.py
 watchdog
 parameterized
 dropbox
 pywin32 ; sys_platform == 'win32'
 pyinotify ; sys_platform == 'linux'
-pyplis @ git+https://github.com/volcanotech-sw/pyplis.git@sources_fix
-pydoas @ git+https://github.com/volcanotech-sw/pydoas.git
+pyplis @ git+https://github.com/volcanotech-sw/pyplis.git@sources_fix_312
+pydoas @ git+https://github.com/volcanotech-sw/pydoas.git@typing_updates
 iFit @ git+https://github.com/volcanotech-sw/iFit.git@make-pip-install
+colorlog

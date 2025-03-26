@@ -626,8 +626,8 @@ class ImageSO2(LoadSaveProcessingSettings):
             self.line_draw = self.fig.canvas.callbacks.connect('button_press_event', self.ica_draw)
         elif self.interactive_mode == 1:
             self.fig.canvas.mpl_disconnect(self.line_draw)
-            self.rs = widgets.RectangleSelector(self.ax, self.draw_roi, drawtype='box',
-                                                rectprops=dict(facecolor='red', edgecolor='blue', alpha=0.5, fill=True))
+            self.rs = widgets.RectangleSelector(self.ax, self.draw_roi,
+                                                props=dict(facecolor='red', edgecolor='blue', alpha=0.5, fill=True))
         else:
             raise ValueError('Unrecognised interactive_mode for ImageSO2')
 
@@ -1057,7 +1057,7 @@ class ImageSO2(LoadSaveProcessingSettings):
         asp /= self.h_ratio
         self.ax_xsect.set_aspect(asp)
 
-        self.ax_xsect.grid(b=True, which='major')
+        self.ax_xsect.grid(visible=True, which='major')
         self.ax_xsect.legend(loc='upper right')
 
     def update_plot(self, img_tau, img_cal=None, draw=True):
@@ -1139,7 +1139,7 @@ class ImageSO2(LoadSaveProcessingSettings):
                 else:
                     with self.lock:
                         self.img_canvas.draw()
-                        self.cbar.draw_all()
+                        self.cbar._draw_all()
             else:
                 return
         except queue.Empty:
@@ -1438,7 +1438,7 @@ class TimeSeriesFigure:
         self.axes[2].set_ylabel(r"$\varphi\,[^{\circ}$]")
         self.axes[3].set_ylabel(r"$ROI_{BG}\,[cm^{-2}]$")
         for i in range(len(self.axes)):
-            self.axes[i].grid(b=True, which='major')
+            self.axes[i].grid(visible=True, which='major')
             if i == 1 or i == 2:
                 plt.setp(self.axes[i].get_xticklabels(), visible=False)
 
@@ -2530,11 +2530,11 @@ class PlumeBackground(LoadSaveProcessingSettings):
         rect_dict = dict(fc=self.rect_colours[self.rect_selector.get()], ec=self.rect_colours[self.rect_selector.get()],
                          alpha=0.3, fill=True)
 
-        self.rs_A = widgets.RectangleSelector(self.fig_tau_A.axes[0], self.draw_roi_A, drawtype='box',
-                                              rectprops=rect_dict)
+        self.rs_A = widgets.RectangleSelector(self.fig_tau_A.axes[0], self.draw_roi_A,
+                                              props=rect_dict)
 
-        self.rs_B = widgets.RectangleSelector(self.fig_tau_B.axes[0], self.draw_roi_B, drawtype='box',
-                                              rectprops=rect_dict)
+        self.rs_B = widgets.RectangleSelector(self.fig_tau_B.axes[0], self.draw_roi_B,
+                                              props=rect_dict)
 
     def draw_roi_A(self, eclick, erelease):
         """Draws ROI"""
@@ -4343,11 +4343,11 @@ class CellCalibFrame:
         abs_img = self.pyplis_worker.cell_tau_dict[self.pyplis_worker.sens_mask_ppmm]
         self.abs_im.set_data(abs_img)
         self.ax_abs.set_title('Cell absorbance: {} ppm.m'.format(self.pyplis_worker.sens_mask_ppmm))
-        self.cbar_abs.draw_all()
+        self.cbar_abs._draw_all()
 
         # Plot sensitivity mask
         self.mask_im.set_data(self.pyplis_worker.sensitivity_mask)
-        self.cbar_mask.draw_all()
+        self.cbar_mask._draw_all()
 
         # Set limits for images
         self.scale_imgs(draw=False)
@@ -4960,7 +4960,7 @@ class NadeauFlowSettings(LoadSaveProcessingSettings):
         asp /= self.h_ratio
         self.ax_xsect.set_aspect(asp)
 
-        self.ax_xsect.grid(b=True, which='major')
+        self.ax_xsect.grid(visible=True, which='major')
         self.ax_xsect.set_xlabel('Pixel')
         self.ax_xsect.set_ylabel('\u03C4')
 
@@ -5105,7 +5105,7 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
         self.dpi = self.fig_setts.dpi
         self.fig_size = self.fig_setts.fig_SO2
         self.img_tau = None
-        self.img_vel = np.zeros([self.cam_specs.pix_num_y, self.cam_specs.pix_num_x], dtype=np.float)
+        self.img_vel = np.zeros([self.cam_specs.pix_num_y, self.cam_specs.pix_num_x], dtype=float)
 
         self.pdx = 5
         self.pdy = 5
@@ -5536,8 +5536,8 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
         self.img_canvas.get_tk_widget().grid(row=0, column=0)
 
         # Add rectangle crop functionality
-        self.rs = widgets.RectangleSelector(self.ax, self.draw_roi, drawtype='box',
-                                            rectprops=dict(facecolor='red', edgecolor='blue', alpha=0.5, fill=True))
+        self.rs = widgets.RectangleSelector(self.ax, self.draw_roi,
+                                            props=dict(facecolor='red', edgecolor='blue', alpha=0.5, fill=True))
 
         # Initial rectangle format
         self.roi_start_x, self.roi_end_x = self.roi_abs[0], self.roi_abs[2]
@@ -6418,8 +6418,8 @@ class LightDilutionSettings(LoadSaveProcessingSettings):
             self.line_draw = self.fig.canvas.callbacks.connect('button_press_event', self.draw_line)
         else:
             self.fig.canvas.mpl_disconnect(self.line_draw)
-            self.rs = widgets.RectangleSelector(self.ax, self.draw_roi, drawtype='box',
-                                                rectprops=dict(facecolor='red', edgecolor='blue', alpha=0.5, fill=True))
+            self.rs = widgets.RectangleSelector(self.ax, self.draw_roi,
+                                                props=dict(facecolor='red', edgecolor='blue', alpha=0.5, fill=True))
 
     def draw_line(self, event):
         """Draws line on image for light dilution following click event"""

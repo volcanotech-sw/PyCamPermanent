@@ -5,6 +5,7 @@
 Scripts are an edited version of the pyplis example scripts, adapted for use with the PiCam"""
 from __future__ import (absolute_import, division)
 
+from pycam.logging.logging_tools import LoggerManager
 from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator
 from pycam.utils import calc_dt, get_horizontal_plume_speed
 from pycam.io_py import (
@@ -25,6 +26,7 @@ from pyplis.fluxcalc import det_emission_rate, MOL_MASS_SO2, N_A, EmissionRates
 from pyplis.doascalib import DoasCalibData, DoasFOV
 from pyplis.exceptions import ImgMetaError
 
+from pathlib import Path
 import argparse
 import pandas as pd
 from math import log10, floor
@@ -56,6 +58,11 @@ path_params = [
     "pcs_lines", "img_registration", "dil_lines", "ld_lookup_1", "ld_lookup_2", "ILS_path", "default_cam_geom", "cal_series_path",
     "species_paths"
 ]
+
+# Remove StreamHandlers from pyplis loggers so messages from pyplis just get passed to the
+# root FileHandler
+LoggerManager.replace_stream_handlers(pyplis.print_log)
+LoggerManager.replace_stream_handlers(pyplis.logger)
 
 class PyplisWorker:
     """
@@ -498,7 +505,7 @@ class PyplisWorker:
 
                 # Extract key-value pair, remove the newline character from the value, then recast
                 key, value = line.split('=')
-                value = value.replace('\n', '')
+                value = value.strip()
                 if key == 'volcano':
                     self.volcano = value
                 elif key == 'altitude':
@@ -551,6 +558,7 @@ class PyplisWorker:
         current_params = {key: getattr(self.doas_worker, value)
                           for key, value in doas_params.items()}
         self.config.update(current_params)
+        self.config['spec_dir'] = str(doas_params['spec_dir'])
 
     def save_config_plus(self, file_path, file_name = None):
         """Save extra data associated with config file along with config"""
@@ -577,7 +585,7 @@ class PyplisWorker:
             vals = {key: self.config[key] for key in subset if key in self.config.keys()}
             self.raw_configs["default"].update(vals)
 
-        full_path = os.path.join(file_path, file_name)
+        full_path = str(Path(file_path) / file_name)
 
         with open(full_path, "w") as file:
             yaml.dump(self.raw_configs["default"], file)
@@ -851,9 +859,9 @@ class PyplisWorker:
         :return img_time:
         """
         # Make sure filename only contains file and not larger pathname, and remove extension
-        filename = filename.split('\\')[-1].split('/')[-1].split('.')[0]
+        filename = os.path.splitext(filename.split('\\')[-1].split('/')[-1])[0]
 
-        # Extract time string from filename
+        # Extract the image type from the filename
         type_str = filename.split('_')[self.cam_specs.file_type_loc]
 
         return type_str
@@ -2521,8 +2529,8 @@ class PyplisWorker:
             closest_index = self.calibration_series.index.get_indexer([self.img_A.meta['start_acq']], method='nearest')
 
             # Use index to retrieve calibration coeffients
-            intercept = self.calibration_series.iloc[closest_index]['coeff 0'][0]
-            grad = self.calibration_series.iloc[closest_index]['coeff 1'][0]
+            intercept = self.calibration_series.iloc[closest_index]['coeff 0'].iloc[0]
+            grad = self.calibration_series.iloc[closest_index]['coeff 1'].iloc[0]
 
             # Calibrate image
             cal_img = img * grad
@@ -2876,7 +2884,7 @@ class PyplisWorker:
         #Extract number of headers
         with open(filename, 'r') as f:
             headerline = f.readline()
-            num_headers = int(headerline.split('=')[-1].split(',')[0].split('\n')[0])
+            num_headers = int(headerline.split('=')[-1].split(',')[0].strip())
 
         # Load in csv to dataframe
         self.calibration_series = pd.read_csv(filename, header=num_headers)
@@ -3496,9 +3504,9 @@ class PyplisWorker:
                     # Add predominant flow direction (it will be identical to histo values, so we
                     # only need to do this once per line, and we just always store it in flow_histo)
                     orient_series, upper, lower = props.get_orientation_tseries()
-                    res['flow_histo']._flow_orient.append(orient_series[-1])
-                    res['flow_histo']._flow_orient_upper.append(upper[-1])
-                    res['flow_histo']._flow_orient_lower.append(lower[-1])
+                    res['flow_histo']._flow_orient.append(orient_series.iloc[-1])
+                    res['flow_histo']._flow_orient_upper.append(upper.iloc[-1])
+                    res['flow_histo']._flow_orient_lower.append(lower.iloc[-1])
 
                 # Cross-correlation emission rate retrieval
                 if self.velo_modes['flow_glob']:

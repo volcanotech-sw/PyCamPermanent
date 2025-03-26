@@ -17,10 +17,10 @@ shutter_speed = 100000
 
 # Create camera object
 cam = Camera()
-cam.initialise_camera()
+cam.initialise()
 
 # Set shutter speed
-cam.set_shutter_speed(shutter_speed)
+cam.shutter_speed = shutter_speed
 
 # Get time and format
 time_str = format_time(datetime.datetime.now(), cam.file_datestr)

@@ -7,29 +7,31 @@ critical for getting the gradient of AA vs ppm.m in camera calibration.
 This work may also allow light dilution correction following Varnam 2021
 """
 
+import argparse
 import os
 import time
 import queue
 import datetime
+import yaml
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from pathlib import Path
 from itertools import compress
 from tkinter import filedialog
 from scipy.interpolate import griddata
 from matplotlib.pyplot import GridSpec
 from shapely.geometry import Point, Polygon     # For Varnam light dilution
 from shapely.strtree  import STRtree
-from pycam.directory_watcher import create_dir_watcher
 from pycam.setupclasses import SpecSpecs, FileLocator
 from pycam.io_py import load_spectrum
 from pycam.ifit_ld import lookup
 from pycam.doas.spec_worker import SpecWorker, SpectraError
+from pycam.logging.logging_tools import LoggerManager
 from ifit.parameters import Parameters
 from ifit.spectral_analysis import Analyser
 from ifit.light_dilution import generate_ld_curves
 from pydoas.analysis import DoasResults
-
 
 class IFitWorker(SpecWorker):
     """
@@ -270,7 +272,7 @@ class IFitWorker(SpecWorker):
         elif ext == '.txt':
             wavelengths, spectrum = np.load(dark_spec_path)
         else:
-            print('Unrecognised file type for loading clear spectrum')
+            self.SpecLogger.debug('Unrecognised file type for loading clear spectrum')
             return
         self.wavelengths = wavelengths
         self.dark_spec = spectrum
@@ -282,7 +284,9 @@ class IFitWorker(SpecWorker):
 
         # Update dark dictionary
         if ss in self.dark_dict.keys():
-            print('New dark spectrum for integration time {} overwriting previous in dictionary'.format(ss))
+            self.SpecLogger.debug(
+                f'New dark spectrum for integration time {ss} overwriting previous in dictionary'
+            )
         self.dark_dict[ss] = self.dark_spec
 
     def load_dark_coadd(self, dark_spec_path):
@@ -297,7 +301,7 @@ class IFitWorker(SpecWorker):
         elif ext == '.txt':
             wavelengths, spectrum = np.load(clear_spec_path)
         else:
-            print('Unrecognised file type for loading clear spectrum')
+            self.SpecLogger.debug('Unrecognised file type for loading clear spectrum')
             return
         self.wavelengths = wavelengths
         self.clear_spec_raw = spectrum
@@ -310,19 +314,18 @@ class IFitWorker(SpecWorker):
         :param: plot    bool    If true, the first spectra are plotted in the GUI
         :param: process_first   bool    If True, the first spectrum is processed.
         """
-
         if spec_dir is not None:
-            self.spec_dir = spec_dir
+            self.spec_dir = Path(spec_dir)
         elif prompt:
-            spec_dir = filedialog.askdirectory(title='Select spectrum sequence directory', initialdir=self.spec_dir)
+            spec_dir = filedialog.askdirectory(title='Select spectrum sequence directory', initialdir=str(self.spec_dir))
 
             if len(spec_dir) > 0 and os.path.exists(spec_dir):
-                self.spec_dir = spec_dir
+                self.spec_dir = Path(spec_dir)
             else:
-                raise ValueError('Spectrum directory not recognised: {}'.format(spec_dir))
+                raise ValueError(f'Spectrum directory not recognised: {spec_dir}')
         else:
             if self.spec_dir is None:
-                raise ValueError('Spectrum directory not recognised: {}'.format(self.spec_dir))
+                raise ValueError(f'Spectrum directory not recognised: {str(self.spec_dir)}')
 
         # Update first_spec flag TODO possibly not used in DOASWorker, check
         self.first_spec = True
@@ -334,11 +337,9 @@ class IFitWorker(SpecWorker):
 
         # Set current spectra to first in lists
         if len(self.spec_dict['clear']) > 0:
-            self.wavelengths, self.clear_spec_raw = load_spectrum(os.path.join(self.spec_dir,
-                                                                               self.spec_dict['clear'][0]))
+            self.wavelengths, self.clear_spec_raw = load_spectrum(str(self.spec_dir / self.spec_dict['clear'][0]))
         if len(self.spec_dict['plume']) > 0:
-            self.wavelengths, self.plume_spec_raw = load_spectrum(os.path.join(self.spec_dir,
-                                                                               self.spec_dict['plume'][0]))
+            self.wavelengths, self.plume_spec_raw = load_spectrum(str(self.spec_dir / self.spec_dict['plume'][0]))
             self.spec_time = self.get_spec_time(self.spec_dict['plume'][0])
 
             # Get respective dark spectrum
@@ -346,7 +347,9 @@ class IFitWorker(SpecWorker):
             ss = self.spec_dict['plume'][0].split('_')[self.spec_specs.file_ss_loc].replace(ss_id, '')
             self.dark_spec = self.find_dark_spectrum(self.dark_dir, ss)
             if self.dark_spec is None:
-                print('No dark spectrum could be found in the current spectrum directory or current dark directory')
+                self.SpecLogger.warning(
+                    'No dark spectrum could be found in the current spectrum directory or current '
+                    'dark directory')
 
         if process_first:
             # Try to process first spectrum
@@ -417,10 +420,10 @@ class IFitWorker(SpecWorker):
         if self._start_stray_pix is None or self._end_stray_pix is None:
             self.start_stray_wave = self.start_stray_wave
             self.end_stray_wave = self.end_stray_wave
-
+        print(f'DARK CORRECTED STATUS: {self.dark_corrected_plume}')
         if not self.dark_corrected_plume:
             if self.dark_spec is None:
-                print('Warning! No dark spectrum present, processing without dark subtraction')
+                self.SpecLogger.warning('No dark spectrum present, processing without dark subtraction')
 
                 # Set raw spectra to the corrected spectra, ignoring that they have not been dark corrected
                 self.plume_spec_corr = self.plume_spec_raw
@@ -443,10 +446,10 @@ class IFitWorker(SpecWorker):
 
         # If we have light dilution correction we run it here
         if self.corr_light_dilution:
-            print('Performing iFit light dilution correction...')
+            self.SpecLogger.debug('Performing iFit light dilution correction...')
             if False in [isinstance(x, np.ndarray) for x in
                          [self.ifit_so2_0, self.ifit_err_1, self.ifit_so2_1, self.ifit_err_1]]:
-                print('{} SO2 grids not found for light dilution correction. '
+                self.SpecLogger.warning('{} SO2 grids not found for light dilution correction. '
                       'Use load_ld_lookup() or light_dilution_cure_generator()'.format(str(self.__class__).split()[-1]))
                 self.ldf_best = np.nan
             else:
@@ -469,8 +472,8 @@ class IFitWorker(SpecWorker):
                                                                        wavelengths=self.wavelengths,
                                                                        spectra=self.plume_spec_shift,
                                                                        spec_time=self.spec_time)
-                    print('Fit val uncorrected: {}'.format(fit_0.params['SO2'].fit_val))
-                    print('Fit val corrected: {}'.format(df_lookup['SO2'][0]))
+                    self.SpecLogger.debug(f'Fit val uncorrected: {fit_0.params["SO2"].fit_val}')
+                    self.SpecLogger.debug(f'Fit val corrected: {df_lookup["SO2"][0]}')
                     # Update SO2 value for the best SO2 value we have
                     if not np.isnan(df_lookup['SO2'][0]):
                         fit_0.params['SO2'].fit_val = df_lookup['SO2'][0]
@@ -521,7 +524,7 @@ class IFitWorker(SpecWorker):
 
         # Loop through directory plume images processing them
         for i in range(len(self.spec_dict['plume'])):
-            print('Processing spectrum {} of {}'.format(i+1, len(self.spec_dict['plume'])))
+            self.SpecLogger.info(f'Processing spectrum {i+1} of {len(self.spec_dict["plume"])}')
 
             self.wavelengths, self.plume_spec_raw = load_spectrum(os.path.join(self.spec_dir,
                                                                                self.spec_dict['plume'][i]))
@@ -540,7 +543,7 @@ class IFitWorker(SpecWorker):
             cds.append(self.column_density['SO2'])
 
         for cd in cds:
-            print('CDs (ppmm): {:.0f}'.format(np.array(cd) / self.ppmm_conv))
+            self.SpecLogger.debug(f'CDs (ppmm): {np.array(cd) / self.ppmm_conv:.0f}')
 
         # Save results
         self.save_results()
@@ -570,7 +573,7 @@ class IFitWorker(SpecWorker):
             elif isinstance(self.results.fit_errs, np.ndarray):
                 self.results.fit_errs = np.append(self.results.fit_errs, cd_err)
             else:
-                print('ERROR! Unrecognised datatype for ifit fit errors')
+                self.SpecLogger.error('Unrecognised datatype for ifit fit errors')
 
             # Light dilution
             try:
@@ -643,7 +646,7 @@ class IFitWorker(SpecWorker):
         """
         if filename is None:
             filename = filedialog.askopenfilename(title='Select DOAS results file',
-                                                  initialdir=self.spec_dir, filetypes=(('csv', '*.csv'),
+                                                  initialdir=str(self.spec_dir), filetypes=(('csv', '*.csv'),
                                                                                        ('All files', '*.*')))
             if not filename:
                 return
@@ -675,7 +678,7 @@ class IFitWorker(SpecWorker):
         function can update the plots wihtout going through the main thread in PyplisWorker
         """
         if spec_dir is not None:
-            self.spec_dir = spec_dir
+            self.spec_dir = Path(spec_dir)
 
         # Flag that we are running processing outside of thread
         self.processing_in_thread = False
@@ -695,15 +698,23 @@ class IFitWorker(SpecWorker):
 
         # Loop through all files and add them to queue
         for file in clear_spec:
-            self.q_spec.put(os.path.join(self.spec_dir, file))
+            self.q_spec.put(str(self.spec_dir / file))
         for file in plume_spec:
-            self.q_spec.put(os.path.join(self.spec_dir, file))
+            self.q_spec.put(str(self.spec_dir / file))
 
         # Add the exit flag at the end, to ensure that the process_loop doesn't get stuck waiting on the queue forever
         self.q_spec.put(self.STOP_FLAG)
 
+        # Need to generate output dir at the start of processing to create log file
+        self.set_output_dir(self.spec_dir)
+        self.log_path = Path(self.doas_outdir).joinpath("SpecWorker.log").as_posix()
+
+        LoggerManager.add_file_handler(self.SpecLogger, self.log_path)
+
         # Begin processing
         self._process_loop(continuous_save=False)
+
+        LoggerManager.remove_file_handler(self.SpecLogger, self.log_path, delete=True)
 
     def _process_loop(self, continuous_save=True):
         """
@@ -713,7 +724,7 @@ class IFitWorker(SpecWorker):
             processing a single directory. May always want continuous save though, so think about if I want this...
         :return:
         """
-        print('IFit worker: Entering new processing loop')
+        self.SpecLogger.info('Entering new processing loop')
         # Setup which we don't need to repeat once in the loop (optimising the code a little)
         ss_str = self.spec_specs.file_ss.replace('{}', '')
 
@@ -728,7 +739,7 @@ class IFitWorker(SpecWorker):
 
             # Blocking wait for new file
             pathname = self.q_spec.get(block=True)
-            print('IFit worker processing thread: got new file: {}'.format(pathname))
+            self.SpecLogger.debug(f'Got new file: {pathname}')
 
             # Close thread if requested with 'exit' command
             if pathname == self.STOP_FLAG:
@@ -749,17 +760,27 @@ class IFitWorker(SpecWorker):
                 #print('IFitWorker: processing spectrum: {}'.format(pathname))
                 # Extract filename and create datetime object of spectrum time
                 working_dir, filename = os.path.split(pathname)
-                self.spec_dir = working_dir     # Update working directory to where most recent file has come from
+                self.spec_dir = Path(working_dir)     # Update working directory to where most recent file has come from
 
                 spec_time = self.get_spec_time(filename)
 
                 if not self.first_spec and spec_time.day != self.spec_time.day:
-                    print("new day found")
+                    self.SpecLogger.info(f"Day {self.spec_time.strftime('%Y-%m-%d')} finished")
+                    mem_handler.flush()
+
                     self.reset_self()
 
                 if self.first_spec:
-                    # Set output dir
-                    self.set_output_dir(working_dir)
+                    if self.watching:
+                        self.SpecLogger.info(f"Day {spec_time.strftime('%Y-%m-%d')} started")
+                    
+                        # Set output dir
+                        self.set_output_dir(working_dir)
+                        self.log_path = Path(self.doas_outdir).joinpath("SpecWorker.log").as_posix()
+
+                        file_handler = LoggerManager.create_file_handler(self.log_path)
+                        mem_handler = LoggerManager.set_mem_handler_target("SpecWorker", file_handler)
+                    
                     # Save processing params
                     self.save_doas_params()
                     header = True
@@ -783,7 +804,7 @@ class IFitWorker(SpecWorker):
 
                 time_1 = time.time()
                 self.process_doas()
-                print('IFit Worker: Time taken to process {}: {}'.format(pathname, time.time() - time_1))
+                self.SpecLogger.info(f'Time taken to process {pathname}: {time.time() - time_1:.5f}')
 
                 # Gather all relevant information and spectra and pass it to PyplisWorker
                 processed_dict = {'processed': True,             # Flag whether this is a complete, processed dictionary
@@ -822,55 +843,44 @@ class IFitWorker(SpecWorker):
                 #print('IFit worker: Processed file: {}'.format(filename))
 
             elif spec_type == self.spec_specs.file_type['dark']:
-                print('IFitWorker: got dark spectrum: {}'.format(pathname))
+                self.SpecLogger.debug(f'Got dark spectrum: {pathname}')
                 # If dark spectrum, we load it into
                 self.load_dark_spec(pathname)
                 self.fig_spec.update_dark()
             elif spec_type == self.spec_specs.file_type['clear']:
-                print('IFitWorker: got dark spectrum: {}'.format(pathname))
+                self.SpecLogger.debug(f'Got dark spectrum: {pathname}')
                 # If dark spectrum, we load it into
                 self.load_clear_spec(pathname)
                 self.fig_spec.update_clear()
             else:
-                print('IFitWorker: spectrum type not recognised: {}'.format(pathname))
+                self.SpecLogger.debug(f'Spectrum type not recognised: {pathname}')
+            
+            if self.watching:
+                mem_handler.flush()
 
     def stop_sequence_processing(self):
         """Stops processing a sequence"""
         self.q_stop.put(self.STOP_FLAG)
-
-    def start_watching(self, directory, recursive=True):
-        """
-        Setup directory watcher for images - note this is not for watching spectra - use DOASWorker for that
-        Also starts a processing thread, so that the images which arrive can be processed
-        """
-        if self.watching:
-            print('IFit worker: Already watching for spectra: {}'.format(self.transfer_dir))
-            print('IFit worker: Please stop watcher before attempting to start new watch. '
-                  'This isssue may be caused by having manual acquisitions running alongside continuous watching')
-            return
-        self.watcher = create_dir_watcher(directory, recursive, self.directory_watch_handler)
-        self.watcher.start()
-        self.transfer_dir = directory
-        self.watching = True
-        print('IFit worker: Watching {} for new spectra'.format(self.transfer_dir[-30:]))
-
-        # Start the processing thread
-        self.start_processing_thread()
 
     def stop_watching(self):
         """Stop directory watcher and end processing thread"""
         if self.watching:
             if self.watcher is not None:
                 self.watcher.stop()
-                print('Stopped watching {} for new images'.format(self.transfer_dir[-30:]))
+                self.SpecDirWatchLogger.info(
+                    f'Stopped watching {self.transfer_dir[-30:]} for new images'
+                )
                 self.watching = False
 
                 # Stop processing thread when we stop watching the directory
                 self.q_spec.put(self.STOP_FLAG)
+
+                LoggerManager.remove_mem_handler(self.SpecLogger, "SpecWorker")
+                LoggerManager.remove_mem_handler(self.SpecDirWatchLogger, "SpecWorker", delete=True)
             else:
-                print('No directory watcher to stop')
+                self.SpecDirWatchLogger.warning('No directory watcher to stop')
         else:
-            print('IFit worker: Watching was already stopped')
+            self.SpecDirWatchLogger.warning('Watching was already stopped')
 
     def directory_watch_handler(self, pathname, t):
         """Handles new spectra passed from watcher"""
@@ -883,7 +893,7 @@ class IFitWorker(SpecWorker):
         while os.path.exists(pathname_lock):
             time.sleep(0.5)
 
-        print('IFit worker: New file found {}'.format(pathname))
+        self.SpecDirWatchLogger.info(f'New file found {pathname}')
         # Pass path to queue
         self.q_spec.put(pathname)
 
@@ -941,8 +951,10 @@ class IFitWorker(SpecWorker):
 
         # Force updating of ld analysers to use new ILS
         self.update_ld_analysers(force_both=True)
-        print('Updating ILS. Light dilution analysers will be updated. This could cause issues if lookup grids'
-              'were generated with a different ILS. Please ensure ILS represents the lookup grids currently in use')
+        self.SpecLogger.debug(
+            'Updating ILS. Light dilution analysers will be updated. This could cause issues if '
+            'lookup grids were generated with a different ILS. Please ensure ILS represents the '
+            'lookup grids currently in use')
 
     def update_ils(self):
         """Updates ILS in Analyser object for iFit (code taken from __init__ of Analyser, this should work..."""
@@ -977,7 +989,7 @@ class IFitWorker(SpecWorker):
         self.grid_increment_ppmm = increment
         new_so2_grid_ppmm = np.arange(0, max_ppmm, increment)
         if not np.array_equal(self.so2_grid_ppmm, new_so2_grid_ppmm):
-            print('Changing SO2 grid for light dilution correction. If preloading grids, ensure both match this grid.')
+            self.SpecLogger.debug('Changing SO2 grid for light dilution correction. If preloading grids, ensure both match this grid.')
         self.so2_grid_ppmm = new_so2_grid_ppmm
         self.so2_grid = np.multiply(self.so2_grid_ppmm, self.ppmm_conversion)
 
@@ -1044,14 +1056,15 @@ class IFitWorker(SpecWorker):
         ifit_err_1 = np.zeros(num_rows)
         for i in range(num_rows):
             # TODO unpack the data into variables - needs to be in the correct format for lookup tables so may need a bit of thought
-            # TODO unpack the data into variables - needs to be in the correct format for lookup tables so may need a bit of thought
             ldf[i] = ld_results[i][0]
             so2[i] = ld_results[i][1]
             ifit_so2_0[i] = ld_results[i][2]
             ifit_err_0[i] = ld_results[i][3]
             ifit_so2_1[i] = ld_results[i][4]
             ifit_err_1[i] = ld_results[i][5]
-            print('LDF: {}\tSO2 real: {}\tSO2 window 1: {}\tSO2 window 2: {}'.format(ldf[i], so2[i], ifit_so2_0[i], ifit_so2_1[i]))
+            self.SpecLogger.debug(
+                f'LDF: {ldf[i]}\tSO2 real: {so2[i]}\tSO2 window 1: {ifit_so2_0[i]}\tSO2 window 2: {ifit_so2_1[i]}'
+            )
 
         # Reshape using column-major following how the array is assembled in generate_ld_curves
         ldf = ldf.reshape((len(self.so2_grid), len(self.ldf_grid)), order='F')
@@ -1082,7 +1095,7 @@ class IFitWorker(SpecWorker):
         lookup_1 = np.array([ifit_so2_1, ifit_err_1])
 
         # Save files
-        print('Saving light dilution grids: {}, {}'.format(file_path_0, file_path_1))
+        self.SpecLogger.debug(f'Saving light dilution grids: {file_path_0}, {file_path_1}')
         np.save(file_path_0, lookup_0)
         np.save(file_path_1, lookup_1)
 
@@ -1098,13 +1111,13 @@ class IFitWorker(SpecWorker):
         :param use_new_window   bool    If False, we revert back to the previous fit window after loading in the LD data
         :return:
         """
-        print('IFitWorker: Loading light dilution lookup grid: {}'.format(file_path))
+        self.SpecLogger.debug(f'Loading light dilution lookup grid: {file_path}')
 
         dat = np.load(file_path)
         x, y = dat  # unpack data into cd and error grids
-        setattr(self, 'ifit_so2_{}'.format(fit_num), x)
-        setattr(self, 'ifit_err_{}'.format(fit_num), y)
-        setattr(self, 'ifit_so2_{}_path'.format(fit_num), file_path)
+        setattr(self, f'ifit_so2_{fit_num}', x)
+        setattr(self, f'ifit_err_{fit_num}', y)
+        setattr(self, f'ifit_so2_{fit_num}_path', file_path)
 
         # Extract grid info from filename
         filename = os.path.split(file_path)[-1]
@@ -1224,7 +1237,8 @@ class IFitWorker(SpecWorker):
         tree = STRtree(poly_shapely)
 
         for i, point in enumerate(so2_dat):
-            print('Evaluating light dilution for spectrum: {}'.format(spec_time[i].strftime("%Y-%m-%d %H:%M:%S")))
+            so2_dat_time = spec_time[i].strftime("%Y-%m-%d %H:%M:%S")
+            self.SpecLogger.debug(f'Evaluating light dilution for spectrum: {so2_dat_time}')
 
             # Extract error and shapely point on current loop
             point_shapely = points_shapely[i]
@@ -1329,7 +1343,7 @@ class IFitWorker(SpecWorker):
                 # Change analyser values
                 self.analyser0.params['LDF'].set(value=ldf_best)
                 self.analyser1.params['LDF'].set(value=ldf_best)
-            print('LDF: {}'.format(self.analyser0.params['LDF'].value))
+            self.SpecLogger.debug(f'LDF: {self.analyser0.params["LDF"].value}')
 
             # Fit spectrum for in 2 fit windows
             fit0 = self.analyser0.fit_spectrum([wavelengths[i], spectra[i]], calc_od=['SO2', 'Ring', 'O3'],
@@ -1372,73 +1386,12 @@ class IFitWorker(SpecWorker):
 
         self.ldf_best = ldf
         return fit0, fit1
+    
+    @staticmethod
+    def get_args():
+        parser = argparse.ArgumentParser(description='Process spectra using iFit')
+        parser.add_argument('-c', '--config', type=str, help='Path to configuration file', default=None)
+        parser.add_argument('--frs_path', type=str, help='Path to FRS file', default='./pycam/doas/calibration/sao2010.txt')
+        parser.add_argument('--doas_out_dir', type=str, help='Directory to save DOAS results', default=None)
+        return parser.parse_args()
 
-if __name__ == '__main__':
-    # Calibration paths
-    ils_path = './pycam/doas/calibration/2019-07-03_302nm_ILS.txt'
-    # ils_path = './calibration/2019-07-03_313nm_ILS.txt'
-    frs_path = './pycam/doas/calibration/sao2010.txt'
-    ref_paths = {'SO2': {'path': './pycam/doas/calibration/SO2_295K.txt', 'value': 1.0e16},  # Value is the inital estimation of CD
-                 'O3': {'path': './pycam/doas/calibration/O3_223K.txt', 'value': 1.0e19},
-                 'Ring': {'path': './pycam/doas/calibration/Ring.txt', 'value': 0.1}
-                 }
-
-    # ref_paths = {'SO2': {'path': 'C:/Users/tw9616/Documents/PostDoc/Permanent Camera/PyCamPermanent/pycam/doas/calibration/Vandaele (2009) x-section in wavelength.txt', 'value': 1.0e16},
-    # 'O3': {'path':     'C:/Users/tw9616/Documents/PostDoc/Permanent Camera/PyCamPermanent/pycam/doas/calibration/Serdyuchenko_O3_223K.txt', 'value': 1.0e19},
-    # 'Ring': {'path': '../iFit/Ref/Ring.txt', 'value': 0.1}
-    # }
-
-    # Spectra path
-    spec_path = './pycam/tests/test_data/test_spectra/'
-
-    # Create ifit object
-    ifit_worker = IFitWorker(frs_path=frs_path, species=ref_paths, dark_dir=spec_path)
-    ifit_worker.load_ils(ils_path)  # Load ILS
-
-    # Update fit wavelengths
-    ifit_worker.start_fit_wave = 312
-    ifit_worker.end_fit_wave = 320
-
-    # Process directory
-    ifit_worker.process_dir(spec_dir=spec_path)
-    # ifit_worker.start_processing_threadless(spec_dir=spec_path)
-
-    # ------------
-    # Plotting
-    # ------------
-    # Make the figure and define the subplot grid
-    fig = plt.figure(figsize=[10, 6.4])
-    gs = GridSpec(2, 2)
-
-    # Define axes
-    ax0 = fig.add_subplot(gs[0, 0])
-    ax1 = fig.add_subplot(gs[1, 0])
-    ax2 = fig.add_subplot(gs[0, 1])
-    ax3 = fig.add_subplot(gs[1, 1])
-
-    # Define plot lines
-    l0, = ax0.plot([], [], 'C0x-')  # Measured spectrum
-    l1, = ax0.plot([], [], 'C1-')   # Model fit
-
-    l2, = ax1.plot([], [], 'C0x-')  # Residual
-
-    l3, = ax2.plot([], [], 'C0x-')  # Measured OD
-    l4, = ax2.plot([], [], 'C1-')   # Fit OD
-
-    l5, = ax3.plot([], [], '-')  # Spectrum
-
-    #
-    l0.set_data(ifit_worker.fit.grid, ifit_worker.fit.spec)
-    l1.set_data(ifit_worker.fit.grid, ifit_worker.fit.fit)
-    l2.set_data(ifit_worker.fit.grid, ifit_worker.fit.resid)
-    l3.set_data(ifit_worker.fit.grid, ifit_worker.fit.meas_od['SO2'])
-    l4.set_data(ifit_worker.fit.grid, ifit_worker.fit.synth_od['SO2'])
-    l5.set_data(ifit_worker.wavelengths, ifit_worker.plume_spec_corr)
-
-    for ax in [ax0, ax1, ax2, ax3]:
-        ax.relim()
-        ax.autoscale_view()
-
-    plt.pause(0.01)
-    plt.tight_layout()
-    plt.show()

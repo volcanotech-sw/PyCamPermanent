@@ -87,7 +87,7 @@ class GUISettings:
                     continue
 
                 # Remove any unwanted information at the end of the line (including whitespace and ignore symbol)
-                data = attr.split(ignore)[0].strip('\n').strip()
+                data = attr.split(ignore)[0].strip()
 
                 # Check that the key is recognised as a Settings attribute
                 if hasattr(self, key):

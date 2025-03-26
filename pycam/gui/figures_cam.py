@@ -203,8 +203,8 @@ class ImageFigure:
         self.plt_row.set_ylim(0, self.specs._max_DN)
         self.plt_col.set_xlim(0, self.specs._max_DN)
         self.plt_col.set_ylim(self.specs.pix_num_y, 0)
-        self.plt_row.grid(b=True, which='major')
-        self.plt_col.grid(b=True, which='major')
+        self.plt_row.grid(visible=True, which='major')
+        self.plt_col.grid(visible=True, which='major')
 
         # Get subplot size right
         asp = np.diff(self.plt_col.get_ylim())[0] / np.diff(self.plt_col.get_xlim())[0]

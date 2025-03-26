@@ -30,7 +30,6 @@ from glob import glob
 from shapely.geometry import Point, Polygon
 from shapely.strtree  import STRtree
 import shapely
-shapely.speedups.disable()
 
 # =============================================================================
 # Create new functions

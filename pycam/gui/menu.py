@@ -6,7 +6,7 @@ from pycam.gui.network import ConnectionGUI, instrument_cmd, run_pycam
 import pycam.gui.cfg as cfg
 from pycam.gui.cfg_menu_frames import geom_settings, process_settings, plume_bg, cell_calib, \
     opti_flow, light_dilution, cross_correlation, doas_fov, basic_acq_handler, automated_acq_handler,\
-    calibration_wind, instrument_cfg, temp_log, plume_velocity, nadeau_flow
+    calibration_wind, instrument_cfg, temp_log, plume_velocity, nadeau_flow, comm_recv_handler
 from pycam.gui.misc import About, LoadSaveProcessingSettings
 from pycam.io_py import save_pcs_line, load_pcs_line, save_light_dil_line, load_light_dil_line, create_video
 import pycam.gui.settings as settings
@@ -104,15 +104,14 @@ class PyMenu:
 
         self.submenu_cmd = tk.Menu(self.frame, tearoff=0)
         self.menus[tab].add_cascade(label='Commands', menu=self.submenu_cmd)
-        self.submenu_cmd.add_command(label='Restart', command=lambda: instrument_cmd('RST'))
-        self.submenu_cmd.add_command(label='Restart cameras', command=lambda: instrument_cmd('RSC'))
-        self.submenu_cmd.add_command(label='Restart spectrometer', command=lambda: instrument_cmd('RSS'))
-        self.submenu_cmd.add_separator()
-        self.submenu_cmd.add_command(label='Run pycam (with automated capture)',
-                                     command=lambda: run_pycam(cfg.sock.host_ip, auto_capt=1))
         self.submenu_cmd.add_command(label='Run pycam (without automated capture)',
                                      command=lambda: run_pycam(cfg.sock.host_ip, auto_capt=0))
+        self.submenu_cmd.add_command(label='Run pycam (with automated capture)',
+                                     command=lambda: run_pycam(cfg.sock.host_ip, auto_capt=1))
+        self.submenu_cmd.add_separator()
         self.submenu_cmd.add_command(label='Stop pycam', command=lambda: instrument_cmd('EXT'))
+        self.submenu_cmd.add_separator()
+        self.submenu_cmd.add_command(label='Restart', command=lambda: instrument_cmd('RST'))
         self.menus[tab].add_separator()
 
         # Data transfer
@@ -120,7 +119,7 @@ class PyMenu:
         self.menus[tab].add_cascade(label='Data Transfer', menu=self.submenu_data)
         # self.submenu_data.add_command(label='Start transfer', command=self.ftp_transfer.start_transfer)
         self.submenu_data.add_command(label='Start transfer (new images only)',
-                                      command=lambda: self.ftp_transfer.start_transfer(new_only=True))
+                                      command=lambda: self.ftp_transfer.start_transfer(new_only=True, recv_handler=comm_recv_handler, indicator=cfg.indicator))
         self.submenu_data.add_command(label='Stop transfer', command=self.ftp_transfer.stop_transfer)
         self.submenu_data.add_command(label='Options', command=self.ftp_transfer.generate_frame)  # Add options such as directory to transfer to/from?? Maybe only transfer certain data - certain times etc
         self.submenu_data.add_separator()
@@ -144,6 +143,7 @@ class PyMenu:
                                      command=automated_acq_handler.stop_cont)
         self.submenu_acq.add_separator()
         self.submenu_acq.add_command(label='Update all instrument settings', command=automated_acq_handler.acq_comm)
+        # TODO remove individual camera and spectrometer updating?
         self.submenu_acq.add_command(label='Update spectrometer settings', command=automated_acq_handler.acq_spec_full)
         self.submenu_acq.add_command(label='Update camera settings', command=automated_acq_handler.acq_cam_full)
         self.submenu_acq.add_command(label='Retrieve current settings',
