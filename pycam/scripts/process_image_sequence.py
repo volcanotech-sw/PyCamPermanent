@@ -2,6 +2,7 @@ from pycam.so2_camera_processor import PyplisWorker
 from pycam.io_py import save_pcs_line, load_pcs_line, save_light_dil_line, load_light_dil_line, create_video
 from pycam.doas.cfg import doas_worker
 from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator
+from pycam.scripts.process_doas import get_headless_ifit
 
 if __name__ == "__main__":
     args = PyplisWorker.get_args()
@@ -21,10 +22,12 @@ if __name__ == "__main__":
     pyplis_worker.update_opt_flow_settings(roi_abs = pyplis_worker.config['roi_abs'])
     pyplis_worker.img_list = pyplis_worker.get_img_list()
     pyplis_worker.set_processing_directory(img_dir=args.output_directory, make_dir=True)
-    pyplis_worker.doas_worker = doas_worker
-    pyplis_worker.doas_worker.load_results(filename=args.doas_results, plot=False)
+
     if args.watcher:
+        pyplis_worker.doas_worker = get_headless_ifit(args.config_path)
         pyplis_worker.start_watching_dir()
     else:
+        pyplis_worker.doas_worker = doas_worker
+        pyplis_worker.doas_worker.load_results(filename=args.doas_results, plot=False)
         pyplis_worker._process_sequence(reset_plot=False)
     pyplis_worker.save_config_plus(pyplis_worker.processed_dir)
