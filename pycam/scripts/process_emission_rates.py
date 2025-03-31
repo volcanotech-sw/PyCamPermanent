@@ -22,7 +22,7 @@ def get_args():
     pyplis_parser = subparsers.add_parser('pyplis', help="Batch process images with PyplisWorker")
     pyplis_parser.add_argument('--config_path', required=True, help="Path to the Pyplis configuration file")
     pyplis_parser.add_argument('--doas_results', required=True, help="Path to the DOAS results file")
-
+    pyplis_parser.add_argument('--output_directory', default=None, help="Output directory for processed results")
 
     # Subparser for 'watcher'
     watcher_parser = subparsers.add_parser('watcher', help="Watcher options")
@@ -30,7 +30,7 @@ def get_args():
 
     return parser.parse_args()
 
-def setup_pyplis_worker(config_path, output_directory):
+def setup_pyplis_worker(config_path, output_directory=None):
     pyplis_worker = PyplisWorker(config_path)
     pyplis_worker.load_pcs_from_config()
     pyplis_worker.apply_config()
@@ -46,8 +46,8 @@ def setup_pyplis_worker(config_path, output_directory):
     pyplis_worker.img_reg.load_registration(pyplis_worker.img_registration, rerun=False)
     pyplis_worker.update_opt_flow_settings(roi_abs=pyplis_worker.config['roi_abs'])
     pyplis_worker.img_list = pyplis_worker.get_img_list()
-    pyplis_worker.set_processing_directory(img_dir=args.output_directory, make_dir=True)
-    pyplis_worker.doas_worker = setup_ifit_worker(args.config_path)
+    pyplis_worker.set_processing_directory(img_dir=output_directory, make_dir=True)
+    pyplis_worker.doas_worker = setup_ifit_worker(config_path)
     return pyplis_worker
 
 def setup_ifit_worker(config_path):
@@ -92,7 +92,7 @@ if __name__ == "__main__":
         pyplis_worker._process_sequence(reset_plot=False)
         pyplis_worker.save_config_plus(pyplis_worker.processed_dir)
     elif args.command == 'watcher':
-        pyplis_worker = setup_pyplis_worker(args.config_path, args.output_directory)
+        pyplis_worker = setup_pyplis_worker(args.config_path)
         pyplis_worker.doas_worker = setup_ifit_worker(args.config_path)
         pyplis_worker.start_watching_dir()
         pyplis_worker.save_config_plus(pyplis_worker.processed_dir)
