@@ -444,7 +444,7 @@ class SocketMeths(CommsFuncs):
         # Generally only flag error on socket server to save duplication
         return_errors = return_errors or isinstance(self, SocketServer)
 
-        # print('Message: {}'.format(mess_list))
+        networkLogging.debug('Message: {}'.format(mess_list))
         # Loop through commands. Stop before the last command as it will be a value rather than key and means we don't
         # hit an IndexError when using i+1
         for i in range(len(mess_list)-1):
@@ -514,7 +514,7 @@ class SocketMeths(CommsFuncs):
         """
         if hasattr(connection, 'sendall'):
             if callable(connection.sendall):
-                # print(f"Sending: {cmd_bytes}")
+                networkLogging.debug(f"Sending: {cmd_bytes}")
                 connection.sendall(cmd_bytes)
         else:
             raise AttributeError('Object {} has no sendall command'.format(connection))
@@ -547,7 +547,7 @@ class SocketMeths(CommsFuncs):
 
                 self.data_buff += received
 
-                # print(f"Raw received: {self.data_buff}")
+                networkLogging.debug(f"Raw received: {self.data_buff}")
 
             # Once we have a full message, with end_str, we return it after removing the end_str and decoding to a str
             if self.end_str in self.data_buff:
@@ -676,7 +676,7 @@ class SocketClient(SocketMeths):
         """Send client identity information to server"""
         handshake_msg = self.encode_comms(self.id)
         self.send_comms(self.sock, handshake_msg)
-        # print('Sent handshake {} to {}'.format(handshake_msg, self.server_addr))
+        networkLogging.debug('Sent handshake {} to {}'.format(handshake_msg, self.server_addr))
 
     def test_connection(self):
         """Send a message to the server and look for a specific response"""
@@ -1377,7 +1377,7 @@ class SocketServer(SocketMeths):
         """Accept connection and add to listen"""
         # Establish connection with client and append to list of connections
         networkLogging.info(f'Accepting connection at {self.server_addr}')
-        # print('Current number of connections: {}'.format(len(self.connections)))
+        networkLogging.debug('Current number of connections: {}'.format(len(self.connections)))
         try:
             connection = self.sock.accept()
             self.connections.append(connection)
@@ -1443,7 +1443,7 @@ class SocketServer(SocketMeths):
 
             for i in range(len(self.connections)):
                 if connection == self.connections[i][0]:
-                    networkLogging.infp("Closing...")
+                    networkLogging.info("Closing...")
 
                     try:
                         # Get ip of connection, just closing print statement
@@ -1526,7 +1526,7 @@ class SocketServer(SocketMeths):
         """
         # Encode dictionary for sending
         cmd_bytes = self.encode_comms(cmd)
-        # print(f"Sending {cmd_bytes}")
+        networkLogging.debug(f"Sending {cmd_bytes}")
 
         # Loop through external connections and send to all over network
         for conn in self.connections:
@@ -1773,7 +1773,7 @@ class ExternalSendConnection(Connection):
             try:
                 # Get command from queue
                 cmd = self.q.get(block=True, timeout=1)
-                # print('External comms sending: {}'.format(cmd))
+                networkLogging.debug('External comms sending: {}'.format(cmd))
 
                 # Encode command to bytes
                 cmd_bytes = self.sock.encode_comms(cmd)

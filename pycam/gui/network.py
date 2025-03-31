@@ -226,7 +226,7 @@ class GUICommRecvHandler:
         """Gets received communications from the recv_comms queue and acts on them"""
         while not self.stop.is_set():
             comm = self.recv_comms.q.get(block=True)
-            # print(f"GUI incoming comms: {comm}")
+            GuiLogger.debug(f"GUI incoming comms: {comm}")
 
             if 'LOG' in comm:
                 # If getting acquisition flags was purpose of comm we update widgets
