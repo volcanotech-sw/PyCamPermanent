@@ -4376,17 +4376,7 @@ class PyplisWorker:
         # Calibration only produced when DOAS in calibration type and not needed for pre-loaded
         if self.cal_type_int in [1,2]:
             self.save_calibration(only_last_value=only_last_value)
-
-    @staticmethod
-    def get_args():
-        parser = argparse.ArgumentParser(description="Process image sequence")
-        parser.add_argument('-i', '--image_directory', type=str, help='Directory containing image sequence')
-        parser.add_argument('-o', '--output_directory', type=str, help='Directory to save processed results and images')
-        parser.add_argument('-c', '--config_path', type=str, help='Path to the YAML configfile')
-        parser.add_argument('-d', '--doas_results', type=str ,help='Path to DOAS results CSV file')
-        parser.add_argument('-w', '--watcher', action='store_true', help='Watch the image directory for new images')
-        return parser.parse_args()
-    
+   
 class ImageRegistration:
     """
     Image registration class for warping the off-band image to align with the on-band image

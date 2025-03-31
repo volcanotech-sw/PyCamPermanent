@@ -1385,12 +1385,3 @@ class IFitWorker(SpecWorker):
 
         self.ldf_best = ldf
         return fit0, fit1
-    
-    @staticmethod
-    def get_args():
-        parser = argparse.ArgumentParser(description='Process spectra using iFit')
-        parser.add_argument('-c', '--config', type=str, help='Path to configuration file', default=None)
-        parser.add_argument('--frs_path', type=str, help='Path to FRS file', default='./pycam/doas/calibration/sao2010.txt')
-        parser.add_argument('--doas_out_dir', type=str, help='Directory to save DOAS results', default=None)
-        return parser.parse_args()
-
