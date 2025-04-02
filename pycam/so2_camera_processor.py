@@ -1163,7 +1163,7 @@ class PyplisWorker:
         if not ones:
             # Dark subtraction - first extract ss then hunt for dark image
             ss = str(int(img.texp * 10 ** 6))
-            dark_img = self.find_dark_img(self.dark_img_dir, ss, band=band)[0]
+            dark_img = self.find_dark_img(self.config["dark_img_dir"], ss, band=band)[0]
 
             if dark_img is not None:
                 img.subtract_dark_image(dark_img)
