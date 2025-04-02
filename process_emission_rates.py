@@ -40,7 +40,8 @@ def setup_pyplis_worker(config_path, output_directory=None):
     
     # Load image registration from class LoadFrame(LoadSaveProcessingSettings):
     pyplis_worker.img_reg.load_registration(pyplis_worker.img_registration, rerun=False)
-    pyplis_worker.update_opt_flow_settings(roi_abs=pyplis_worker.config['roi_abs'])
+    opt_flow_settings = {setting: pyplis_worker.config[setting] for setting in pyplis_worker.opt_flow_sett_keys}
+    pyplis_worker.update_opt_flow_settings(**opt_flow_settings)
     
     pyplis_worker.set_processing_directory(img_dir=output_directory, make_dir=True)
     pyplis_worker.doas_worker = setup_ifit_worker(config_path) 
