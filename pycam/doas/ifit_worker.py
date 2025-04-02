@@ -90,7 +90,7 @@ class IFitWorker(SpecWorker):
         # Add the gases
         for spec in species:
             # Load reference spectrum (this adds to self.params too
-            self.load_ref_spec(species[spec]['path'], spec, value=species[spec]['value'], update=False)
+            self.load_ref_spec(species[spec]['path'], spec, value=float(species[spec]['value']), update=False)
 
         # Add background polynomial parameters
         self.params.add('bg_poly0', value=0.0, vary=True)

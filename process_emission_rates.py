@@ -4,9 +4,6 @@ from pathlib import Path
 
 from pycam.doas.ifit_worker import IFitWorker
 from pycam.so2_camera_processor import PyplisWorker
-from pycam.io_py import save_pcs_line, load_pcs_line, save_light_dil_line, load_light_dil_line, create_video
-from pycam.doas.cfg import doas_worker
-from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator
 
 
 def get_args():
@@ -33,7 +30,6 @@ def get_args():
 def setup_pyplis_worker(config_path, output_directory=None):
     pyplis_worker = PyplisWorker(config_path)
     pyplis_worker.load_pcs_from_config()
-    pyplis_worker.apply_config()
     pyplis_worker.plot_iter = False
     pyplis_worker.headless = True
     pyplis_worker.load_cam_geom(filepath=pyplis_worker.config['default_cam_geom'])
@@ -45,19 +41,14 @@ def setup_pyplis_worker(config_path, output_directory=None):
     # Load image registration from class LoadFrame(LoadSaveProcessingSettings):
     pyplis_worker.img_reg.load_registration(pyplis_worker.img_registration, rerun=False)
     pyplis_worker.update_opt_flow_settings(roi_abs=pyplis_worker.config['roi_abs'])
-    pyplis_worker.img_list = pyplis_worker.get_img_list()
+    
     pyplis_worker.set_processing_directory(img_dir=output_directory, make_dir=True)
-    pyplis_worker.doas_worker = setup_ifit_worker(config_path)
+    pyplis_worker.doas_worker = setup_ifit_worker(config_path) 
     return pyplis_worker
 
 def setup_ifit_worker(config_path):
     with open(config_path, "r") as file:
         config = yaml.safe_load(file)
-
-    ref_paths = {'SO2': {'path': './pycam/doas/calibration/SO2_295K.txt', 'value': 1.0e16},  # Value is the inital estimation of CD
-                 'O3': {'path': './pycam/doas/calibration/O3_223K.txt', 'value': 1.0e19},
-                 'Ring': {'path': './pycam/doas/calibration/Ring.txt', 'value': 0.1}
-                 }
 
     # Expand paths
     ils_path = PyplisWorker.expand_config_path(None, path=config['ILS_path'], config_dir=Path(config_path).parent)
@@ -67,13 +58,13 @@ def setup_ifit_worker(config_path):
     dark_dir = PyplisWorker.expand_config_path(None, path=config['dark_img_dir'], config_dir=Path(config_path).parent)
 
     # Create ifit object
-    ifit_worker = IFitWorker(species=ref_paths, dark_dir=config['dark_img_dir'])
+    ifit_worker = IFitWorker(species=config['species_paths'], dark_dir=config['dark_img_dir'])
     ifit_worker.load_ils(ils_path)  # Load ILS
     ifit_worker.load_ld_lookup(ld_lookup_1, fit_num=0)
     ifit_worker.load_ld_lookup(ld_lookup_2, fit_num=1)
     ifit_worker.corr_light_dilution = 0.0
     ifit_worker.dark_dir = dark_dir
-    ifit_worker.load_dir(spec_dir, plot=False)  # Load spectra directory
+    ifit_worker.load_dir(spec_dir, plot=False, process_first=False)  # Load spectra directory
     ifit_worker.get_wavelengths(config)
     ifit_worker.get_shift(config)
     ifit_worker.spec_dir = Path(spec_dir)
@@ -87,6 +78,7 @@ if __name__ == "__main__":
         ifit_worker.start_processing_threadless()
     elif args.command == 'pyplis':
         pyplis_worker = setup_pyplis_worker(args.config_path, args.output_directory)
+        pyplis_worker.img_list = pyplis_worker.get_img_list()
         pyplis_worker.doas_worker = setup_ifit_worker(args.config_path)
         pyplis_worker.doas_worker.load_results(filename=args.doas_results, plot=False)
         pyplis_worker._process_sequence(reset_plot=False)
