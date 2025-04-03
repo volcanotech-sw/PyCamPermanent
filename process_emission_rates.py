@@ -7,7 +7,9 @@ from pycam.so2_camera_processor import PyplisWorker
 
 
 def get_args():
-
+    """
+    Get and parse the command line arguments for PyCam processing.
+    """
     parser = argparse.ArgumentParser(description="Process emission rates using Pyplis and DOAS.")
     subparsers = parser.add_subparsers(dest="command", help="Sub-command help")
 
@@ -27,7 +29,10 @@ def get_args():
 
     return parser.parse_args()
 
-def setup_pyplis_worker(config_path, output_directory=None):
+def setup_pyplis_worker(config_path):
+    """
+    Setup and return the PyplisWorker instance with the given configuration path.
+    """
     pyplis_worker = PyplisWorker(config_path)
     pyplis_worker.load_pcs_from_config()
     pyplis_worker.plot_iter = False
@@ -77,8 +82,9 @@ if __name__ == "__main__":
         ifit_worker = setup_ifit_worker(args.config_path)
         ifit_worker.start_processing_threadless()
     elif args.command == 'pyplis':
-        pyplis_worker = setup_pyplis_worker(args.config_path, args.output_directory)
+        pyplis_worker = setup_pyplis_worker(args.config_path)
         pyplis_worker.img_list = pyplis_worker.get_img_list()
+        pyplis_worker.set_processing_directory(img_dir=args.output_directory, make_dir=True)
         pyplis_worker.doas_worker = setup_ifit_worker(args.config_path)
         pyplis_worker.doas_worker.load_results(filename=args.doas_results, plot=False)
         pyplis_worker._process_sequence(reset_plot=False)
