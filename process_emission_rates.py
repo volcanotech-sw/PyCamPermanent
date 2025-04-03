@@ -43,7 +43,6 @@ def setup_pyplis_worker(config_path, output_directory=None):
     opt_flow_settings = {setting: pyplis_worker.config[setting] for setting in pyplis_worker.opt_flow_sett_keys}
     pyplis_worker.update_opt_flow_settings(**opt_flow_settings)
     
-    pyplis_worker.set_processing_directory(img_dir=output_directory, make_dir=True)
     pyplis_worker.doas_worker = setup_ifit_worker(config_path) 
     return pyplis_worker
 
@@ -88,7 +87,6 @@ if __name__ == "__main__":
         pyplis_worker = setup_pyplis_worker(args.config_path)
         pyplis_worker.doas_worker = setup_ifit_worker(args.config_path)
         pyplis_worker.start_watching_dir()
-        pyplis_worker.save_config_plus(pyplis_worker.processed_dir)
     else:
         raise ValueError("Invalid CLI command. Use 'doas', 'pyplis', or 'watcher'.")
     
