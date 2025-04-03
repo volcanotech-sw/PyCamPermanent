@@ -983,8 +983,7 @@ class PyplisWorker:
 
         # Initiate results
         self.init_results()
-
-        if reset_plot:
+        if reset_plot and not self.headless:
             # Reset time series figure
             self.fig_series.update_plot()
 
@@ -4086,12 +4085,8 @@ class PyplisWorker:
         Main processing function for continuous processing
         """
         # Reset self
-        if self.headless:
-            plot = False
-        else:
-            plot = True
 
-        self.reset_self(reset_plot=plot)
+        self.reset_self()
 
         # TODO I may need to think about whether I use this to look for images and perform load_sequence() - whihc also
         # TODO sets the processing directory with set_processing_directory(). Otherwise i need the watcher function
