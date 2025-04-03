@@ -1300,7 +1300,7 @@ class PyplisWorker:
             self.register_image()
 
         # Add to plot queue if requested
-        if plot:
+        if plot and not self.headless:
             print('Updating plot {}'.format(band))
             getattr(self, 'fig_{}'.format(band)).update_plot(img_path)
 
@@ -1827,7 +1827,7 @@ class PyplisWorker:
                         save_img(img, pathname)
 
         # Plot calibration
-        if plot:
+        if plot and not self.headless:
             self.fig_cell_cal.update_plot()
 
     def generate_sensitivity_mask(self, img_tau, pos_x=None, pos_y=None, radius=1, pyr_lvl=2):
@@ -1976,7 +1976,7 @@ class PyplisWorker:
         self.dil_recal_last = self.vigncorr_A.meta['start_acq']
 
         # Plot coefficients if requested
-        if plot:
+        if plot and not self.headless:
             fig_dict = {'A': ax0.figure,
                         'B': ax1.figure,
                         'basemap': None}
@@ -2326,7 +2326,7 @@ class PyplisWorker:
         tau_B_warped.img[np.isnan(tau_B_warped.img)] = np.finfo(float).eps
 
         # Plots
-        if plot:
+        if plot and not self.headless:
             self.fig_bg.update_plots(tau_A, tau_B)
 
             # if self.bg_pycam:
@@ -2459,7 +2459,7 @@ class PyplisWorker:
         # Calibrate the image
         self.img_cal = self.calibrate_image(self.img_tau, run_cal_doas=run_cal)
 
-        if plot:
+        if plot and not self.headless:
             # TODO should include a tau vs cal flag check, to see whether the plot is displaying AA or ppmm
             self.fig_tau.update_plot(np.array(self.img_tau.img), img_cal=self.img_cal)
 
@@ -2575,7 +2575,7 @@ class PyplisWorker:
         self.doas_last_fov_cal = self.img_A.meta['start_acq']
 
         # Plot results if requested, first checking that we have the tkinter frame generated
-        if plot:
+        if plot and not self.headless:
             print('Updating DOAS FOV plot')
             self.fig_doas_fov.update_plot()
 
@@ -2998,7 +2998,7 @@ class PyplisWorker:
                                 'lag_frames': lag_frames,
                                 'lag': lag,
                                 'velocity': vel}
-        if plot:
+        if plot and not self.headless:
             self.fig_cross_corr.update_plot(ax, self.cross_corr_info)
 
         self.got_cross_corr = True
@@ -3284,7 +3284,7 @@ class PyplisWorker:
         self.reset_cross_corr_buff()
 
         # Plot if requested - updates time series with these new emission rates from flow_glob
-        if plot:
+        if plot and not self.headless:
             self.fig_series.update_plot()
 
     def update_opt_flow_settings(self, **settings):
@@ -3322,7 +3322,7 @@ class PyplisWorker:
         # Generate plume speed array
         self.velo_img = pyplis.image.Img(self.opt_flow.to_plume_speed(self.dist_img_step))
 
-        if plot:
+        if plot and not self.headless:
             # TODO Think about this plotting - I have currently left it as img_tau_next when really it should be img_tau
             # TODO to show the flow field of where the gas is flowing to (maybe?).
             self.fig_tau.update_plot(img_tau_next, img_cal=self.img_cal)
@@ -3683,7 +3683,7 @@ class PyplisWorker:
 
         self.update_ICA_masses('total', img_time, ICA_mass_total)
 
-        if plot:
+        if plot and not self.headless:
             self.fig_series.update_plot()
 
         return self.results
@@ -3776,7 +3776,7 @@ class PyplisWorker:
                     self.generate_nadeau_line()
                 nadeau_plumespeed, info_dict = self.generate_nadeau_plumespeed(self.img_tau_prev, self.img_tau,
                                                                                self.nadeau_line)
-                if plot:
+                if plot and not self.headless:
                     self.fig_nadeau.nadeau_line = self.nadeau_line
                     self.fig_nadeau.update_pcs_line(draw=False)
                     self.fig_nadeau.update_nad_line_plot(draw=False)
