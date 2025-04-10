@@ -646,7 +646,7 @@ class Camera(CameraSpecs):
                 # Set seconds value (used as check to prevent 2 images being acquired in same second)
                 prev_sec = time_obj.second
 
-            time.sleep(0.1)
+            time.sleep(0.2)
 
     def capture_darks(self):
         """
@@ -1258,7 +1258,7 @@ class Spectrometer(SpecSpecs):
                 # Set seconds value (used as check to prevent 2 images being acquired in same second)
                 prev_sec = time_obj.second
 
-            time.sleep(0.1)
+            time.sleep(0.2)
 
     def capture_darks(self):
         """

@@ -11,17 +11,23 @@ export LC_ALL=en_GB.UTF-8
 log_file='/home/pi/pycam/logs/temperature.log'
 temperature=$(date +"%F %T")
 
-probes=("hwmon0" "hwmon1" "hwmon2")
-names=("CPU" "SSD" "ADC")
-for h in $(seq 0 $((${#probes[*]}-1)))
-do
+names=("cpu_thermal" "nvme" "rp1_adc") # name in hwmon folder
+nice_names=("CPU" "SSD" "ADC")         # label to use
+for h in $(seq 0 $((${#names[*]} - 1))); do
+
+  # find which hwmon folder has the name
+  probe=$(grep -F "${names[$h]}" /sys/class/hwmon/*/name | sed -e 's/.*\(hwmon[0-9]*\).*/\1/')
+  if [ -z "$probe" ]; then
+    # not found, skip
+    continue
+  fi
 
   # label
   temperature+=", "
-  temperature+=${names[$h]}
+  temperature+=${nice_names[$h]}
 
   # temperature in m'C
-  temp=$(cat /sys/class/hwmon/${probes[$h]}/temp1_input)
+  temp=$(cat /sys/class/hwmon/$probe/temp1_input)
   # turn into C & add to log line
   temperature+=", "
   temperature+=$(echo "scale=1; $temp/1000" | bc)

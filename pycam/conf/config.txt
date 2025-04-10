@@ -15,6 +15,7 @@ host_ip=192.168.5.5                   # IP address of the pi to connect to from 
 
 # PORTS
 port_ext=12347                      # External communication port (laptop etc)
+ftp_port=21                         # Port the FTP server is listening on
 
 # SCRIPTS TO BE RUN
 start_script=/home/pi/pycam/scripts/start_instrument.py

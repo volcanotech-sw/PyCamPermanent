@@ -11,7 +11,8 @@ Script can be passed an argument which defines the amount of space to make free 
 
 import sys
 import datetime
-sys.path.append('/home/pi/')
+
+sys.path.append("/home/pi/")
 
 from pycam.utils import StorageMount
 
@@ -29,6 +30,11 @@ storage_mount = StorageMount()
 
 # Ensure it is mounted
 storage_mount.mount_dev()
+
+# Exit if not mounted - this means the drive probably isn't attached
+if not storage_mount.is_mounted:
+    print("Storage not mounted, exiting")
+    exit(1)
 
 # Free up space
 storage_mount.free_up_space(make_space=make_space)
