@@ -275,7 +275,7 @@ class PyMenu:
         :param ip:  str     IP address of pi
         """
         try:
-            client = open_ssh(ip, uname=username, pwd=password)
+            client = open_ssh(ip, uname=username, pwd=password, port=cfg.ftp_client.ssh_port)
             ssh_cmd(client, 'python3 {}'.format(FileLocator.MOUNT_SSD_SCRIPT))
             close_ssh(client)
             messagebox.showinfo('SSD mounted', 'SSD should now be successfully mounted to the Raspberry Pi')
@@ -290,7 +290,7 @@ class PyMenu:
         :param ip:  str     IP address of pi
         """
         try:
-            client = open_ssh(ip, uname=username, pwd=password)
+            client = open_ssh(ip, uname=username, pwd=password, port=cfg.ftp_client.ssh_port)
             ssh_cmd(client, 'python3 {}'.format(FileLocator.UNMOUNT_SSD_SCRIPT))
             close_ssh(client)
             messagebox.showinfo('SSD unmounted', 'SSD should now be successfully unmounted to the Raspberry Pi')
@@ -309,7 +309,7 @@ class PyMenu:
                                 'Are you sure you want to proceed?')
         if a:
             try:
-                client = open_ssh(ip, uname=username, pwd=password)
+                client = open_ssh(ip, uname=username, pwd=password, port=cfg.ftp_client.ssh_port)
                 ssh_cmd(client, 'python3 {}'.format(FileLocator.CLEAR_SSD_SCRIPT))
                 close_ssh(client)
                 messagebox.showinfo('SSD cleared', 'SSD data has been cleared.')
@@ -356,7 +356,7 @@ class PyMenu:
                                 'Are you sure you want to proceed?'.format(space))
         if a:
             try:
-                client = open_ssh(ip, uname=username, pwd=password)
+                client = open_ssh(ip, uname=username, pwd=password, port=cfg.ftp_client.ssh_port)
                 ssh_cmd(client, 'python3 {} {}'.format(FileLocator.FREE_SPACE_SSD_SCRIPT, space))
                 close_ssh(client)
                 messagebox.showinfo('SSD cleared', 'SSD data has been cleared.')

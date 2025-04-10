@@ -353,6 +353,7 @@ class FTPClient:
             self.user = self.config[ConfigInfo.uname]
             self.pwd = self.config[ConfigInfo.ftppwd]
             self.port = int(self.config[ConfigInfo.ftp_port])
+            self.ssh_port = int(self.config[ConfigInfo.ftp_port])
             self.dir_data_remote = copy.deepcopy(self.config[ConfigInfo.data_dir])
             print('Directory data remote: {}'.format(self.dir_data_remote))
             self.local_dir = self.config[ConfigInfo.local_data_dir]
