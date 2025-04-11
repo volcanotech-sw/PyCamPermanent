@@ -34,10 +34,11 @@ def run_pycam(ip, auto_capt=1):
         # Pi login details
         uname = config[ConfigInfo.uname]
         pwd = config[ConfigInfo.pwd]
+        port = config[ConfigInfo.ssh_port]
 
         try:
             # Open ssh connection
-            connection = open_ssh(ip, uname=uname, pwd=pwd)
+            connection = open_ssh(ip, uname=uname, pwd=pwd, port=port)
         except TimeoutError:
             messagebox.showerror('Connection Timeout', 'Attempt to run pycam on {} timed out. Please ensure that the'
                                                        'instrument is accesible at that IP address'.format(ip))
@@ -477,9 +478,10 @@ class InstrumentConfiguration:
         # Pi login details
         uname = cfg.config[ConfigInfo.uname]
         pwd = cfg.config[ConfigInfo.pwd]
+        port = cfg.config[ConfigInfo.ssh_port]
 
         # Setup crontab
-        ssh_cli = open_ssh(self.ftp.host_ip, uname=uname, pwd=pwd)
+        ssh_cli = open_ssh(self.ftp.host_ip, uname=uname, pwd=pwd, port=port)
 
         std_in, std_out, std_err = ssh_cmd(ssh_cli, 'crontab ' + FileLocator.SCRIPT_SCHEDULE_PI, background=False)
         close_ssh(ssh_cli)
