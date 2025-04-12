@@ -336,6 +336,8 @@ class InstrumentConfiguration:
         self._dark_capt_hour = tk.IntVar()
         self._dark_capt_min = tk.IntVar()
 
+        self.dark_capt_off = tk.BooleanVar()    # If True, dark capture is not run.
+
         self._temp_logging = tk.IntVar()        # Temperature logging frequency (minutes)
         self._check_disk_space = tk.IntVar()    # Check disk space frequency (minutes)
         self._free_space_ssd_external = tk.IntVar()    # Check disk space frequency (minutes)
@@ -408,6 +410,9 @@ class InstrumentConfiguration:
         min_dark = ttk.Spinbox(frame_cron, textvariable=self._dark_capt_min, from_=00, to=59, increment=1, width=2, font=self.main_gui.main_font)
         min_dark.grid(row=row, column=3, padx=2, pady=2, sticky='w')
 
+        dark_check = ttk.Checkbutton(frame_cron, text='Dark off', variable=self.dark_capt_off)
+        dark_check.grid(row=row, column=4, padx=2, pady=2)
+
         # -------------------
         # Temperature logging
         # -------------------
@@ -450,10 +455,12 @@ class InstrumentConfiguration:
         free_space_ssd_external_str = self.minute_cron_fmt(self.free_space_ssd_external)
 
         # Preparation of lists for writing crontab file
-        times = [self.start_capt_time, self.stop_capt_time, self.start_dark_time, temp_log_str, disk_space_str, free_space_ssd_external_str]
+        times = [self.start_capt_time, self.stop_capt_time, self.start_dark_time, temp_log_str, disk_space_str,
+                 free_space_ssd_external_str]
         cmds = ['python3 {}'.format(self.start_script), 'python3 {}'.format(self.stop_script),
-                'python3 {}'.format(self.dark_script), 'bash {}'.format(self.temp_script),
-                'python3 {}'.format(self.disk_space_script), 'python3 {}'.format(self.free_space_ssd_script)]
+                'python3 {}'.format(self.dark_script) if not self.dark_off else '#python3 {}'.format(self.dark_script),
+                'bash {}'.format(self.temp_script), 'python3 {}'.format(self.disk_space_script),
+                'python3 {}'.format(self.free_space_ssd_script)]
 
         # Uncomment if we want to run dropbox uploader from crontab
         # dbx_str = self.minute_cron_fmt(60)          # Setup dropbox uploader to run every hour
@@ -495,7 +502,7 @@ class InstrumentConfiguration:
                                    'Check disk space: {} minutes\n'
                                    'Check external SSD: {} minutes'.format(self.start_capt_time.strftime('%H:%M'),
                                                                          self.stop_capt_time.strftime('%H:%M'),
-                                                                         self.start_dark_time.strftime('%H:%M'),
+                                                                         self.start_dark_time.strftime('%H:%M') if not self.dark_off else False,
                                                                          self.temp_logging,
                                                                          self.check_disk_space,
                                                                          self.free_space_ssd_external))
@@ -612,6 +619,14 @@ class InstrumentConfiguration:
     @dark_capt_min.setter
     def dark_capt_min(self, value):
         self._dark_capt_min.set(value)
+
+    @property
+    def dark_off(self):
+        return self.dark_capt_off.get()
+
+    @dark_off.setter
+    def dark_off(self, value):
+        self.dark_capt_off.set(value)
 
     @property
     def temp_logging(self):
