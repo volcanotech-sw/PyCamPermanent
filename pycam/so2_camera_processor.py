@@ -10,7 +10,7 @@ from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator
 from pycam.utils import calc_dt, get_horizontal_plume_speed
 from pycam.io_py import (
     save_img, save_emission_rates_as_txt, save_so2_img, save_so2_img_raw,
-    save_pcs_line, save_light_dil_line, load_picam_png
+    save_pcs_line, save_light_dil_line, load_picam_png, load_pcs_line
 )
 from pycam.directory_watcher import create_dir_watcher
 from pycam.exceptions import InvalidCalibration
@@ -27,6 +27,7 @@ from pyplis.doascalib import DoasCalibData, DoasFOV
 from pyplis.exceptions import ImgMetaError
 
 from pathlib import Path
+import argparse
 import pandas as pd
 from math import log10, floor
 import datetime
@@ -318,7 +319,8 @@ class PyplisWorker:
         self.stop_q = queue.Queue()
 
         self.plot_iter = True   # Bool defining if plotting iteratively is active. If it is, all images are passed to qs
-
+        self.headless = False   # Bool defining if the object is running in headless mode (no GUI)
+        
         self.display_only = False   # If True, images are just sent to GUI to be displayed when they arrive on machine - no processing is performed
         self.process_thread = None  # Placeholder for threading object
         self.in_processing = False
@@ -472,6 +474,16 @@ class PyplisWorker:
         
         self.config["pcs_lines"] = pcs_lines
 
+    def load_pcs_from_config(self):
+        """ Load the cross correlation lines used for plume speed calculation from the pcs_lines specified in the config """
+        for i, line_file in enumerate(self.config['pcs_lines']):
+            line, line_type = load_pcs_line(line_file)
+            if line_type:
+                self.cross_corr_lines[line_type] = line
+            self.PCS_lines_all.append(line)
+            self.PCS_lines_all[-1].line_id = str(i)
+        self.PCS_lines = [pcs_line for pcs_line in self.PCS_lines_all if not pcs_line == self.cross_corr_lines['old']]
+
     def save_all_dil(self, save_dir):
         dil_lines = []
         for line_n, line in enumerate(self.fig_dilution.lines_pyplis):
@@ -557,10 +569,13 @@ class PyplisWorker:
     def save_config_plus(self, file_path, file_name = None):
         """Save extra data associated with config file along with config"""
         self.save_all_pcs(file_path)
-        self.save_all_dil(file_path)
         self.save_img_reg(file_path)
         self.save_cam_geom(file_path)
         self.save_doas_params()
+
+        # DIL lines are saved in the dilution figure object
+        if not self.headless:
+            self.save_all_dil(file_path)
         if file_name is None:
             self.save_config(file_path)
         else:
@@ -975,8 +990,7 @@ class PyplisWorker:
 
         # Initiate results
         self.init_results()
-
-        if reset_plot:
+        if reset_plot and not self.headless:
             # Reset time series figure
             self.fig_series.update_plot()
 
@@ -1122,6 +1136,22 @@ class PyplisWorker:
         except IndexError:
             pass
 
+    def load_BG_pair(self, img_A_path = None, img_B_path = None):
+        """
+        Loads band A and band B background images
+        :param img_A_path: str     Path to A band background image
+        :param img_B_path: str     Path to B band background image
+        """
+        if self.config["use_vign_corr"]:
+            if img_A_path is None or img_B_path is None:
+                img_A_path = self.bg_A_path
+                img_B_path = self.bg_B_path
+            self.load_BG_img(img_A_path, band='A')
+            self.load_BG_img(img_B_path, band='B')
+        else:
+            self.load_BG_img(FileLocator.ONES_MASK, band='A', ones=True)
+            self.load_BG_img(FileLocator.ONES_MASK, band='B', ones=True)
+        
     def load_BG_img(self, bg_path, band='A', ones=False):
         """Loads in background file
 
@@ -1139,7 +1169,7 @@ class PyplisWorker:
         if not ones:
             # Dark subtraction - first extract ss then hunt for dark image
             ss = str(int(img.texp * 10 ** 6))
-            dark_img = self.find_dark_img(self.dark_img_dir, ss, band=band)[0]
+            dark_img = self.find_dark_img(self.config["dark_img_dir"], ss, band=band)[0]
 
             if dark_img is not None:
                 img.subtract_dark_image(dark_img)
@@ -1278,7 +1308,7 @@ class PyplisWorker:
             self.register_image()
 
         # Add to plot queue if requested
-        if plot:
+        if plot and not self.headless:
             self.PyplisLogger.debug(f'Updating plot {band}')
             getattr(self, f'fig_{band}').update_plot(img_path)
 
@@ -1807,7 +1837,7 @@ class PyplisWorker:
                         save_img(img, pathname)
 
         # Plot calibration
-        if plot:
+        if plot and not self.headless:
             self.fig_cell_cal.update_plot()
 
     def generate_sensitivity_mask(self, img_tau, pos_x=None, pos_y=None, radius=1, pyr_lvl=2):
@@ -1956,7 +1986,7 @@ class PyplisWorker:
         self.dil_recal_last = self.vigncorr_A.meta['start_acq']
 
         # Plot coefficients if requested
-        if plot:
+        if plot and not self.headless:
             fig_dict = {'A': ax0.figure,
                         'B': ax1.figure,
                         'basemap': None}
@@ -2306,7 +2336,7 @@ class PyplisWorker:
         tau_B_warped.img[np.isnan(tau_B_warped.img)] = np.finfo(float).eps
 
         # Plots
-        if plot:
+        if plot and not self.headless:
             self.fig_bg.update_plots(tau_A, tau_B)
 
             # if self.bg_pycam:
@@ -2354,7 +2384,7 @@ class PyplisWorker:
         :returns
         """
         # Set last image to img_tau_prev, as it is used in optical flow computation
-        # TODO I need to think abiout this this may be being called during times when we want to change processing and
+        # TODO I need to think about this this may be being called during times when we want to change processing and
         # TODO we haven't necessarily loaded a new image, so in this case, I think we don't want to shift the old
         # TODO image back one, as it may end up duplicating images??
         # TODO I think this edit, to use img_path_A as a guide makes this work. img_path_A is only not None if we need
@@ -2439,7 +2469,7 @@ class PyplisWorker:
         # Calibrate the image
         self.img_cal = self.calibrate_image(self.img_tau, run_cal_doas=run_cal)
 
-        if plot:
+        if plot and not self.headless:
             # TODO should include a tau vs cal flag check, to see whether the plot is displaying AA or ppmm
             self.fig_tau.update_plot(np.array(self.img_tau.img), img_cal=self.img_cal)
 
@@ -2555,7 +2585,7 @@ class PyplisWorker:
         self.doas_last_fov_cal = self.img_A.meta['start_acq']
 
         # Plot results if requested, first checking that we have the tkinter frame generated
-        if plot:
+        if plot and not self.headless:
             self.PyplisLogger.debug('Updating DOAS FOV plot')
             self.fig_doas_fov.update_plot()
 
@@ -2805,7 +2835,8 @@ class PyplisWorker:
                 self.add_doas_cal_data(cal_dict, recal=True)
 
             # Update doas figure, but no need to change the correlation image as we haven't changed that
-            self.fig_doas_fov.update_plot(update_img=False, reopen=False)
+            if not self.headless:
+                self.fig_doas_fov.update_plot(update_img=False, reopen=False)
 
     def add_doas_cal_data(self, cal_dict, recal=True):
         """
@@ -2986,7 +3017,7 @@ class PyplisWorker:
                                 'lag_frames': lag_frames,
                                 'lag': lag,
                                 'velocity': vel}
-        if plot:
+        if plot and not self.headless:
             self.fig_cross_corr.update_plot(ax, self.cross_corr_info)
 
         self.got_cross_corr = True
@@ -3272,7 +3303,7 @@ class PyplisWorker:
         self.reset_cross_corr_buff()
 
         # Plot if requested - updates time series with these new emission rates from flow_glob
-        if plot:
+        if plot and not self.headless:
             self.fig_series.update_plot()
 
     def update_opt_flow_settings(self, **settings):
@@ -3310,7 +3341,7 @@ class PyplisWorker:
         # Generate plume speed array
         self.velo_img = pyplis.image.Img(self.opt_flow.to_plume_speed(self.dist_img_step))
 
-        if plot:
+        if plot and not self.headless:
             # TODO Think about this plotting - I have currently left it as img_tau_next when really it should be img_tau
             # TODO to show the flow field of where the gas is flowing to (maybe?).
             self.fig_tau.update_plot(img_tau_next, img_cal=self.img_cal)
@@ -3671,7 +3702,7 @@ class PyplisWorker:
 
         self.update_ICA_masses('total', img_time, ICA_mass_total)
 
-        if plot:
+        if plot and not self.headless:
             self.fig_series.update_plot()
 
         return self.results
@@ -3764,7 +3795,7 @@ class PyplisWorker:
                     self.generate_nadeau_line()
                 nadeau_plumespeed, info_dict = self.generate_nadeau_plumespeed(self.img_tau_prev, self.img_tau,
                                                                                self.nadeau_line)
-                if plot:
+                if plot and not self.headless:
                     self.fig_nadeau.nadeau_line = self.nadeau_line
                     self.fig_nadeau.update_pcs_line(draw=False)
                     self.fig_nadeau.update_nad_line_plot(draw=False)
@@ -3791,8 +3822,9 @@ class PyplisWorker:
                 if cross_corr or time_gap >= self.cross_corr_recal:
                     self.generate_cross_corr(self.cross_corr_series['time'],
                                              self.cross_corr_series['young'],
-                                             self.cross_corr_series['old'])
-                    self.get_cross_corr_emissions_from_buff()
+                                             self.cross_corr_series['old'],
+                                             plot=plot)
+                    self.get_cross_corr_emissions_from_buff(plot = plot)
 
 
 
@@ -3909,8 +3941,9 @@ class PyplisWorker:
 
             # Calculate emission rate - don't update plot, and then we will do that at the end, for speed
             results = self.calculate_emission_rate(img=img_cal, flow=flow, nadeau_speed=nadeau_plumespeed, plot=False)
-
-        self.fig_series.update_plot()
+        
+        if not self.headless:
+            self.fig_series.update_plot()
 
     def process_sequence(self):
         """Start _process_sequence in a thread, so that this can return after starting and the GUI doesn't lock up"""
@@ -3941,10 +3974,10 @@ class PyplisWorker:
         else:
             raise InvalidCalibration("Preloaded calibration is selected but no calibration has been loaded.")
 
-    def _process_sequence(self):
+    def _process_sequence(self, reset_plot = True):
         """
         Processes the current image directory
-        Direcotry should therefore already have been processed using load_sequence()
+        Directory should therefore already have been processed using load_sequence()
         """
         # Check cross-correlation lines are defined if we have requested cross-correlation
         if self.velo_modes['flow_glob']:
@@ -3973,7 +4006,7 @@ class PyplisWorker:
         self.in_processing = True
 
         # Reset important parameters to ensure we start processing correctly
-        self.reset_self()
+        self.reset_self(reset_plot=reset_plot)
 
         # Set plot iter for this period, get it from current setting for this attribute
         plot_iter = self.plot_iter
@@ -4006,7 +4039,7 @@ class PyplisWorker:
                 pass
 
             # Always plot the final image and always force cross-correlation
-            if i == len(self.img_list) - 1:
+            if i == len(self.img_list) - 1 and not self.headless:
                 plot_iter = True
                 cross_corr = True
 
@@ -4076,6 +4109,7 @@ class PyplisWorker:
         Main processing function for continuous processing
         """
         # Reset self
+
         self.reset_self()
 
         # TODO I may need to think about whether I use this to look for images and perform load_sequence() - whihc also
@@ -4378,7 +4412,7 @@ class PyplisWorker:
         # Calibration only produced when DOAS in calibration type and not needed for pre-loaded
         if self.cal_type_int in [1,2]:
             self.save_calibration(only_last_value=only_last_value)
-
+   
 class ImageRegistration:
     """
     Image registration class for warping the off-band image to align with the on-band image
@@ -4724,6 +4758,8 @@ def plot_pcs_profiles_4_tau_images(tau0, tau1, tau2, tau3, pcs_line):
     ax.legend(loc="best", fancybox=True, framealpha=0.5, fontsize=12)
     return fig
 
+
+    
 
 class UnrecognisedSourceError(BaseException):
     """Error raised for a source which cannot be found online"""

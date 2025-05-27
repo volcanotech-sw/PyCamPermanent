@@ -90,7 +90,7 @@ class IFitWorker(SpecWorker):
         # Add the gases
         for spec in species:
             # Load reference spectrum (this adds to self.params too
-            self.load_ref_spec(species[spec]['path'], spec, value=species[spec]['value'], update=False)
+            self.load_ref_spec(species[spec]['path'], spec, value=float(species[spec]['value']), update=False)
 
         # Add background polynomial parameters
         self.params.add('bg_poly0', value=0.0, vary=True)
@@ -420,7 +420,6 @@ class IFitWorker(SpecWorker):
         if self._start_stray_pix is None or self._end_stray_pix is None:
             self.start_stray_wave = self.start_stray_wave
             self.end_stray_wave = self.end_stray_wave
-        print(f'DARK CORRECTED STATUS: {self.dark_corrected_plume}')
         if not self.dark_corrected_plume:
             if self.dark_spec is None:
                 self.SpecLogger.warning('No dark spectrum present, processing without dark subtraction')
@@ -1386,12 +1385,3 @@ class IFitWorker(SpecWorker):
 
         self.ldf_best = ldf
         return fit0, fit1
-    
-    @staticmethod
-    def get_args():
-        parser = argparse.ArgumentParser(description='Process spectra using iFit')
-        parser.add_argument('-c', '--config', type=str, help='Path to configuration file', default=None)
-        parser.add_argument('--frs_path', type=str, help='Path to FRS file', default='./pycam/doas/calibration/sao2010.txt')
-        parser.add_argument('--doas_out_dir', type=str, help='Directory to save DOAS results', default=None)
-        return parser.parse_args()
-
