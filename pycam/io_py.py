@@ -52,7 +52,7 @@ def save_img(img, filename, file_ext='.png', metadata=None, meta_filename=None, 
     open(lock, 'a').close()
 
     if compression:
-        png_compression = 9
+        png_compression = 5
     else:
         png_compression = 0
 
@@ -233,11 +233,13 @@ def load_pcs_line(filename, color='blue', line_id='line'):
     """
     Loads PCS line and returns it as a pyplis object
     :param filename:
-    :return:
+    :return: 
     """
     if not os.path.exists(filename):
         pycamLogger.warning(f'Cannot get line from filename: {filename} as no file exists at this path')
         return
+
+    pcs_line_type = None
 
     with open(filename, 'r') as f:
         for line in f:
@@ -249,13 +251,14 @@ def load_pcs_line(filename, color='blue', line_id='line'):
                 y0, y1 = [int(y) for y in coords.split(',')]
             elif 'orientation=' in line:
                 orientation = line.split('orientation=')[-1].strip()
-
+            elif 'type=' in line:
+                pcs_line_type = line.split('type=')[-1].split('\n')[0]
     pcs_line = LineOnImage(x0=x0, y0=y0, x1=x1, y1=y1,
                            normal_orientation=orientation,
                            color=color,
                            line_id=line_id)
 
-    return pcs_line
+    return pcs_line, pcs_line_type
 
 
 def save_light_dil_line(line, filename):
@@ -265,16 +268,24 @@ def save_light_dil_line(line, filename):
 
 def load_light_dil_line(filename, color='blue', line_id='line'):
     """Loads light dilution line from text file"""
-    line = load_pcs_line(filename, color, line_id)
+    line, _ = load_pcs_line(filename, color, line_id)
     return line
 
-def load_picam_png(file_path, meta={}, **kwargs):
+def load_picam_png(file_path, meta={}, attempts=3, **kwargs):
     """Load PiCam png files and import meta information"""
 
-    raw_img = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
+    while attempts > 0:
+        raw_img = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
+
+        # Image successfully loaded
+        if raw_img is not None:
+            break
     
-    # cv2 returns None if file failed to load
-    if raw_img is None:
+        # cv2 returns None if file failed to load
+        if raw_img is None:
+            time.sleep(0.2)
+            attempts -= 1
+    else:
         raise FileNotFoundError(f"Image from {file_path} could not be loaded.") 
 
     img = np.array(raw_img)

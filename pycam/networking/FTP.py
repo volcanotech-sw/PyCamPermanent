@@ -352,10 +352,11 @@ class FTPClient:
             self.config = network_info
 
             # Do unpacking of config dictionary here
-            self.host_ip = self.config['host_ip']
-            self.user = self.config['uname']
-            self.pwd = self.config['ftppwd']
-            self.dir_data_remote = copy.deepcopy(self.config['data_dir'])
+            self.host_ip = self.config[ConfigInfo.host_ip]
+            self.user = self.config[ConfigInfo.uname]
+            self.pwd = self.config[ConfigInfo.ftppwd]
+            self.port = int(self.config[ConfigInfo.ftp_port])
+            self.dir_data_remote = copy.deepcopy(self.config[ConfigInfo.data_dir])
             networkLogging.info(f'Directory data remote: {self.dir_data_remote}')
             self.local_dir = self.config[ConfigInfo.local_data_dir]
             self.dir_img_local = os.path.join(self.local_dir, 'Images/')
@@ -371,7 +372,7 @@ class FTPClient:
 
         # Open connection if we have a host_ip
         if len(self.host_ip) > 0:
-            self.open_connection(self.host_ip, self.user, self.pwd) and self.retrieve_schedule_files()
+            self.open_connection(self.host_ip, self.port, self.user, self.pwd) and self.retrieve_schedule_files()
 
 
     def _default_specs(self):
@@ -383,10 +384,11 @@ class FTPClient:
         self.dir_img_local = ''
         self.dir_spec_local = ''
 
-    def open_connection(self, ip, username=None, password=None):
+    def open_connection(self, ip, port=21, username=None, password=None):
         """Opens FTP connection to host machine and moves to correct working directory"""
         try:
-            self.connection = ftplib.FTP(ip)
+            self.connection = ftplib.FTP(timeout=10)
+            self.connection.connect(host=ip, port=port)
             self.connection.login(user=username, passwd=password)
             self.connection.cwd(self.dir_data_remote)
             networkLogging.info(f'Got FTP connection from {ip}. File transfer now available.')
@@ -405,7 +407,7 @@ class FTPClient:
         try:
             self.connection.voidcmd('NOOP')
         except BaseException as e:
-            conn = self.open_connection(self.host_ip, username=self.user, password=self.pwd)
+            conn = self.open_connection(self.host_ip, self.port, username=self.user, password=self.pwd)
             return conn
         return True
 
@@ -421,7 +423,7 @@ class FTPClient:
             time.sleep(0.5)
 
         # Test the new connection
-        self.test_connection() and self.retrieve_schedule_files()
+        return self.test_connection() and self.retrieve_schedule_files()
 
     def retrieve_schedule_files(self):
         """Retrieves capture and crontab schedule files"""
@@ -433,6 +435,7 @@ class FTPClient:
         # Also get the port of the remote PI
         # (not a schedule, but this function is already called everywhere this is needed)
         self.get_file(FileLocator.NET_EXT_FILE, FileLocator.NET_EXT_FILE_WINDOWS, rm=False)
+        return True
 
     def move_file_to_instrument(self, local_file, remote_file):
         """Move specific file from local_file location to remote_file location"""
@@ -518,13 +521,20 @@ class FTPClient:
         else:
             # Create lockfile
             lock_file = local_name.replace(ext, '.lock')
-            open(lock_file, 'a').close()
+            with open(lock_file, 'a') as f:
+                # flush & sync the file to ensure it's on disk
+                f.flush()
+                os.fsync(f.fileno())
 
             # Download file
             with open(local_name, 'wb') as f:
                 start_time = time.time()
                 self.connection.retrbinary('RETR ' + data_name, f.write)
                 elapsed_time = time.time() - start_time
+
+                # flush & sync the file to ensure it's on disk
+                f.flush()
+                os.fsync(f.fileno())
             networkLogging.info(f'Transferred file {filename} from instrument to {local_date_dir}. '
                                 f'Transfer time: {elapsed_time:.4f}s')
 

@@ -6,7 +6,7 @@ from pycam.logging.logging_tools import LoggerManager
 networkLogging = LoggerManager.add_logger("Networking")
 
 
-def open_ssh(ip_addr, uname='pi', pwd='raspberry'):
+def open_ssh(ip_addr, uname='pi', pwd='raspberry', port=22):
     """Opens ssh object and returns client object
 
     Parameters
@@ -22,7 +22,7 @@ def open_ssh(ip_addr, uname='pi', pwd='raspberry'):
     import paramiko
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(ip_addr, username=uname, password=pwd)
+    client.connect(ip_addr, username=uname, password=pwd, port=port)
 
     return client
 

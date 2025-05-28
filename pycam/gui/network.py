@@ -4,6 +4,7 @@
 
 import pycam.gui.cfg as cfg
 from pycam.networking.ssh import open_ssh, close_ssh, ssh_cmd
+from pycam.networking.sockets import read_network_file
 from pycam.setupclasses import FileLocator, ConfigInfo
 from pycam.io_py import write_script_crontab, read_script_crontab
 from pycam.utils import read_file
@@ -32,9 +33,14 @@ def run_pycam(ip, auto_capt=1):
         # Path to start_script executable
         pycam_path = config[ConfigInfo.start_script]
 
+        # Pi login details
+        uname = config[ConfigInfo.uname]
+        pwd = config[ConfigInfo.pwd]
+        port = config[ConfigInfo.ssh_port]
+
         try:
             # Open ssh connection
-            connection = open_ssh(ip)
+            connection = open_ssh(ip, uname=uname, pwd=pwd, port=port)
         except TimeoutError:
             messagebox.showerror('Connection Timeout', 'Attempt to run pycam on {} timed out. Please ensure that the'
                                                        'instrument is accesible at that IP address'.format(ip))
@@ -112,7 +118,7 @@ class ConnectionGUI:
         lab.grid(row=1, column=0, padx=self.pdx, pady=self.pdy, sticky='e')
         entry = ttk.Entry(self.frame, width=15, textvariable=self._host_ip, font=self.main_gui.main_font)
         entry.grid(row=0, column=1, padx=self.pdx, pady=self.pdy, sticky='ew')
-        ttk.OptionMenu(self.frame, self._port, self.port_list[0], *self.port_list).grid(row=1, column=1, padx=self.pdx, pady=self.pdy, sticky='ew')
+        ttk.OptionMenu(self.frame, self._port, self.port, *self.port_list).grid(row=1, column=1, padx=self.pdx, pady=self.pdy, sticky='ew')
         # ttk.Entry(self.frame, width=6, textvariable=self._port).grid(row=1, column=1, padx=self.pdx, pady=self.pdy, sticky='ew')
 
         self.test_butt = ttk.Button(self.frame, text='Test Connection', command=self.test_connection)
@@ -152,7 +158,13 @@ class ConnectionGUI:
     def update_connection(self):
         """Updates socket address information"""
         cfg.sock.update_address(self.host_ip, self.port)
-        cfg.ftp_client.update_connection(self.host_ip)
+        if cfg.ftp_client.update_connection(self.host_ip):
+            print("Updating port from FTP")
+            # update connection pulls down the new remote port
+            _, port = read_network_file(FileLocator.NET_EXT_FILE_WINDOWS)
+            if port:
+                self.port = port
+                cfg.sock.update_address(host_ip=self.host_ip, port=self.port)
 
     def test_connection(self):
         """Tests that IP address is available"""
@@ -465,8 +477,13 @@ class InstrumentConfiguration:
         # Transfer file to instrument
         self.ftp.move_file_to_instrument(FileLocator.SCRIPT_SCHEDULE, FileLocator.SCRIPT_SCHEDULE_PI)
 
+        # Pi login details
+        uname = cfg.config[ConfigInfo.uname]
+        pwd = cfg.config[ConfigInfo.pwd]
+        port = cfg.config[ConfigInfo.ssh_port]
+
         # Setup crontab
-        ssh_cli = open_ssh(self.ftp.host_ip)
+        ssh_cli = open_ssh(self.ftp.host_ip, uname=uname, pwd=pwd, port=port)
 
         std_in, std_out, std_err = ssh_cmd(ssh_cli, 'crontab ' + FileLocator.SCRIPT_SCHEDULE_PI, background=False)
         close_ssh(ssh_cli)

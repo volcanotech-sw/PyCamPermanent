@@ -13,7 +13,7 @@ import pycam.gui.settings as settings
 from pycam.networking.FTP import FileTransferGUI
 from pycam.cfg import pyplis_worker, process_defaults_loc
 from pycam.doas.cfg import doas_worker
-from pycam.setupclasses import FileLocator
+from pycam.setupclasses import FileLocator, ConfigInfo
 from pycam.networking.ssh import open_ssh, ssh_cmd, close_ssh
 from pycam.utils import truncate_path
 from pycam.exceptions import InvalidCalibration
@@ -127,10 +127,10 @@ class PyMenu:
         self.submenu_data.add_separator()
         self.submenu_data.add_command(label='Get temperature log', command=temp_log.generate_frame)
         self.submenu_data.add_separator()
-        self.submenu_data.add_command(label='Mount SSD', command=lambda: self.mount_ssd(cfg.ftp_client.host_ip))
-        self.submenu_data.add_command(label='Unmount SSD', command=lambda: self.unmount_ssd(cfg.ftp_client.host_ip))
+        self.submenu_data.add_command(label='Mount SSD', command=lambda: self.mount_ssd(cfg.ftp_client.host_ip, username=cfg.config[ConfigInfo.uname], password=cfg.config[ConfigInfo.pwd], port=cfg.config[ConfigInfo.ssh_port]))
+        self.submenu_data.add_command(label='Unmount SSD', command=lambda: self.unmount_ssd(cfg.ftp_client.host_ip, username=cfg.config[ConfigInfo.uname], password=cfg.config[ConfigInfo.pwd], port=cfg.config[ConfigInfo.ssh_port]))
         # self.submenu_data.add_command(label='SSD full download', command=cfg.ftp_client.full_ssd_download)
-        # self.submenu_data.add_command(label='Clear SSD data', command=lambda: self.clear_ssd(cfg.ftp_client.host_ip))
+        # self.submenu_data.add_command(label='Clear SSD data', command=lambda: self.clear_ssd(cfg.ftp_client.host_ip, username=cfg.config[ConfigInfo.uname], password=cfg.config[ConfigInfo.pwd], port=cfg.config[ConfigInfo.ssh_port]))
         # self.submenu_data.add_command(label='Free space on SSD', command=lambda: self.free_ssd(cfg.ftp_client.host_ip))
         self.menus[tab].add_separator()
 
@@ -271,13 +271,13 @@ class PyMenu:
         """Sets the display mode on click of checkbutton"""
         pyplis_worker.display_only = bool(self.disp_var.get())
 
-    def mount_ssd(self, ip, username='pi', password='raspberry'):
+    def mount_ssd(self, ip, username='pi', password='raspberry', port=22):
         """
         Attempts to mount SSD on raspberry pi
         :param ip:  str     IP address of pi
         """
         try:
-            client = open_ssh(ip, uname=username, pwd=password)
+            client = open_ssh(ip, uname=username, pwd=password, port=port)
             ssh_cmd(client, 'python3 {}'.format(FileLocator.MOUNT_SSD_SCRIPT))
             close_ssh(client)
             messagebox.showinfo('SSD mounted', 'SSD should now be successfully mounted to the Raspberry Pi')
@@ -286,13 +286,13 @@ class PyMenu:
                                  'An error occurred when attempting to mount SSD vis SSH.\n'
                                  '{}'.format(e))
 
-    def unmount_ssd(self, ip, username='pi', password='raspberry'):
+    def unmount_ssd(self, ip, username='pi', password='raspberry', port=22):
         """
         Attempts to mount SSD on raspberry pi
         :param ip:  str     IP address of pi
         """
         try:
-            client = open_ssh(ip, uname=username, pwd=password)
+            client = open_ssh(ip, uname=username, pwd=password, port=port)
             ssh_cmd(client, 'python3 {}'.format(FileLocator.UNMOUNT_SSD_SCRIPT))
             close_ssh(client)
             messagebox.showinfo('SSD unmounted', 'SSD should now be successfully unmounted to the Raspberry Pi')
@@ -301,7 +301,7 @@ class PyMenu:
                                  'An error occurred when attempting to mount SSD vis SSH.\n'
                                  '{}'.format(e))
 
-    def clear_ssd(self, ip, username='pi', password='raspberry'):
+    def clear_ssd(self, ip, username='pi', password='raspberry', port=22):
         """
         Clears all SSD data by SSHing into pi then running the clear_ssd.py script
         :param ip:  str     IP address of pi
@@ -311,7 +311,7 @@ class PyMenu:
                                 'Are you sure you want to proceed?')
         if a:
             try:
-                client = open_ssh(ip, uname=username, pwd=password)
+                client = open_ssh(ip, uname=username, pwd=password, port=22)
                 ssh_cmd(client, 'python3 {}'.format(FileLocator.CLEAR_SSD_SCRIPT))
                 close_ssh(client)
                 messagebox.showinfo('SSD cleared', 'SSD data has been cleared.')
@@ -333,18 +333,23 @@ class PyMenu:
         lab = ttk.Label(self.space_frame, text='Create space (GB):')
         lab.grid(row=1, column=0)
 
+        # Pi login details
+        uname = cfg.config[ConfigInfo.uname]
+        pwd = cfg.config[ConfigInfo.pwd]
+        port = cfg.config[ConfigInfo.ssh_port]
+
         # Free space entry
         free_space = tk.IntVar()
         free_space.set(50)
         entry = ttk.Spinbox(self.space_frame, from_=0, to=1000, increment=5, textvariable=free_space)
         entry.grid(row=1, column=1, sticky='nsew')
 
-        butt = ttk.Button(self.space_frame,text='Create space', command=lambda: self._free_ssd(ip, free_space.get()))
+        butt = ttk.Button(self.space_frame,text='Create space', command=lambda: self._free_ssd(ip, free_space.get(), username=uname, password=pwd, port=port))
         butt.grid(row=2, column=0, sticky='nsew')
         butt = ttk.Button(self.space_frame, text='Cancel', command=self.space_frame.destroy)
         butt.grid(row=2, column=1, sticky='nsew')
 
-    def _free_ssd(self, ip, space, username='pi', password='raspberry'):
+    def _free_ssd(self, ip, space, username='pi', password='raspberry', port=22):
         """
         Frees space on SSD data by SSHing into pi then running the free_space_ssd.py script
         """
@@ -354,7 +359,7 @@ class PyMenu:
                                 'Are you sure you want to proceed?'.format(space))
         if a:
             try:
-                client = open_ssh(ip, uname=username, pwd=password)
+                client = open_ssh(ip, uname=username, pwd=password, port=port)
                 ssh_cmd(client, 'python3 {} {}'.format(FileLocator.FREE_SPACE_SSD_SCRIPT, space))
                 close_ssh(client)
                 messagebox.showinfo('SSD cleared', 'SSD data has been cleared.')
@@ -588,7 +593,7 @@ class LoadFrame(LoadSaveProcessingSettings):
             filename = filedialog.askopenfilename(initialdir=self.init_dir, **kwargs)
 
         if len(filename) > 0:
-            line = load_pcs_line(filename)
+            line, _ = load_pcs_line(filename)
             if new_line:
                 line_num = None
             else:
