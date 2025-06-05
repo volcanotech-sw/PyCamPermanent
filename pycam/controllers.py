@@ -813,6 +813,13 @@ class Spectrometer(SpecSpecs):
 
                 seabreeze.use("pyseabreeze")
                 import seabreeze.spectrometers as sb
+
+                # to keep pyseabreeze from trying to IPv4 and fail with an OSError 19
+                # we'll patch out the IPv4 list_devices function to return an empty list
+                # and hence skip that section of the code
+                from unittest.mock import patch
+                patch("seabreeze.pyseabreeze.api.IPv4Transport.list_devices", lambda *_, **__: [])
+                
             except ModuleNotFoundError:
                 warnings.warn(
                     "Working on machine without seabreeze, functionality of some classes will be lost"
