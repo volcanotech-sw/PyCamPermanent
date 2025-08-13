@@ -3,19 +3,16 @@
 """Main GUI script to be run as main executable"""
 # Enables Basemap import by pointing to (tested this 2022-04-1 by removing it - not actually sure I lost any functionality)
 # import os
-# os.environ["PROJ_LIB"] = 'C:\\Users\\tw9616\\Anaconda3\\envs\\py38\\Lib\\site-packages\\pyproj'
+# os.environ["PROJ_LIB"] = 'C:/Users/tw9616/Anaconda3/envs/py38/Lib/site-packages/pyproj'
 
 # import sys
-# sys.path.append("C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\PyCamPermanent\\")
+# sys.path.append("C:/Users/tw9616/Documents/PostDoc/Permanent Camera/PyCamPermanent/")
 # # Make it possible to import iFit by updating path
 # dir_path = os.path.dirname(os.path.realpath(__file__))
 # sys.path.append(os.path.join(dir_path, 'ifit'))
 
 from pycam.gui.menu import PyMenu
 from pycam.gui.windows import CameraWind, SpecWind, AnalysisWind
-from pycam.networking.sockets import SocketClient
-from pycam.setupclasses import ConfigInfo
-from pycam.utils import read_file
 from pycam.gui.cfg_menu_frames import geom_settings, process_settings, plume_bg, doas_fov, opti_flow, \
     light_dilution, cross_correlation, basic_acq_handler, automated_acq_handler, instrument_cfg, calibration_wind,\
     comm_recv_handler, cell_calib, nadeau_flow
@@ -59,7 +56,7 @@ class PyCam(ttk.Frame):
         cfg.indicator.add_font(self.bold_font)
 
         # Setup socket
-        self.sock = SocketClient(host_ip=self.config[ConfigInfo.host_ip], port=int(self.config[ConfigInfo.port_ext]))
+        self.sock = cfg.sock
 
         # Setup style
         self.style = ThemedStyle(self.root)
@@ -106,6 +103,7 @@ class PyCam(ttk.Frame):
         geom_settings.initiate_variables(self)
         process_settings.initiate_variables(self)
         calibration_wind.add_gui(self)
+        calibration_wind.ils_frame.initiate_variables()
         plume_bg.initiate_variables(self)
         plume_bg.start_draw(self.root)
         doas_fov.start_draw(self.root)      # start drawing of frame
@@ -129,6 +127,7 @@ class PyCam(ttk.Frame):
         doas_worker.load_dir(prompt=False, plot=True)
         doas_worker.get_wavelengths(pyplis_worker.config)
         doas_worker.get_shift(pyplis_worker.config)
+        doas_worker.set_ils_fit(pyplis_worker.config)
         self.spec_wind.spec_frame.update_all()
         self.spec_wind.doas_frame.update_vals()
         doas_worker.process_doas(plot=True)
@@ -151,6 +150,9 @@ class PyCam(ttk.Frame):
     def exit_app(self):
         """Closes application"""
         if messagebox.askokcancel("Quit", "Are you sure you want to quit?"):
+
+            # Stop FTP transfer / directory watchers
+            self.menu.ftp_transfer.stop_transfer()
 
             # If we are connected to the instrument we should disconnect now.
             if cfg.indicator.connected:

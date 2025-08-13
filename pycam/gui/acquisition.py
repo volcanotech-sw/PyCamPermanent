@@ -6,6 +6,7 @@ messages other comms
 """
 
 from pycam.setupclasses import CameraSpecs, SpecSpecs
+from pycam.logging.logging_tools import LoggerManager
 import pycam.gui.cfg as cfg
 
 import tkinter as tk
@@ -13,6 +14,7 @@ import tkinter.ttk as ttk
 from tkinter.messagebox import askyesno, showerror, showinfo
 import time
 
+GuiLogger = LoggerManager.add_logger("GUI")
 
 class TkVariables:
     """
@@ -294,14 +296,14 @@ class TkVariables:
         self.framerate = spec.framerate
         self.min_saturation = spec.min_saturation
         self.max_saturation = spec.max_saturation
-        self.wavelength_min = spec.saturation_range[0]
-        self.wavelength_max = spec.saturation_range[1]
+        self.wavelength_min = spec.wavelength_min
+        self.wavelength_max = spec.wavelength_max
         self.saturation_pixels = spec.saturation_pixels
         self.fov_x = spec.fov
         self.fov_y = self.fov_x
-        self.pix_num_x = 1          # Optical fiber is one pixel
+        self.pix_num_x = 1          # Optical fibre is one pixel
         self.pix_num_y = 1
-        self.pix_size_x = spec.fiber_diameter
+        self.pix_size_x = spec.fibre_diameter
         self.pix_size_y = self.pix_size_x       # Assuming a circular entrance optic for DOAS
         self.bit_depth = spec.bit_depth
         self.coadd = spec.coadd
@@ -672,6 +674,9 @@ class CommHandler:
             cmd_dict['STC'] = 1
             cmd_dict['STS'] = 1
 
+        # Save configuration
+        cmd_dict['SAV'] = 1
+
         # Add dictionary command to queue to be sent
         cfg.send_comms.q.put(cmd_dict)
 
@@ -695,6 +700,10 @@ class CommHandler:
         # Add dictionary command to queue to be sent
         cfg.send_comms.q.put(cmd_dict)
 
+        # Have the cameras save their config
+        cfg.send_comms.q.put({"DST": "CM1", "SAV": 1})
+        cfg.send_comms.q.put({"DST": "CM2", "SAV": 1})
+
     def acq_spec_full(self, acq_type=None):
         """Sends spectrometer communications"""
         if not self.check_connection():
@@ -712,6 +721,9 @@ class CommHandler:
 
         # Add dictionary command to queue to be sent
         cfg.send_comms.q.put(cmd_dict)
+
+        # Have the spectrometer save its config
+        cfg.send_comms.q.put({"DST": "SPE", "SAV": 1})
 
     def acq_darks(self):
         """Acquires set of dark images and spectra"""
@@ -918,7 +930,8 @@ class BasicAcqHandler:
             try:
                 cfg.ftp_client.watch_dir(new_only=True)
             except ConnectionError:
-                print('FTP client failed. Will not be able to transfer acquired data back to host machine')
+                GuiLogger.warning('FTP client failed. Will not be able to transfer acquired data '
+                                  'back to host machine')
 
         # Bring frame to front
         self.frame.attributes('-topmost', 1)

@@ -1,9 +1,10 @@
 # Crontab schedule file written by pycam
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
-30 00 * * * python3 /home/pi/pycam/scripts/start_instrument.py
-00 09 * * * python3 /home/pi/pycam/scripts/stop_instrument.py
-10 12 * * * python3 /home/pi/pycam/scripts/pycam_dark_capture.py
-*/30 * * * * /home/pi/pycam/scripts/log_temperature.sh
-*/5 * * * * python3 /home/pi/pycam/scripts/check_disk_space.py
-0 * * * * python3 /home/pi/pycam/scripts/clouduploaders/pi_dbx_upload.py
-*/30 * * * * python3 /home/pi/pycam/scripts/check_run.py
+00 09 * * * python3 /home/pi/pycam/scripts/start_instrument.py >> /home/pi/pycam/logs/cron.log 2>&1
+00 21 * * * python3 /home/pi/pycam/scripts/stop_instrument.py >> /home/pi/pycam/logs/cron.log 2>&1
+00 23 * * * python3 /home/pi/pycam/scripts/pycam_master2.py -d >> /home/pi/pycam/logs/cron.log 2>&1
+*/5 * * * * bash /home/pi/pycam/scripts/log_temperature.sh
+*/15 * * * * python3 /home/pi/pycam/scripts/check_disk_space.py >> /home/pi/pycam/logs/cron.log 2>&1
+*/30 * * * * python3 /home/pi/pycam/scripts/free_space_ssd.py >> /home/pi/pycam/logs/cron.log 2>&1
+# 0 * * * * python3 /home/pi/pycam/scripts/clouduploaders/pi_dbx_upload.py
+*/30 * * * * python3 /home/pi/pycam/scripts/check_run.py >> /home/pi/pycam/logs/cron.log 2>&1

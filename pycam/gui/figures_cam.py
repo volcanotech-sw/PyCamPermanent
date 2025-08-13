@@ -5,6 +5,7 @@
 from pycam.setupclasses import CameraSpecs
 import pycam.gui.cfg as cfg
 from pycam.cfg import pyplis_worker
+from pycam.logging.logging_tools import LoggerManager
 
 import tkinter as tk
 import tkinter.ttk as ttk
@@ -25,6 +26,7 @@ import queue
 
 refresh_rate = 200  # Refresh rate of draw command when in processing thread
 
+GuiLogger = LoggerManager.add_logger("GUI")
 
 class ImageFigure:
     """
@@ -203,8 +205,8 @@ class ImageFigure:
         self.plt_row.set_ylim(0, self.specs._max_DN)
         self.plt_col.set_xlim(0, self.specs._max_DN)
         self.plt_col.set_ylim(self.specs.pix_num_y, 0)
-        self.plt_row.grid(b=True, which='major')
-        self.plt_col.grid(b=True, which='major')
+        self.plt_row.grid(visible=True, which='major')
+        self.plt_col.grid(visible=True, which='major')
 
         # Get subplot size right
         asp = np.diff(self.plt_col.get_ylim())[0] / np.diff(self.plt_col.get_xlim())[0]
@@ -340,7 +342,7 @@ class ImageFigure:
             self.num_cp_txt += 1
             self.img_canvas.draw()
         else:
-            print('Clicked outside axes bounds but inside plot window')
+            GuiLogger.info('Clicked outside axes bounds but inside plot window')
 
     def cp_reset(self):
         """
@@ -384,7 +386,7 @@ class ImageFigure:
             # Get next image and its path (passed to queue as a 2-element list)
             img_path, img_obj = getattr(pyplis_worker, 'img_{}_q'.format(self.band)).get(block=True)
 
-            print(img_path)
+            GuiLogger.debug(img_path)
 
             # Get data from the pyplis.image.Img object
             self.update_plot(np.array(img_obj.img, dtype=np.uint16), img_path)

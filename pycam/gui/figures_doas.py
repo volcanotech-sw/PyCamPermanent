@@ -21,11 +21,15 @@ from pycam.setupclasses import SpecSpecs
 from pycam.gui.settings import GUISettings
 from pycam.gui.misc import LoadSaveProcessingSettings
 from pycam.utils import truncate_path
+from pycam.setupclasses import FileLocator
+from pycam.logging.logging_tools import LoggerManager
 
 # plt.style.use('dark_background')
 plt.style.use('default')
 
 refresh_rate = 200
+
+GuiLogger = LoggerManager.add_logger("GUI")
 
 class DirIndicator:
     """
@@ -308,7 +312,7 @@ class SpectraPlot:
             if update == 1:
                 self.canv.draw()
             else:
-                print('Closing canvas drawing')
+                GuiLogger.info('Closing canvas drawing')
                 return
         except queue.Empty:
             pass
@@ -629,7 +633,7 @@ class DOASFigure:
         try:
             self.ax.set_ylim(ylims)
         except BaseException as e:
-            print('Could not set axis limits: {}'.format(ylims))
+            GuiLogger.warning(f'Could not set axis limits: {ylims}')
 
         if isinstance(self.doas_worker, DOASWorker):
             self.ax.set_title('SO2 Column density [ppm.m]: {}          STD Error: {}'.format(
@@ -751,7 +755,7 @@ class CDSeries:
             if update == 1:
                 self.canv.draw()
             else:
-                print('Closing canvas drawing')
+                GuiLogger.info('Closing canvas drawing')
                 return
         except queue.Empty:
             pass
@@ -765,20 +769,23 @@ class CalibrationWindow:
     :param  fig_setts:  dict     Dictionary containing settings values for figures
     :param gui:         PyCam
     """
-    def __init__(self, fig_setts=GUISettings(), gui=None):
+    def __init__(self, fig_setts=GUISettings(FileLocator.GUI_SETTINGS), gui=None):
         self.gui = None
         self.in_frame = False
         self.frame = None
-
+        
         # Setup reference spectra objects
         self.ref_frame = dict()
-        for spec in species:
-            species_id = 'ref_spec_{}'.format(spec)
-            self.ref_frame[spec] = RefPlot(ref_spec_path=species[spec]['path'], species=spec, doas_work=doas_worker,
-                                           fig_setts=fig_setts)
+        self.load_ref_species(fig_setts=fig_setts)
 
         self.ils_frame = ILSFrame(doas_work=doas_worker, fig_setts=fig_setts)
 
+    def load_ref_species(self, fig_setts=GUISettings(FileLocator.GUI_SETTINGS)):
+        for spec in doas_worker.species_info:
+            species_id = 'ref_spec_{}'.format(spec)
+            self.ref_frame[spec] = RefPlot(ref_spec_path=doas_worker.species_info[spec]["path"], species=spec, doas_work=doas_worker,
+                                           fig_setts=fig_setts)
+            
     def add_gui(self, gui):
         self.gui = gui
 
@@ -841,7 +848,7 @@ class RefPlot:
     species: str
         Defines the species for reference spectrum
     """
-    def __init__(self, frame=None, doas_work=DOASWorker(), init_dir='.\\', ref_spec_path=None, species='SO2',
+    def __init__(self, frame=None, doas_work=doas_worker, init_dir='./', ref_spec_path=None, species='SO2',
                  fig_setts=GUISettings()):
         self.frame = frame
         self.doas_worker = doas_work  # DOAS processor
@@ -930,7 +937,7 @@ class RefPlot:
         if not self.ref_spec_path:
             return
         if not init_load:
-            self.nameRef.configure(self.ref_spec_path_short)
+            self.nameRef.configure(text=self.ref_spec_path_short)
         self.doas_worker.load_ref_spec(self.ref_spec_path, self.species)
 
         self.ref_spec_file = self.ref_spec_path.split('/')[-1]
@@ -959,12 +966,12 @@ class RefPlot:
 
     def conv_ref(self):
         if self.doas_worker.ILS is None:
-            print('No ILS to convolved reference spectrum with')
+            GuiLogger.info('No ILS to convolved reference spectrum with')
             return
 
         # If reference spectrum dictionary is empty - return
         if not self.doas_worker.ref_spec:
-            print('No reference spectrum loaded')
+            GuiLogger.info('No reference spectrum loaded')
             return
 
         # Convolve reference spectrum
@@ -980,8 +987,8 @@ class ILSFrame:
     """
     Frame containing widgets for ILS extraction from a calibration spectrum
     """
-    def __init__(self, parent=None, doas_work=DOASWorker(), spec_specs=SpecSpecs(), fig_setts=GUISettings(),
-                 config=pyplis_worker.config, save_path='C:\\'):
+    def __init__(self, parent=None, doas_work=doas_worker, spec_specs=SpecSpecs(), fig_setts=GUISettings(),
+                 config=pyplis_worker.config, save_path='C:/'):
         # Setup some main variables
         self.parent = parent
         self.frame = None
@@ -1014,12 +1021,22 @@ class ILSFrame:
         if self.ILS_path is not None:
             self.load_ILS()
 
+    def initiate_variables(self):
+        """Sets up tkinter variables that are used by this frame"""
+        self._include_ils_fit = tk.BooleanVar()
+
+    def gather_vars(self):
+        """Gets current settings for relevant attributes"""
+        self.include_ils_fit = self.doas_worker.include_ils_fit
+
     def generate_frame(self, parent):
         """
         Creates widget
         :param parent:  tk.Frame    Parent frame to place widget in
         :return:
         """
+        self.gather_vars()
+
         self.parent = parent
         self.frame = ttk.Frame(self.parent)
         self.in_frame = True
@@ -1115,6 +1132,9 @@ class ILSFrame:
         self.frame_ILS_func = ttk.Frame(self.frame_ILS, relief=tk.GROOVE, borderwidth=5)
         self.frame_ILS_func.pack(side=tk.LEFT, anchor='n')
 
+        self.ils_fit_check = ttk.Checkbutton(self.frame_ILS_func, text='Make ILS a fitted parameter',
+                                             variable=self._include_ils_fit, command=self.set_ILS_fit)
+
         label1 = tk.Label(self.frame_ILS_func, text='Loaded ILS file:')
         self.ILS_load_label = tk.Label(self.frame_ILS_func, text='N/A', width=self.str_len_max)
         self.load_ILS_button = ttk.Button(self.frame_ILS_func, text='Load ILS', command=self.choose_ILS)
@@ -1123,13 +1143,18 @@ class ILSFrame:
         self.ILS_save_label = tk.Label(self.frame_ILS_func, text='N/A', width=self.str_len_max)
         self.save_ILS_button = ttk.Button(self.frame_ILS_func, text='Save ILS', command=self.save_ILS)
 
-        label1.grid(row=0, column=0, sticky='w', padx=5, pady=5)
-        self.ILS_load_label.grid(row=0, column=1, padx=5, pady=5)
-        self.load_ILS_button.grid(row=0, column=2, padx=5, pady=5)
+        row = 0
+        self.ils_fit_check.grid(row=row, column=0, columnspan=3, sticky='w', padx=5, pady=5)
 
-        label2.grid(row=1, column=0, sticky='w', padx=5, pady=5)
-        self.ILS_save_label.grid(row=1, column=1, padx=5, pady=5)
-        self.save_ILS_button.grid(row=1, column=2, padx=5, pady=5)
+        row += 1
+        label1.grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.ILS_load_label.grid(row=row, column=1, padx=5, pady=5)
+        self.load_ILS_button.grid(row=row, column=2, padx=5, pady=5)
+
+        row += 1
+        label2.grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.ILS_save_label.grid(row=row, column=1, padx=5, pady=5)
+        self.save_ILS_button.grid(row=row, column=2, padx=5, pady=5)
 
         # PLOT
         self.fig_ILS = plt.Figure(figsize=self.ILS_figsize, dpi=self.dpi)
@@ -1151,6 +1176,14 @@ class ILSFrame:
         # Update label and plot as the ILS should be preloaded on startup
         self.update_ILS_label()
         self.update_ILS_plot()
+
+    @property
+    def include_ils_fit(self):
+        return self._include_ils_fit.get()
+
+    @include_ils_fit.setter
+    def include_ils_fit(self, value):
+        self._include_ils_fit.set(value)
 
     def dark_capture(self):
         """Implements dark capture fom spectrometer"""
@@ -1235,7 +1268,7 @@ class ILSFrame:
     def save_ILS(self):
         """Saves ILS to text file"""
         if self.doas_worker.ILS is None or self.doas_worker.ILS_wavelengths is None:
-            print('No instrument line shape data to save')
+            GuiLogger.info('No instrument line shape data to save')
             return
 
         time = datetime.now().strftime('%Y-%m-%dT%H%M%S')
@@ -1278,3 +1311,6 @@ class ILSFrame:
         self.ax_ILS.lines[0].set_data(self.doas_worker.ILS_wavelengths, self.doas_worker.ILS)
         self.ax_ILS.set_xlim([0, self.doas_worker.ILS_wavelengths[-1]])
         self.canv_ILS.draw()
+
+    def set_ILS_fit(self):
+        self.doas_worker.include_ils_fit = self.include_ils_fit

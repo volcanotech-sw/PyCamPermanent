@@ -4,9 +4,11 @@
 
 import pycam.gui.cfg as cfg
 from pycam.networking.ssh import open_ssh, close_ssh, ssh_cmd
+from pycam.networking.sockets import read_network_file
 from pycam.setupclasses import FileLocator, ConfigInfo
-from pycam.io_py import write_witty_schedule_file, read_witty_schedule_file, write_script_crontab, read_script_crontab
+from pycam.io_py import write_script_crontab, read_script_crontab
 from pycam.utils import read_file
+from pycam.logging.logging_tools import LoggerManager
 
 import tkinter as tk
 import tkinter.ttk as ttk
@@ -17,32 +19,38 @@ import time
 import datetime
 import threading
 
+GuiLogger = LoggerManager.add_logger("GUI")
 
 def run_pycam(ip, auto_capt=1):
     """Runs main pycam script on remote machine"""
-    if messagebox.askyesno("Please confirm", "Are you sure you want to run pycam_masterpi.py?\n"
+    if messagebox.askyesno("Please confirm", "Are you sure you want to run pycam_master2.py?\n"
                                              "Running this on a machine which already has the script running could cause issues"):
-        print('Running pycam_masterpi on {}'.format(ip))
+        GuiLogger.info(f'Running pycam_master2.py on {ip}')
 
-        # Path to executable
-        # pycam_path = FileLocator.SCRIPTS + 'pycam_masterpi.py'
-        pycam_path = FileLocator.SCRIPTS + 'start_pycam.sh'
+        # Read configuration file which contains important information for various things
+        config = read_file(FileLocator.CONFIG_WINDOWS)
+
+        # Path to start_script executable
+        pycam_path = config[ConfigInfo.start_script]
+
+        # Pi login details
+        uname = config[ConfigInfo.uname]
+        pwd = config[ConfigInfo.pwd]
+        port = config[ConfigInfo.ssh_port]
 
         try:
             # Open ssh connection
-            connection = open_ssh(ip)
+            connection = open_ssh(ip, uname=uname, pwd=pwd, port=port)
         except TimeoutError:
             messagebox.showerror('Connection Timeout', 'Attempt to run pycam on {} timed out. Please ensure that the'
                                                        'instrument is accesible at that IP address'.format(ip))
             return
 
         # Run ssh command
-        # stdin, stderr, stdout = ssh_cmd(connection, 'python3 {} {}'.format(pycam_path, auto_capt), background=True)
-        stdin, stderr, stdout = ssh_cmd(connection, '{} {}'.format(pycam_path, auto_capt), background=True)
+        _, stderr, stdout = ssh_cmd(connection, 'nohup /usr/bin/python3 {} {} > /dev/null 2>&1 &'.format(pycam_path, auto_capt), background=False)
 
-        # print('STDIN: {}'.format(stdin))
-        # print('STDERR: {}'.format(stderr))
-        # print('STDOUT: {}'.format(stdout))
+        # print('STDERR: {}'.format(stderr.read().decode()))
+        # print('STDOUT: {}'.format(stdout.read().decode()))
 
         # Close ssh connection
         close_ssh(connection)
@@ -110,7 +118,7 @@ class ConnectionGUI:
         lab.grid(row=1, column=0, padx=self.pdx, pady=self.pdy, sticky='e')
         entry = ttk.Entry(self.frame, width=15, textvariable=self._host_ip, font=self.main_gui.main_font)
         entry.grid(row=0, column=1, padx=self.pdx, pady=self.pdy, sticky='ew')
-        ttk.OptionMenu(self.frame, self._port, self.port_list[0], *self.port_list).grid(row=1, column=1, padx=self.pdx, pady=self.pdy, sticky='ew')
+        ttk.OptionMenu(self.frame, self._port, self.port, *self.port_list).grid(row=1, column=1, padx=self.pdx, pady=self.pdy, sticky='ew')
         # ttk.Entry(self.frame, width=6, textvariable=self._port).grid(row=1, column=1, padx=self.pdx, pady=self.pdy, sticky='ew')
 
         self.test_butt = ttk.Button(self.frame, text='Test Connection', command=self.test_connection)
@@ -150,7 +158,13 @@ class ConnectionGUI:
     def update_connection(self):
         """Updates socket address information"""
         cfg.sock.update_address(self.host_ip, self.port)
-        cfg.ftp_client.update_connection(self.host_ip)
+        if cfg.ftp_client.update_connection(self.host_ip):
+            print("Updating port from FTP")
+            # update connection pulls down the new remote port
+            _, port = read_network_file(FileLocator.NET_EXT_FILE_WINDOWS)
+            if port:
+                self.port = port
+                cfg.sock.update_address(host_ip=self.host_ip, port=self.port)
 
     def test_connection(self):
         """Tests that IP address is available"""
@@ -172,7 +186,7 @@ class ConnectionGUI:
                 self.update_connection()
 
         except Exception as e:
-            print(e)
+            GuiLogger.error(e)
             self.connection_label.configure(text='No connection found at this address')
 
 
@@ -205,6 +219,9 @@ class GUICommRecvHandler:
 
         self.widgets = ['cam_acq', 'spec_acq', 'message_wind']
 
+        # For downloading frames as they come in
+        self.ftp_client = None
+
     def add_widgets(self, **kwargs):
         """Adds widgets to object that may be required for acting on certain received comms (used by pycam_gui)"""
         for widg in self.widgets:
@@ -221,19 +238,47 @@ class GUICommRecvHandler:
         """Gets received communications from the recv_comms queue and acts on them"""
         while not self.stop.is_set():
             comm = self.recv_comms.q.get(block=True)
+            GuiLogger.debug(f"GUI incoming comms: {comm}")
 
             if 'LOG' in comm:
                 # If getting acquisition flags was purpose of comm we update widgets
                 if comm['LOG'] == 1:
                     if comm['IDN'] in ['CM1', 'CM2']:
                         self.cam_acq.update_acquisition_parameters(comm)
-                    elif comm['IDN'] == 'SPC':
+                    elif comm['IDN'] == 'SPE':
                         self.spec_acq.update_acquisition_parameters(comm)
 
-            mess = ''
+            if "NIA" in comm and self.ftp_client:
+                #  handle notification of new on camera image
+                self.ftp_client.get_data(comm["NIA"])  # the on PNG
+            if "NMA" in comm and self.ftp_client:
+                #  handle notification of new on camera image metadata
+                self.ftp_client.get_data(comm["NMA"])  # the on JSON
+            if "NIB" in comm and self.ftp_client:
+                # handle notification of new off camera image
+                self.ftp_client.get_data(comm["NIB"])  # the off PNG
+            if "NMB" in comm and self.ftp_client:
+                #  handle notification of new off camera image metadata
+                self.ftp_client.get_data(comm["NMB"])  # the off JSON
+            if "NIS" in comm and self.ftp_client:
+                # handle notification of new spectrometer image
+                self.ftp_client.get_data(comm["NIS"])  # the npy
+
+            if "GBY" in comm:
+                # The server is letting us go, tidy up
+                cfg.indicator.sock.close_socket()
+                # Raise the flags to break out of the threads
+                cfg.recv_comms.event.set()
+                cfg.send_comms.event.set()
+                # Set indicator to off
+                cfg.indicator.indicator_off()
+                # Tell the user the server quit
+                messagebox.showinfo('Disconnected', 'The instrument exited.')
+
+            mess = []
             for id in comm:
-                if id != 'IDN':
-                    mess += 'COMM ({}) > {}: {}\n'.format(comm['IDN'], id, comm[id])
+                if id != 'IDN' and id != 'DST':
+                    mess.append('COMM ({}) > {}: {}'.format(comm['IDN'], id, comm[id]))
 
             # # Put comms into string for message window
             # mess = 'Received communication from instrument. IDN: {}\n' \
@@ -242,11 +287,12 @@ class GUICommRecvHandler:
             #     if id != 'IDN':
             #         mess += '{}: {}\n'.format(id, comm[id])
             self.message_wind.add_message(mess)
+    GuiLogger.info("GUI get_comms stopping")
 
 
 class InstrumentConfiguration:
     """
-    Class creating a widget for configuring the instrument, e.g. adjusting its off/on time through Witty Pi
+    Class creating a widget for configuring the instrument, e.g. adjusting capture start/stop time
 
     To add a new script to be run in the crontab scheduler:
     1. Add script to config.txt and add associated identifier to ConfigInfo
@@ -258,9 +304,8 @@ class InstrumentConfiguration:
     7. Update messagebox to display settings after they have been updated
     8. Add line to script_schedule.txt so that it can be read by this class on first startup
     """
-    def __init__(self, ftp, cfg, main_gui=None, ftp_2=None):
+    def __init__(self, ftp, cfg, main_gui=None):
         self.ftp = ftp
-        self.ftp_2 = ftp_2
         self.time_fmt = '{}:{}'
         self.frame = None
         self.in_frame = False
@@ -270,6 +315,7 @@ class InstrumentConfiguration:
         self.dark_script = cfg[ConfigInfo.dark_script]
         self.temp_script = cfg[ConfigInfo.temp_log]
         self.disk_space_script = cfg[ConfigInfo.disk_space_script]
+        self.free_space_ssd_script = cfg[ConfigInfo.free_space_ssd_script]
         self.dbx_script = FileLocator.DROPBOX_UPLOAD_SCRIPT
         self.check_run_script = FileLocator.CHECK_RUN
 
@@ -283,14 +329,6 @@ class InstrumentConfiguration:
         self._off_hour = tk.IntVar()        # Hour to shutdown pi
         self._off_min = tk.IntVar()
 
-        self._on_hour_2 = tk.IntVar()       # Hour to turn on pi (second time)
-        self._on_min_2 = tk.IntVar()
-
-        self._off_hour_2 = tk.IntVar()        # Hour to shutdown pi (second time)
-        self._off_min_2 = tk.IntVar()
-
-        self._use_second_shutdown = tk.IntVar()     # If True, the second shutdown/startup sequence is used
-
         self._capt_start_hour = tk.IntVar()     # Hour to start capture
         self._capt_start_min = tk.IntVar()
 
@@ -302,28 +340,26 @@ class InstrumentConfiguration:
 
         self._temp_logging = tk.IntVar()        # Temperature logging frequency (minutes)
         self._check_disk_space = tk.IntVar()    # Check disk space frequency (minutes)
-
-        on_time, off_time, on_time_2, off_time_2 = read_witty_schedule_file(FileLocator.SCHEDULE_FILE)
-        if None in on_time_2 or None in off_time_2:
-            self.use_second_shutdown = 0
-        else:
-            self.use_second_shutdown = 1
-        self.on_hour, self.on_min = on_time
-        self.off_hour, self.off_min = off_time
-        self.on_hour_2, self.on_min_2 = on_time_2
-        self.off_hour_2, self.off_min_2 = off_time_2
+        self._free_space_ssd_external = tk.IntVar()    # Check disk space frequency (minutes)
 
         # Read cronfile looking for defined scripts. ADD SCRIPT TO LIST HERE TO SEARCH FOR IT
         results = read_script_crontab(FileLocator.SCRIPT_SCHEDULE,
                                       [self.start_script, self.stop_script, self.dark_script,
-                                       self.temp_script, self.disk_space_script])
+                                       self.temp_script, self.disk_space_script, self.free_space_ssd_script])
 
-        self.capt_start_hour, self.capt_start_min = results[self.start_script]
-        self.capt_stop_hour, self.capt_stop_min = results[self.stop_script]
-        self.dark_capt_hour, self.dark_capt_min = results[self.dark_script]
+        if self.start_script in results:
+            self.capt_start_hour, self.capt_start_min = results[self.start_script]
+        if self.stop_script in results:
+            self.capt_stop_hour, self.capt_stop_min = results[self.stop_script]
+        if self.dark_script in results:
+            self.dark_capt_hour, self.dark_capt_min = results[self.dark_script]
 
-        self.temp_logging = results[self.temp_script][1]     # Only interested in minutes for temperature logging
-        self.check_disk_space = results[self.disk_space_script][1]     # Only interested in minutes for disk space check
+        if self.temp_script in results:
+            self.temp_logging = results[self.temp_script][1]     # Only interested in minutes for temperature logging
+        if self.disk_space_script in results:
+            self.check_disk_space = results[self.disk_space_script][1]     # Only interested in minutes for disk space check
+        if self.free_space_ssd_script in results:
+            self.free_space_ssd_external = results[self.free_space_ssd_script][1]     # Only interested in minutes for disk space check
 
     def generate_frame(self):
         """Generates frame containing GUI widgets"""
@@ -336,56 +372,6 @@ class InstrumentConfiguration:
         self.frame.title('Instrument configuration')
         self.frame.protocol('WM_DELETE_WINDOW', self.close_frame)
         self.in_frame = True
-
-        frame_on = tk.LabelFrame(self.frame, text='Start-up/Shut-down times', relief=tk.RAISED, borderwidth=2, font=self.main_gui.main_font)
-        frame_on.grid(row=0, column=0, sticky='nsew', padx=2, pady=2)
-
-        lab = ttk.Label(frame_on, text='Start-up (hour:minutes):', font=self.main_gui.main_font)
-        lab.grid(row=0, column=0, sticky='w', padx=2, pady=2)
-        lab = ttk.Label(frame_on, text='Shut-down (hour:minutes):', font=self.main_gui.main_font)
-        lab.grid(row=1, column=0, sticky='w', padx=2, pady=2)
-
-        hour_start = ttk.Spinbox(frame_on, textvariable=self._on_hour, from_=00, to=23, increment=1, width=2, font=self.main_gui.main_font)
-        # hour_start.set("{:02d}".format(self.on_hour))
-        hour_start.grid(row=0, column=1, padx=2, pady=2)
-        ttk.Label(frame_on, text=':', font=self.main_gui.main_font).grid(row=0, column=2, padx=2, pady=2)
-        min_start = ttk.Spinbox(frame_on, textvariable=self._on_min, from_=00, to=59, increment=1, width=2, font=self.main_gui.main_font)
-        # min_start.set("{:02d}".format(self.on_min))
-        min_start.grid(row=0, column=3, padx=2, pady=2)
-
-        hour_stop = ttk.Spinbox(frame_on, textvariable=self._off_hour, from_=00, to=23, increment=1, width=2, font=self.main_gui.main_font)
-        # hour_stop.set("{:02d}".format(self.off_hour))
-        hour_stop.grid(row=1, column=1, padx=2, pady=2)
-        ttk.Label(frame_on, text=':', font=self.main_gui.main_font).grid(row=1, column=2, padx=2, pady=2)
-        min_stop = ttk.Spinbox(frame_on, textvariable=self._off_min, from_=00, to=59, increment=1, width=2, font=self.main_gui.main_font)
-        # min_stop.set("{:02d}".format(self.off_min))
-        min_stop.grid(row=1, column=3, padx=2, pady=2)
-
-        # Second shutdown option
-        check_shut = ttk.Checkbutton(frame_on, text='Use start-up/shut-down sequence 2',
-                                     variable=self._use_second_shutdown, command=self.second_shutdown_config)
-        check_shut.grid(row=2, column=0, columnspan=4, sticky='w', padx=2, pady=2)
-        lab = ttk.Label(frame_on, text='Start-up 2 (hour:minutes):', font=self.main_gui.main_font)
-        lab.grid(row=3, column=0, sticky='w', padx=2, pady=2)
-        lab = ttk.Label(frame_on, text='Shut-down 2 (hour:minutes):', font=self.main_gui.main_font)
-        lab.grid(row=4, column=0, sticky='w', padx=2, pady=2)
-
-        self.hour_start_2 = ttk.Spinbox(frame_on, textvariable=self._on_hour_2, from_=00, to=23, increment=1, width=2, font=self.main_gui.main_font)
-        self.hour_start_2.grid(row=3, column=1, padx=2, pady=2)
-        ttk.Label(frame_on, text=':', font=self.main_gui.main_font).grid(row=3, column=2, padx=2, pady=2)
-        self.min_start_2 = ttk.Spinbox(frame_on, textvariable=self._on_min_2, from_=00, to=59, increment=1, width=2, font=self.main_gui.main_font)
-        self.min_start_2.grid(row=3, column=3, padx=2, pady=2)
-
-        self.hour_stop_2 = ttk.Spinbox(frame_on, textvariable=self._off_hour_2, from_=00, to=23, increment=1, width=2, font=self.main_gui.main_font)
-        self.hour_stop_2.grid(row=4, column=1, padx=2, pady=2)
-        ttk.Label(frame_on, text=':', font=self.main_gui.main_font).grid(row=4, column=2, padx=2, pady=2)
-        self.min_stop_2 = ttk.Spinbox(frame_on, textvariable=self._off_min_2, from_=00, to=59, increment=1, width=2, font=self.main_gui.main_font)
-        self.min_stop_2.grid(row=4, column=3, padx=2, pady=2)
-        self.second_shutdown_config()   # Set current state of widgets based on start-up variable values
-
-        # Update button
-        butt = ttk.Button(frame_on, text='Update', command=self.update_on_off)
-        butt.grid(row=5, column=0, columnspan=4, sticky='e', padx=2, pady=2)
 
         # ---------------------------------------
         # Start/stop control of acquisition times
@@ -434,13 +420,22 @@ class InstrumentConfiguration:
         ttk.Label(frame_cron, text='0=no log', font=self.main_gui.main_font).grid(row=row, column=3, sticky='w', padx=2, pady=2)
 
         # ----------------------------
-        # Temperature check disk space
+        # Check disk space
         # ----------------------------
         row += 1
         ttk.Label(frame_cron, text='Check disk storage [minutes]:', font=self.main_gui.main_font).grid(row=row, column=0, sticky='w', padx=2, pady=2)
         disk_stor = ttk.Spinbox(frame_cron, textvariable=self._check_disk_space, from_=0, to=60, increment=1, width=3, font=self.main_gui.main_font)
         disk_stor.grid(row=row, column=1, columnspan=2, sticky='w', padx=2, pady=2)
-        ttk.Label(frame_cron, text='0=no log', font=self.main_gui.main_font).grid(row=row, column=3, sticky='w', padx=2, pady=2)
+        ttk.Label(frame_cron, text='0=disable', font=self.main_gui.main_font).grid(row=row, column=3, sticky='w', padx=2, pady=2)
+
+        # ----------------------------
+        # Check external SSD disk space
+        # ----------------------------
+        row += 1
+        ttk.Label(frame_cron, text='Check external SSD [minutes]:', font=self.main_gui.main_font).grid(row=row, column=0, sticky='w', padx=2, pady=2)
+        disk_stor_ext = ttk.Spinbox(frame_cron, textvariable=self._free_space_ssd_external, from_=0, to=60, increment=1, width=3, font=self.main_gui.main_font)
+        disk_stor_ext.grid(row=row, column=1, columnspan=2, sticky='w', padx=2, pady=2)
+        ttk.Label(frame_cron, text='0=disable', font=self.main_gui.main_font).grid(row=row, column=3, sticky='w', padx=2, pady=2)
 
         # -------------
         # Update button
@@ -449,181 +444,32 @@ class InstrumentConfiguration:
         butt = ttk.Button(frame_cron, text='Update', command=self.update_acq_time)
         butt.grid(row=row, column=0, columnspan=4, sticky='e', padx=2, pady=2)
 
-    def second_shutdown_config(self):
-        """Controls configuration of widgets for if a second shutdown is to be used or not"""
-        if self.use_second_shutdown:
-            state = tk.NORMAL
-        else:
-            state = tk.DISABLED
-
-        # Loop through widgets and disable/enable them
-        for widget in [self.hour_start_2, self.min_start_2, self.hour_stop_2, self.min_stop_2]:
-            widget.configure(state=state)
-
-    def check_second_shutdown(self):
-        """Checks whether second shutdown sequence is valid (if it is being used)"""
-        if not self.use_second_shutdown:
-            return
-
-        if self.on_time_2 == self.off_time_2:
-            self.use_second_shutdown = 0
-            print('Start-up/shut-down times are the same for second schedule. Second sequence will not be used')
-            return
-
-        # Check if on/off times fall within the first on/off schedule - we return if this is not the case, so return the
-        # function if all is well
-        if self.on_time < self.off_time:
-            if self.on_time_2 < self.off_time_2:
-                if self.off_time_2 < self.on_time or self.on_time_2 > self.off_time:
-                    return
-            elif self.on_time_2 > self.off_time_2:
-                if self.on_time_2 > self.off_time and self.off_time_2 < self.on_time:
-                    return
-
-        elif self.on_time > self.off_time:
-            if self.on_time_2 < self.off_time_2:
-                if self.on_time_2 > self.off_time and self.off_time_2 < self.on_time:
-                    return
-            # If on_time_2 > off_time_2 then both times pass through midnight so they can't be compatible
-
-        self.use_second_shutdown = 0
-        a = messagebox.showwarning('Incompatible second start-up/shut-down sequence',
-                                   'Second start-up/shut-down sequence is incompatible with the first\n'
-                                   'Second sequence will be removed.\n'
-                                   'This happens when a second start-up/shut-down is attempted at a time when\n'
-                                   'the first sequence already has the instrument turned on or if the on/off\n'
-                                   'times overlap at any point. Please check times.')
-
-    def check_script_time(self, script_time, script_name):
-        """
-        Checks the scheduled time of a script to be run and ensures that the Pi is turned on at this point. If it isn't
-        it raises a warning box indicating that the script probably won't be run. It only highlights this to the user,
-        it does not make any changes to times to enforce compatibility.
-        :param script_time:     datetime.datetime       Scheduled time of script to be run
-        :param script_name:     str                     Name of script - used for flagging it if an issue is found
-        :return:
-        """
-        if self.on_time < self.off_time:
-            if script_time > self.on_time and script_time <= self.off_time:
-                return
-
-        elif self.on_time > self.off_time:
-            if script_time > self.on_time or script_time < self.off_time:
-                return
-        else:
-            # The pi is not being turned off if the time is the same, so we're all good?
-            return
-
-        # Check on second start-up/shut-down sequence
-        if self.use_second_shutdown:
-            if self.on_time_2 < self.off_time_2:
-                if script_time > self.on_time_2 and script_time <= self.off_time_2:
-                    return
-                elif self.on_time_2 > self.off_time_2:
-                    if script_time > self.on_time_2 or script_time < self.off_time_2:
-                        return
-                else:
-                    return
-
-        if self.use_second_shutdown:
-            mess = 'Script start time incompatible with instrument on/off time\n\n'\
-                   'Script name: {}\nScript start time: {}\n'\
-                   'Instrument start time: {}\nInstruments shutdown time: {}\nInstrument start time 2: {}\n' \
-                   'Instrument shutdown time 2: {}\n'.format(script_name, script_time.strftime('%H:%M'),
-                                                             self.on_time.strftime('%H:%M'),
-                                                             self.off_time.strftime('%H:%M'),
-                                                             self.on_time_2.strftime('%H:%M'),
-                                                             self.off_time_2.strftime('%H:%M'))
-        else:
-            mess = 'Script start time incompatible with instrument on/off time\n\n' \
-                   'Script name: {}\nScript start time: {}\nInstrument start time: {}\n' \
-                   'Instruments shutdown time: {}\n'.format(script_name, script_time.strftime('%H:%M'),
-                                                            self.on_time.strftime('%H:%M'),
-                                                            self.off_time.strftime('%H:%M'))
-
-        a = tk.messagebox.showwarning('Configuration incompatible', mess, parent=self.frame)
-        self.frame.attributes('-topmost', 1)
-        self.frame.attributes('-topmost', 0)
-
-    def update_on_off(self):
-        """Controls updating start/stop time of pi"""
-        # Write wittypi schedule file locally
-        if not self.use_second_shutdown:
-            write_witty_schedule_file(FileLocator.SCHEDULE_FILE, self.on_time, self.off_time)
-        else:
-            write_witty_schedule_file(FileLocator.SCHEDULE_FILE, self.on_time, self.off_time,
-                                      time_on_2=self.on_time_2, time_off_2=self.off_time_2)
-
-        # Transfer file to instrument
-        self.ftp.move_file_to_instrument(FileLocator.SCHEDULE_FILE, FileLocator.SCHEDULE_FILE_PI)
-
-        # Open ssh and run wittypi update script
-        ssh_cli = open_ssh(self.ftp.host_ip)
-
-        std_in, std_out, std_err = ssh_cmd(ssh_cli, '(cd /home/pi/wittypi; sudo ./runScript.sh)', background=False)
-        print(std_out.readlines())
-        # print(std_err.readlines())
-        close_ssh(ssh_cli)
-
-        # Update second pi if witty pi is used for second Pi
-        if self.ftp_2 is not None:
-            # Transfer file to instrument
-            self.ftp_2.move_file_to_instrument(FileLocator.SCHEDULE_FILE, FileLocator.SCHEDULE_FILE_PI)
-
-            # Open ssh and run wittypi update script
-            ssh_cli_2 = open_ssh(self.ftp_2.host_ip)
-
-            std_in, std_out, std_err = ssh_cmd(ssh_cli_2, '(cd /home/pi/wittypi; sudo ./runScript.sh)', background=False)
-            print(std_out.readlines())
-            # print(std_err.readlines())
-            close_ssh(ssh_cli_2)
-
-        if not self.use_second_shutdown:
-            a = tk.messagebox.showinfo('Instrument update',
-                                       'Updated instrument start-up/shut-down schedule:\n\n'
-                                       'Start-up:\t\t{} UTC\n''Shut-down:\t{} UTC'.format(self.on_time.strftime('%H:%M'),
-                                                                                      self.off_time.strftime('%H:%M')),
-                                       parent=self.frame)
-        else:
-            a = tk.messagebox.showinfo('Instrument update',
-                                       'Updated instrument start-up/shut-down schedule:\n\n'
-                                       'Start-up:\t\t{} UTC\n''Shut-down:\t{} UTC\n'
-                                       'Start-up 2:\t{} UTC\n''Shut-down 2:\t{} UTC\n'.format(
-                                           self.on_time.strftime('%H:%M'), self.off_time.strftime('%H:%M'),
-                                           self.on_time_2.strftime('%H:%M'), self.off_time_2.strftime('%H:%M')),
-                                       parent=self.frame)
-
-        self.frame.attributes('-topmost', 1)
-        self.frame.attributes('-topmost', 0)
-
     def update_acq_time(self):
         """Updates acquisition period of instrument"""
         # Create strings
         temp_log_str = self.minute_cron_fmt(self.temp_logging)
         disk_space_str = self.minute_cron_fmt(self.check_disk_space)
-
-
-
+        free_space_ssd_external_str = self.minute_cron_fmt(self.free_space_ssd_external)
 
         # Preparation of lists for writing crontab file
-        times = [self.start_capt_time, self.stop_capt_time, self.start_dark_time, temp_log_str, disk_space_str]
+        times = [self.start_capt_time, self.stop_capt_time, self.start_dark_time, temp_log_str, disk_space_str, free_space_ssd_external_str]
         cmds = ['python3 {}'.format(self.start_script), 'python3 {}'.format(self.stop_script),
-                'python3 {}'.format(self.dark_script), self.temp_script, 'python3 {}'.format(self.disk_space_script)]
+                'python3 {}'.format(self.dark_script), 'bash {}'.format(self.temp_script),
+                'python3 {}'.format(self.disk_space_script), 'python3 {}'.format(self.free_space_ssd_script)]
 
         # Uncomment if we want to run dropbox uploader from crontab
-        dbx_str = self.minute_cron_fmt(60)          # Setup dropbox uploader to run every hour
-        times.append(dbx_str)
-        cmds.append('python3 {}'.format(self.dbx_script))
+        # dbx_str = self.minute_cron_fmt(60)          # Setup dropbox uploader to run every hour
+        # times.append(dbx_str)
+        # cmds.append('python3 {}'.format(self.dbx_script))
 
         # Uncomment if we want to run check_run.py from crontab
         check_run_str = self.minute_cron_fmt(30)          # Setup check_run.py to run every hour
         times.append(check_run_str)
         cmds.append('python3 {}'.format(self.check_run_script))
 
-        # Check time compatibility (only on scripts which have specific start times, not those run every x minutes)
-        self.check_second_shutdown()
-        for i, script_name in enumerate([self.start_script, self.stop_script, self.dark_script]):
-            self.check_script_time(times[i], script_name)
+        # Add on cron logging
+        cron_log = f" >> {FileLocator.CRON_LOG_PI} 2>&1"
+        cmds = [cmd + cron_log if 'python' in cmd else cmd for cmd in cmds]
 
         # Write crontab file
         write_script_crontab(FileLocator.SCRIPT_SCHEDULE, cmds, times)
@@ -631,8 +477,13 @@ class InstrumentConfiguration:
         # Transfer file to instrument
         self.ftp.move_file_to_instrument(FileLocator.SCRIPT_SCHEDULE, FileLocator.SCRIPT_SCHEDULE_PI)
 
+        # Pi login details
+        uname = cfg.config[ConfigInfo.uname]
+        pwd = cfg.config[ConfigInfo.pwd]
+        port = cfg.config[ConfigInfo.ssh_port]
+
         # Setup crontab
-        ssh_cli = open_ssh(self.ftp.host_ip)
+        ssh_cli = open_ssh(self.ftp.host_ip, uname=uname, pwd=pwd, port=port)
 
         std_in, std_out, std_err = ssh_cmd(ssh_cli, 'crontab ' + FileLocator.SCRIPT_SCHEDULE_PI, background=False)
         close_ssh(ssh_cli)
@@ -643,11 +494,13 @@ class InstrumentConfiguration:
                                    'Shut-down capture script: {} UTC\n'
                                    'Dark capture time: {} UTC\n'
                                    'Log temperature: {} minutes\n'
-                                   'Check disk space: {} minutes'.format(self.start_capt_time.strftime('%H:%M'),
+                                   'Check disk space: {} minutes\n'
+                                   'Check external SSD: {} minutes'.format(self.start_capt_time.strftime('%H:%M'),
                                                                          self.stop_capt_time.strftime('%H:%M'),
                                                                          self.start_dark_time.strftime('%H:%M'),
                                                                          self.temp_logging,
-                                                                         self.check_disk_space))
+                                                                         self.check_disk_space,
+                                                                         self.free_space_ssd_external))
 
         self.frame.attributes('-topmost', 1)
         self.frame.attributes('-topmost', 0)
@@ -666,26 +519,6 @@ class InstrumentConfiguration:
     def close_frame(self):
         self.in_frame = False
         self.frame.destroy()
-
-    @property
-    def on_time(self):
-        """Return datetime object of time to turn pi on. Date is not important, only time, so use arbitrary date"""
-        return datetime.datetime(year=2020, month=1, day=1, hour=self.on_hour, minute=self.on_min)
-
-    @property
-    def off_time(self):
-        """Return datetime object of time to turn pi off. Date is not important, only time, so use arbitrary date"""
-        return datetime.datetime(year=2020, month=1, day=1, hour=self.off_hour, minute=self.off_min)
-
-    @property
-    def on_time_2(self):
-        """Return datetime object of time to turn pi on. Date is not important, only time, so use arbitrary date"""
-        return datetime.datetime(year=2020, month=1, day=1, hour=self.on_hour_2, minute=self.on_min_2)
-
-    @property
-    def off_time_2(self):
-        """Return datetime object of time to turn pi off. Date is not important, only time, so use arbitrary date"""
-        return datetime.datetime(year=2020, month=1, day=1, hour=self.off_hour_2, minute=self.off_min_2)
 
     @property
     def start_capt_time(self):
@@ -733,54 +566,6 @@ class InstrumentConfiguration:
     @off_min.setter
     def off_min(self, value):
         self._off_min.set(value)
-
-    @property
-    def on_hour_2(self):
-        return self._on_hour_2.get()
-
-    @on_hour_2.setter
-    def on_hour_2(self, value):
-        if value is None:
-            value = 0
-        self._on_hour_2.set(value)
-
-    @property
-    def on_min_2(self):
-        return self._on_min_2.get()
-
-    @on_min_2.setter
-    def on_min_2(self, value):
-        if value is None:
-            value = 0
-        self._on_min_2.set(value)
-
-    @property
-    def off_hour_2(self):
-        return self._off_hour_2.get()
-
-    @off_hour_2.setter
-    def off_hour_2(self, value):
-        if value is None:
-            value = 0
-        self._off_hour_2.set(value)
-
-    @property
-    def off_min_2(self):
-        return self._off_min_2.get()
-
-    @off_min_2.setter
-    def off_min_2(self, value):
-        if value is None:
-            value = 0
-        self._off_min_2.set(value)
-
-    @property
-    def use_second_shutdown(self):
-        return self._use_second_shutdown.get()
-
-    @use_second_shutdown.setter
-    def use_second_shutdown(self, value):
-        self._use_second_shutdown.set(value)
 
     @property
     def capt_start_hour(self):
@@ -845,3 +630,11 @@ class InstrumentConfiguration:
     @check_disk_space.setter
     def check_disk_space(self, value):
         self._check_disk_space.set(value)
+
+    @property
+    def free_space_ssd_external(self):
+        return self._free_space_ssd_external.get()
+
+    @free_space_ssd_external.setter
+    def free_space_ssd_external(self, value):
+        self._free_space_ssd_external.set(value)

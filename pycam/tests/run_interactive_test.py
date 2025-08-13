@@ -24,7 +24,7 @@ cam.capture_q.put(command)
 print('Put command in queue')
 
 # Wait for image to be taken
-filename, image = cam.img_q.get(block=True)
+filename, image, metadata = cam.img_q.get(block=True)
 
 # Save image
 cam.save_current_image(filename)

@@ -5,11 +5,12 @@
 Scripts are an edited version of the pyplis example scripts, adapted for use with the PiCam"""
 from __future__ import (absolute_import, division)
 
+from pycam.logging.logging_tools import LoggerManager
 from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator
 from pycam.utils import calc_dt, get_horizontal_plume_speed
 from pycam.io_py import (
     save_img, save_emission_rates_as_txt, save_so2_img, save_so2_img_raw,
-    save_pcs_line, save_light_dil_line, load_picam_png
+    save_pcs_line, save_light_dil_line, load_picam_png, load_pcs_line
 )
 from pycam.directory_watcher import create_dir_watcher
 from pycam.exceptions import InvalidCalibration
@@ -25,6 +26,8 @@ from pyplis.fluxcalc import det_emission_rate, MOL_MASS_SO2, N_A, EmissionRates
 from pyplis.doascalib import DoasCalibData, DoasFOV
 from pyplis.exceptions import ImgMetaError
 
+from pathlib import Path
+import argparse
 import pandas as pd
 from math import log10, floor
 import datetime
@@ -42,6 +45,9 @@ import cv2
 from skimage import transform as tf
 import warnings
 from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedMap
+from pathlib import Path
+
 from inspect import cleandoc
 warnings.simplefilter("ignore", UserWarning)
 warnings.simplefilter("ignore", RuntimeWarning)
@@ -50,8 +56,14 @@ yaml = YAML()
 
 path_params = [
     "img_dir", "dark_img_dir", "transfer_dir", "spec_dir", "dark_spec_dir", "bg_A_path", "bg_B_path", "cell_cal_dir",
-    "pcs_lines", "img_registration", "dil_lines", "ld_lookup_1", "ld_lookup_2", "ILS_path", "default_cam_geom", "cal_series_path"
+    "pcs_lines", "img_registration", "dil_lines", "ld_lookup_1", "ld_lookup_2", "ILS_path", "default_cam_geom", "cal_series_path",
+    "species_paths"
 ]
+
+# Remove StreamHandlers from pyplis loggers so messages from pyplis just get passed to the
+# root FileHandler
+LoggerManager.replace_stream_handlers(pyplis.print_log)
+LoggerManager.replace_stream_handlers(pyplis.logger)
 
 class PyplisWorker:
     """
@@ -60,7 +72,12 @@ class PyplisWorker:
     :param  cam_specs:  CameraSpecs     Object containing all details of the camera/images
     :param  spec_specs:  SpecSpecs      Object containing all details of the spectrometer/spectra
     """
+    # Setup loggers for PyplisWorker
+    PyplisLogger = LoggerManager.add_logger("PyplisWorker", "green")
+    PyplisDirWatchLogger = LoggerManager.add_logger("PyplisDirWatcher", "yellow")
+
     def __init__(self, config_path, cam_specs=CameraSpecs(), spec_specs=SpecSpecs()):
+        self.PyplisLogger.debug("Initialising PyplisWorker")
         self._conversion_factor = 2.663 * 1e-6     # Conversion for ppm.m into Kg m-2
         self.ppmm_conv = (self._conversion_factor * N_A * 1000) / (100**2 * MOL_MASS_SO2)  # Conversion for ppm.m to molecules cm-2
 
@@ -302,7 +319,8 @@ class PyplisWorker:
         self.stop_q = queue.Queue()
 
         self.plot_iter = True   # Bool defining if plotting iteratively is active. If it is, all images are passed to qs
-
+        self.headless = False   # Bool defining if the object is running in headless mode (no GUI)
+        
         self.display_only = False   # If True, images are just sent to GUI to be displayed when they arrive on machine - no processing is performed
         self.process_thread = None  # Placeholder for threading object
         self.in_processing = False
@@ -337,7 +355,7 @@ class PyplisWorker:
                 Error: {e}\n
                 Reverting to config file supplied with PyCam""")
 
-            print(self.load_default_conf_errors)
+            self.PyplisLogger.warning(self.load_default_conf_errors)
             
             # If any files not found then retry with the supplied config
             self.load_config(FileLocator.PROCESS_DEFAULTS, "default")
@@ -387,6 +405,10 @@ class PyplisWorker:
             if type(config_value) is str:
                 new_value = self.expand_check_path(config_value, config_dir, path_param)
                 raw_config[path_param] = new_value
+            elif type(config_value) is CommentedMap:
+                for species, species_dict in config_value.items():
+                    new_value = self.expand_check_path(species_dict['path'], config_dir, path_param)
+                    raw_config[path_param][species] = {'path': new_value, 'value': species_dict['value']}
             else:
                 for idx, val in enumerate(config_value):
                     new_value = self.expand_check_path(val, config_dir, path_param)
@@ -399,7 +421,7 @@ class PyplisWorker:
                 ["The following parameters were not present in the loaded config:",
                  *miss_param_str,
                  "Current values were retained."])
-            print(self.missing_path_param_warn)
+            self.PyplisLogger.warning(self.missing_path_param_warn)
 
         return raw_config
 
@@ -452,6 +474,16 @@ class PyplisWorker:
         
         self.config["pcs_lines"] = pcs_lines
 
+    def load_pcs_from_config(self):
+        """ Load the cross correlation lines used for plume speed calculation from the pcs_lines specified in the config """
+        for i, line_file in enumerate(self.config['pcs_lines']):
+            line, line_type = load_pcs_line(line_file)
+            if line_type:
+                self.cross_corr_lines[line_type] = line
+            self.PCS_lines_all.append(line)
+            self.PCS_lines_all[-1].line_id = str(i)
+        self.PCS_lines = [pcs_line for pcs_line in self.PCS_lines_all if not pcs_line == self.cross_corr_lines['old']]
+
     def save_all_dil(self, save_dir):
         dil_lines = []
         for line_n, line in enumerate(self.fig_dilution.lines_pyplis):
@@ -479,7 +511,7 @@ class PyplisWorker:
 
                 # Extract key-value pair, remove the newline character from the value, then recast
                 key, value = line.split('=')
-                value = value.replace('\n', '')
+                value = value.strip()
                 if key == 'volcano':
                     self.volcano = value
                 elif key == 'altitude':
@@ -501,9 +533,9 @@ class PyplisWorker:
         # Open file object and write all attributes to it
         with open(filepath, 'w') as f:
             f.write('# Geometry setup file\n')
-            f.write('volcano={}\n'.format(self.location))
+            f.write(f'volcano={self.location}\n')
             for key, value in self.geom_dict.items():
-                f.write('{}={}\n'.format(key, value))
+                f.write(f'{key}={value}\n')
 
         self.config["default_cam_geom"] = save_path
 
@@ -516,6 +548,7 @@ class PyplisWorker:
             "spec_dir": "spec_dir",
             "dark_spec_dir": "dark_dir",
             "ILS_path": "ils_path",
+            "include_ils_fit": "include_ils_fit",
             "use_light_dilution_spec": "corr_light_dilution",
             "grid_max_ppmm": "grid_max_ppmm",
             "grid_increment_ppmm": "grid_increment_ppmm",
@@ -531,14 +564,18 @@ class PyplisWorker:
         current_params = {key: getattr(self.doas_worker, value)
                           for key, value in doas_params.items()}
         self.config.update(current_params)
+        self.config['spec_dir'] = str(doas_params['spec_dir'])
 
     def save_config_plus(self, file_path, file_name = None):
         """Save extra data associated with config file along with config"""
         self.save_all_pcs(file_path)
-        self.save_all_dil(file_path)
         self.save_img_reg(file_path)
         self.save_cam_geom(file_path)
         self.save_doas_params()
+
+        # DIL lines are saved in the dilution figure object
+        if not self.headless:
+            self.save_all_dil(file_path)
         if file_name is None:
             self.save_config(file_path)
         else:
@@ -554,7 +591,7 @@ class PyplisWorker:
             vals = {key: self.config[key] for key in subset if key in self.config.keys()}
             self.raw_configs["default"].update(vals)
 
-        full_path = os.path.join(file_path, file_name)
+        full_path = str(Path(file_path) / file_name)
 
         with open(full_path, "w") as file:
             yaml.dump(self.raw_configs["default"], file)
@@ -777,7 +814,7 @@ class PyplisWorker:
         """Creates pyplis MeasSetup object"""
         # Check the camera is correctly setup
         if not isinstance(self.cam, pyplis.setupclasses.Camera):
-            print('Pyplis camera object not correctly setup, cannot create MeasSetup object')
+            self.PyplisLogger.warning('Pyplis camera object not correctly setup, cannot create MeasSetup object')
             return
 
         if img_dir is not None:
@@ -828,9 +865,9 @@ class PyplisWorker:
         :return img_time:
         """
         # Make sure filename only contains file and not larger pathname, and remove extension
-        filename = filename.split('\\')[-1].split('/')[-1].split('.')[0]
+        filename = os.path.splitext(filename.split('\\')[-1].split('/')[-1])[0]
 
-        # Extract time string from filename
+        # Extract the image type from the filename
         type_str = filename.split('_')[self.cam_specs.file_type_loc]
 
         return type_str
@@ -864,15 +901,16 @@ class PyplisWorker:
                 no_contemp += 1
                 continue
             elif len(img_B) > 1:
-                warnings.warn('Multiple contemporaenous images found for {} in image directory {}\n'
-                              'Selecting the first image as the pair'.format(img_A, self.img_dir))
+                self.PyplisLogger.warning(
+                    f'Multiple contemporaenous images found for {img_A} in image directory {self.img_dir}. '
+                    f'Selecting the first image as the pair')
 
             # Append the image pair to img_list, if we have a pair
             img_list.append([img_A, img_B[0]])
 
         if no_contemp > 0:
-            warnings.warn('Image sequence has {} incomplete pairs\n'
-                          'These images will not be used for processing.'.format(no_contemp))
+            self.PyplisLogger.warning(f'Image sequence has {no_contemp} incomplete pairs. '
+                                      f'These images will not be used for processing.')
 
         self.num_img_pairs = len(img_list)
         self.time_range = [self.get_img_time(img_list[0][0]), self.get_img_time(img_list[-1][0])]
@@ -952,8 +990,7 @@ class PyplisWorker:
 
         # Initiate results
         self.init_results()
-
-        if reset_plot:
+        if reset_plot and not self.headless:
             # Reset time series figure
             self.fig_series.update_plot()
 
@@ -1036,16 +1073,16 @@ class PyplisWorker:
 
         # Display first images of sequence
         if len(self.img_list) > 0:
-            self.process_pair(self.img_dir + '\\' + self.img_list[0][0],
-                              self.img_dir + '\\' + self.img_list[0][1],
+            self.process_pair(self.img_dir + '/' + self.img_list[0][0],
+                              self.img_dir + '/' + self.img_list[0][1],
                               plot=plot, plot_bg=plot_bg)
 
             if len(self.img_list) > 1:
                 # Load second image too so that we have optical flow output generated
                 self.idx_current += 1
                 self.first_image = False
-                self.process_pair(self.img_dir + '\\' + self.img_list[1][0],
-                                  self.img_dir + '\\' + self.img_list[1][1],
+                self.process_pair(self.img_dir + '/' + self.img_list[1][0],
+                                  self.img_dir + '/' + self.img_list[1][1],
                                   plot=plot, plot_bg=plot_bg)
 
     def next_image(self):
@@ -1064,7 +1101,7 @@ class PyplisWorker:
 
                 # Going to previous image, so we get data from buffer
                 for img_name in [img_A, img_B]:
-                    self.load_img(self.img_dir + '\\' + img_name, plot=True, temporary=True)
+                    self.load_img(self.img_dir + '/' + img_name, plot=True, temporary=True)
                 self.fig_tau.update_plot(img_tau)
                 # TODO plot optical flow image
                 if opt_flow is not None:
@@ -1073,8 +1110,8 @@ class PyplisWorker:
             # If we don't already have this image loaded in then we process it
             else:
                 # Process images too
-                self.process_pair(self.img_dir + '\\' + self.img_list[self.idx_current+1][0],
-                                  self.img_dir + '\\' + self.img_list[self.idx_current+1][1])
+                self.process_pair(self.img_dir + '/' + self.img_list[self.idx_current+1][0],
+                                  self.img_dir + '/' + self.img_list[self.idx_current+1][1])
         except IndexError:
             self.idx_current -= 1
 
@@ -1089,7 +1126,7 @@ class PyplisWorker:
 
             # Going to previous image, so we get data from buffer
             for img_name in [img_A, img_B]:
-                self.load_img(self.img_dir + '\\' + img_name, plot=True, temporary=True)
+                self.load_img(self.img_dir + '/' + img_name, plot=True, temporary=True)
             self.fig_tau.update_plot(img_tau)
             # TODO plot image
             if opt_flow is not None:
@@ -1099,6 +1136,22 @@ class PyplisWorker:
         except IndexError:
             pass
 
+    def load_BG_pair(self, img_A_path = None, img_B_path = None):
+        """
+        Loads band A and band B background images
+        :param img_A_path: str     Path to A band background image
+        :param img_B_path: str     Path to B band background image
+        """
+        if self.config["use_vign_corr"]:
+            if img_A_path is None or img_B_path is None:
+                img_A_path = self.bg_A_path
+                img_B_path = self.bg_B_path
+            self.load_BG_img(img_A_path, band='A')
+            self.load_BG_img(img_B_path, band='B')
+        else:
+            self.load_BG_img(FileLocator.ONES_MASK, band='A', ones=True)
+            self.load_BG_img(FileLocator.ONES_MASK, band='B', ones=True)
+        
     def load_BG_img(self, bg_path, band='A', ones=False):
         """Loads in background file
 
@@ -1106,9 +1159,9 @@ class PyplisWorker:
         :param band: Defines whether image is for on or off band (A or B)
         :param ones:  bool  If True, dark image is not subtracted as this image is simply an array of ones"""
         if not os.path.exists(bg_path):
-            raise ValueError('File path specified for background image does not exist: {}'.format(bg_path))
+            raise ValueError(f'File path specified for background image does not exist: {bg_path}')
         if band not in ['A', 'B']:
-            raise ValueError('Unrecognised band for background image: {}. Must be either A or B.'.format(band))
+            raise ValueError(f'Unrecognised band for background image: {band}. Must be either A or B.')
 
         # Create image object
         img = pyplis.image.Img(bg_path, self.load_img_func)
@@ -1116,20 +1169,23 @@ class PyplisWorker:
         if not ones:
             # Dark subtraction - first extract ss then hunt for dark image
             ss = str(int(img.texp * 10 ** 6))
-            dark_img = self.find_dark_img(self.dark_img_dir, ss, band=band)[0]
+            dark_img = self.find_dark_img(self.config["dark_img_dir"], ss, band=band)[0]
 
             if dark_img is not None:
                 img.subtract_dark_image(dark_img)
                 img.img[img.img <= 0] = np.finfo(float).eps
             else:
-                warnings.warn('No dark image provided for background image.\n '
-                              'Background image has not been corrected for dark current.')
+                self.PyplisLogger.warning(f'No dark image found, for band {band} background image.'
+                                          f'Note: Image will still be flagged as dark-corrected so processing can proceed.')
+                img.subtract_dark_image(0)  # Just subtract 0. This ensures the image is flagged as dark-corr
+        else:
+            img.subtract_dark_image(0)  # Just subtract 0. This ensures the image is flagged as dark-corr
 
         # Set variables
-        setattr(self, 'bg_{}'.format(band), img)
+        setattr(self, f'bg_{band}', img)
         self.generate_vign_mask(img.img, band)
         if not ones:
-            self.config['bg_{}_path'.format(band)] = bg_path
+            self.config[f'bg_{band}_path'] = bg_path
 
     def save_imgs(self):
         """
@@ -1176,7 +1232,7 @@ class PyplisWorker:
                     self.fig_tau.disp_cal = 0
                     self.fig_tau.update_plot(self.img_tau, self.img_cal)
             else:
-                print('Warning! Unrecognised units, SO2 figure not saved!')
+                self.PyplisLogger.warning('Unrecognised units, SO2 figure not saved!')
             self.fig_tau.save_figure(img_time=self.img_tau.meta['start_acq'],
                                      savedir=self.saved_img_dir)
 
@@ -1225,7 +1281,7 @@ class PyplisWorker:
 
         # Set previous image from current img
         if not temporary:
-            setattr(self, 'img_{}_prev'.format(band), getattr(self, 'img_{}'.format(band)))
+            setattr(self, f'img_{band}_prev', getattr(self, f'img_{band}'))
 
          # Dark subtraction - first extract ss then hunt for dark image
         try:
@@ -1238,28 +1294,31 @@ class PyplisWorker:
             img.subtract_dark_image(dark_img)
             img.img[img.img <= 0] = np.finfo(float).eps     # Set zeros and less to smallest value
         else:
-            warnings.warn('No dark image found, image has been loaded without dark subtraction.'
-                          'Note: Image will still be flagged as dark-corrected so processing can proceed.')
+            self.PyplisLogger.warning(
+                'No dark image found, image has been loaded without dark subtraction.'
+                'Note: Image will still be flagged as dark-corrected so processing can proceed.')
             img.subtract_dark_image(0)  # Just subtract 0. This ensures the image is flagged as dark-corr
 
         # Set object attribute to the loaded pyplis image
         # (must be done prior to image registration as the function uses object attribute self.img_B)
-        setattr(self, 'img_{}'.format(band), img)
+        setattr(self, f'img_{band}', img)
 
         # Warp image using current setup if it is B
         if band == 'B':
             self.register_image()
 
         # Add to plot queue if requested
-        if plot:
-            print('Updating plot {}'.format(band))
-            getattr(self, 'fig_{}'.format(band)).update_plot(img_path)
+        if plot and not self.headless:
+            self.PyplisLogger.debug(f'Updating plot {band}')
+            getattr(self, f'fig_{band}').update_plot(img_path)
 
-    def find_dark_img(self, img_dir, ss, band='on'):
+    def find_dark_img(self, img_dir, ss, band='on', find_nearest=True):
         """
         Searches for suitable dark image in designated directory. First it filters the images for the correct filter,
         then searches for an image with the same shutter speed defined
         :param: ss  int,str     Shutter speed value to hunt for. Can be either int or str
+        :param: find_nearest  bool  If True, a dark image will always be returned, based on the nearest available
+                                    shutter speed.
         :returns: dark_img      Coadded dark image for this shutter speed
         :returns: dark_paths    List of strings representing paths to all dark images used to generate dark_img
         """
@@ -1286,6 +1345,16 @@ class PyplisWorker:
         ss_str = self.cam_specs.file_ss.replace('{}', '')
         ss_images = [int(f.split('_')[self.cam_specs.file_ss_loc].replace(ss_str, '')) for f in dark_list]
         ss_rounded_list = [round(f, -int(floor(log10(abs(f)))) + 1) for f in ss_images]
+
+        # Find nearest shutter speed that exists and allow for faster exit of function if it does
+        # This may seem slightly repetitive to above, but is necessary if we want the fastest possible look-up when
+        # find nearest is False. Otherwise we always not to create the ss_rounded_list before lookup
+        if find_nearest:
+            ss_rounded = min(ss_rounded_list, key=lambda x: abs(x - ss_rounded))
+            # Fast dictionary look up for preloaded dark images (using rounded ss value)
+            if str(ss_rounded) in self.dark_dict[band].keys():
+                dark_img = self.dark_dict[band][str(ss_rounded)]
+                return dark_img, None
 
         ss_idx = [i for i, x in enumerate(ss_rounded_list) if x == ss_rounded]
         ss_images = [dark_list[i] for i in ss_idx]
@@ -1370,7 +1439,7 @@ class PyplisWorker:
         elif band.lower() == 'off':
             band = 'B'
 
-        setattr(self, 'vign_{}'.format(band), img / np.amax(img))
+        setattr(self, f'vign_{band}', img / np.amax(img))
 
     def perform_cell_calibration_pyplis(self, plot=True, load_dat=True):
         # TODO COMPLETE MERGE OF THIS AND THE OTHER CALIBRATION FUNCTION
@@ -1398,9 +1467,9 @@ class PyplisWorker:
                              self.cam_specs.file_type['dark_corr'] + self.cam_specs.file_ext in x]
 
             if len(img_list_full) == 0:
-                print('Calibration directory: {} \n'
-                      ' is lacking necessary files to perform calibration. '
-                      'Please use a different directory or move images to this directory'.format(self.cell_cal_dir))
+                self.PyplisLogger.warning(
+                    f'Calibration directory: {self.cell_cal_dir} lacks necessary files to perform calibration. '
+                    f'Please use a different directory or move images to this directory')
                 return
 
             # Clear sky.
@@ -1427,7 +1496,7 @@ class PyplisWorker:
             num_cal_B = len(cal_list_B)
 
             if num_cal_A == 0 or num_cal_B == 0:
-                print('Calibration directory does not contain expected image. Aborting calibration load!')
+                self.PyplisLogger.warning('Calibration directory does not contain expected image. Aborting calibration load!')
                 return
 
             cell_vals_A = [
@@ -1447,7 +1516,7 @@ class PyplisWorker:
                     cell_vals.remove(val)
                 except ValueError:
                     pass
-                print('Cell {}ppmm is not present in both on- and off-band images, so is not being processed.')
+                self.PyplisLogger.debug('Cell {}ppmm is not present in both on- and off-band images, so is not being processed.')
 
             # Loop through ppmm values and assign cells to pyplis object
 
@@ -1463,7 +1532,7 @@ class PyplisWorker:
 
                 for band in ['A', 'B']:
                     # Make list for specific calibration cell
-                    cell_list = [x for x in locals()['cal_list_{}'.format(band)] if cal_id in x]
+                    cell_list = [x for x in locals()[f'cal_list_{band}'] if cal_id in x]
                     full_paths = [os.path.join(self.cell_cal_dir, f) for f in cell_list]
 
                     with warnings.catch_warnings():
@@ -1487,11 +1556,11 @@ class PyplisWorker:
 
         try:
             slope, offs = self.cell_calib.calib_data['aa'].calib_coeffs
-            print('Calibration parameters AA: {}, {}'.format(slope, offs))
+            self.PyplisLogger.info(f'Calibration parameters AA: {slope}, {offs}')
             slope, offs = self.cell_calib.calib_data['on'].calib_coeffs
-            print('Calibration parameters on-band: {}, {}'.format(slope, offs))
+            self.PyplisLogger.info(f'Calibration parameters on-band: {slope}, {offs}')
             slope, offs = self.cell_calib.calib_data['off'].calib_coeffs
-            print('Calibration parameters off-band: {}, {}'.format(slope, offs))
+            self.PyplisLogger.info(f'Calibration parameters off-band: {slope}, {offs}')
         except TypeError:
             messagebox.showerror('Calibration failed', 'Calibration failed.'
                                                        'This is probably related to NaNs in the tau vector. '
@@ -1563,7 +1632,7 @@ class PyplisWorker:
         img_array_clear_B = np.zeros((self.cam_specs.pix_num_y, self.cam_specs.pix_num_x, num_clear_B), dtype=np.float32)
 
         if num_clear_A == 0 or num_clear_B == 0:
-            print('No clear images present. Ensure the calibration directory contains clear images for both filters')
+            self.PyplisLogger.warning('No clear images present. Ensure the calibration directory contains clear images for both filters')
             return
 
         # Loop through clear images and load them into buffer
@@ -1572,7 +1641,12 @@ class PyplisWorker:
 
             # Find associated dark image by extracting shutter speed, then subtract this image
             ss = meta['texp'] / self.cam_specs.file_ss_units
-            img_array_clear_A[:, :, i] -= self.find_dark_img(self.cell_cal_dir, ss=ss, band='A')[0]
+            try:
+                img_array_clear_A[:, :, i] -= self.find_dark_img(self.cell_cal_dir, ss=ss, band='A')[0]
+            except np.core._exceptions._UFuncOutputCastingError:
+                self.PyplisLogger.debug(
+                    f'Unable to find dark image for cell calibration in '
+                    f'band A exposure {ss}. Image will not be dark-subtracted')
 
             # Scale image to 1 second exposure (so that we can deal with images of different shutter speeds
             img_array_clear_A[:, :, i] *= (1 / meta['texp'])
@@ -1586,7 +1660,13 @@ class PyplisWorker:
 
             # Find associated dark image by extracting shutter speed, then subtract this image
             ss = meta['texp'] / self.cam_specs.file_ss_units
-            img_array_clear_B[:, :, i] -= self.find_dark_img(self.cell_cal_dir, ss=ss, band='B')[0]
+            try:
+                img_array_clear_B[:, :, i] -= self.find_dark_img(self.cell_cal_dir, ss=ss, band='B')[0]
+            except np.core._exceptions._UFuncOutputCastingError:
+                self.PyplisLogger.debug(
+                    f'Unable to find dark image for cell calibration in '
+                    f'band B exposure {ss}. Image will not be dark-subtracted')
+
 
             # Scale image to 1 second exposure (so that we can deal with images of different shutter speeds
             img_array_clear_B[:, :, i] *= (1 / meta['texp'])
@@ -1600,8 +1680,8 @@ class PyplisWorker:
             self.generate_vign_mask(img_clear_B, 'B')
             self.bg_A = pyplis.image.Img(img_clear_A)
             self.bg_B = pyplis.image.Img(img_clear_B)
-            self.bg_A_path = 'Coadded. ...{}'.format(self.cell_cal_dir[-8])
-            self.bg_B_path = 'Coadded. ...{}'.format(self.cell_cal_dir[-8])
+            self.bg_A_path = f'Coadded. ...{self.cell_cal_dir[-8]}'
+            self.bg_B_path = f'Coadded. ...{self.cell_cal_dir[-8]}'
 
         # -------------------------------
         # READ IN CALIBRATION CELL IMAGES
@@ -1619,7 +1699,7 @@ class PyplisWorker:
         num_cal_B = len(cal_list_B)
 
         if num_cal_A == 0 or num_cal_B == 0:
-            print('Calibration directory does not contain expected image. Aborting calibration load!')
+            self.PyplisLogger.warning('Calibration directory does not contain expected image. Aborting calibration load!')
             return
 
         cell_vals_A = [x.split('.')[0].split('_')[self.cam_specs.file_type_loc].replace(self.cam_specs.file_type['cal'], '')
@@ -1637,7 +1717,7 @@ class PyplisWorker:
                 cell_vals.remove(val)
             except ValueError:
                 pass
-            print('Cell {}ppmm is not present in both on- and off-band images, so is not being processed.')
+            self.PyplisLogger.debug('Cell {}ppmm is not present in both on- and off-band images, so is not being processed.')
 
         # Reset cell image dictionary as we are loading a new folder (don't want old cells/values in there)
         self.cell_dict_A = {}
@@ -1649,7 +1729,7 @@ class PyplisWorker:
 
             for band in ['A', 'B']:
                 # Make list for specific calibration cell
-                cell_list = [x for x in locals()['cal_list_{}'.format(band)] if cal_id in x]
+                cell_list = [x for x in locals()[f'cal_list_{band}'] if cal_id in x]
                 num_img = len(cell_list)
 
                 # Create empty array
@@ -1661,7 +1741,12 @@ class PyplisWorker:
 
                     # Find associated dark image by extracting shutter speed, then subtract this image
                     ss = meta['texp'] / self.cam_specs.file_ss_units
-                    cell_array[:, :, i] -= self.find_dark_img(self.cell_cal_dir, ss=ss, band=band)[0]
+                    try:
+                        cell_array[:, :, i] -= self.find_dark_img(self.cell_cal_dir, ss=ss, band=band)[0]
+                    except np.core._exceptions._UFuncOutputCastingError:
+                        self.PyplisLogger.debug(
+                            f'Unable to find dark image for cell calibration in band {band} '
+                            f'exposure {ss}. Image will not be dark-subtracted')
 
                     # Scale image to 1 second exposure (so that we can deal with images of different shutter speeds
                     cell_array[:, :, i] *= (1 / meta['texp'])
@@ -1670,7 +1755,7 @@ class PyplisWorker:
                 cell_img_coadd = np.mean(cell_array, axis=2)  # Co-added final clear image
 
                 # Put image in dictionary
-                getattr(self, 'cell_dict_{}'.format(band))[ppmm] = cell_img_coadd.copy()
+                getattr(self, f'cell_dict_{band}')[ppmm] = cell_img_coadd.copy()
 
         # GENERATE OPTICAL DEPTHS FOR EACH CELL
         num_cells = len(self.cell_dict_A)
@@ -1726,8 +1811,8 @@ class PyplisWorker:
         if save_corr:
             for band in ['A', 'B']:
                 # Clear image
-                img = np.uint16(np.round(locals()['img_clear_{}'.format(band)]))
-                filename = locals()['clear_list_{}'.format(band)][-1].split(self.cam_specs.file_ext)[0] + \
+                img = np.uint16(np.round(locals()[f'img_clear_{band}']))
+                filename = locals()[f'clear_list_{band}'][-1].split(self.cam_specs.file_ext)[0] + \
                            '_' + self.cam_specs.file_type['dark_corr'] + self.cam_specs.file_ext
                 pathname = os.path.join(self.cell_cal_dir, filename)
                 if not os.path.exists(pathname):
@@ -1740,19 +1825,19 @@ class PyplisWorker:
 
                     # Make list for specific calibration cell and retrieve the most recent filename - this will be used
                     # as the filename for the dark_corr coadded image
-                    cell_list = [x for x in locals()['cal_list_{}'.format(band)] if cal_id in x]
+                    cell_list = [x for x in locals()[f'cal_list_{band}'] if cal_id in x]
                     cell_list.sort()
                     filename = cell_list[-1].split(self.cam_specs.file_ext)[0] + \
                                '_' + self.cam_specs.file_type['dark_corr'] + self.cam_specs.file_ext
                     pathname = os.path.join(self.cell_cal_dir, filename)
 
                     # Get image and round it to int for saving
-                    img = np.uint16(np.round(getattr(self, 'cell_dict_{}'.format(band))[ppmm].copy()))
+                    img = np.uint16(np.round(getattr(self, f'cell_dict_{band}')[ppmm].copy()))
                     if not os.path.exists(pathname):
                         save_img(img, pathname)
 
         # Plot calibration
-        if plot:
+        if plot and not self.headless:
             self.fig_cell_cal.update_plot()
 
     def generate_sensitivity_mask(self, img_tau, pos_x=None, pos_y=None, radius=1, pyr_lvl=2):
@@ -1805,9 +1890,9 @@ class PyplisWorker:
                 # wrong dimensions for some reason (seems to be an issue with pyplis)
                 raise
         except:
-            warnings.warn("2D polyfit failed while determination of sensitivity "
-                 "correction mask, using original cell tau image for mask "
-                 "determination")
+            self.PyplisLogger.warning(
+                "2D polyfit failed while determination of sensitivity correction mask, using "
+                "original cell tau image for mask determination")
             cell_img = img_tau
 
         # Generate mask
@@ -1842,7 +1927,7 @@ class PyplisWorker:
         :param kwargs:  Any further settings to be passed to DilutionCorr object
         :return:
         """
-        print("Altitude offset: {}".format(self.meas.meas_geometry.cam_altitude_offs))
+        self.PyplisLogger.debug(f"Altitude offset: {self.meas.meas_geometry.cam_altitude_offs}")
 
         # If we are passed lines, we use these, otherwise we use already defined lines
         if lines is not None:
@@ -1901,7 +1986,7 @@ class PyplisWorker:
         self.dil_recal_last = self.vigncorr_A.meta['start_acq']
 
         # Plot coefficients if requested
-        if plot:
+        if plot and not self.headless:
             fig_dict = {'A': ax0.figure,
                         'B': ax1.figure,
                         'basemap': None}
@@ -1916,7 +2001,7 @@ class PyplisWorker:
         """
         # Check that we have a light dilution model
         if not self.got_light_dil:
-            warnings.warn("No light dilution model is present, cannot correct for light dilution")
+            self.PyplisLogger.warning("No light dilution model is present, cannot correct for light dilution")
             return
 
         # Get all appropriate images anf parameters based on
@@ -1925,7 +2010,7 @@ class PyplisWorker:
         elif band.upper() in ['B', 'OFF']:
             ext_coeff = self.ext_off
         else:
-            print('Unrecognised definition of <band>, cannot perform light dilution correction')
+            self.PyplisLogger.warning('Unrecognised definition of <band>, cannot perform light dilution correction')
             return
 
         # Compute plume background in image -> I = I0*e^-tau -> I*e^tau=I0
@@ -1965,7 +2050,7 @@ class PyplisWorker:
         :return:
         """
         if 'column_density' not in doas_dict or 'time' not in doas_dict:
-            print('Encountered unexpected value for doas_dict in update_doas_buff(), buffer was not updated')
+            self.PyplisLogger.warning('Encountered unexpected value for doas_dict in update_doas_buff(), buffer was not updated')
             return
 
         # We either place the image in its position in the buffer, or if the buffer is already full we have to rearrange
@@ -2021,6 +2106,10 @@ class PyplisWorker:
         # Loop through image buffer adding each images
         for img in img_buff:
             stack.add_img(img['img_tau'], img['time'])
+
+        if self.img_tau_prev is not None:
+            stack.add_img(self.img_tau_prev, self.img_tau_prev.meta['start_acq'])
+            stack.add_img(self.img_tau, self.img_tau.meta['start_acq'])
 
         stack.img_prep['pyrlevel'] = 0
 
@@ -2207,8 +2296,8 @@ class PyplisWorker:
                     tau_B_warped = pyplis.Img(self.img_reg.register_image(tau_A.img, tau_B.img))
                     self.update_meta(tau_B_warped, tau_B)
             except BaseException as e:
-                print('ERROR! When attempting pyplis background modelling: {}'.format(e))
-                print('Reverting to basic rectangular background model. Note subsequent processing will attempt pyplis modelling again unless changed by the user.')
+                self.PyplisLogger.error('Error when attempting pyplis background modelling: {e}. '
+                                        'Reverting to basic rectangular background model. Note subsequent processing will attempt pyplis modelling again unless changed by the user.')
                 # Get background intensities. BG for tau_B is same as bg for tau_B warped, just so we know its in the 
                 # same region of sky, rather than the same coordinates of the image
                 bg_a = vigncorr_A.crop(self.ambient_roi, new_img=True).mean()
@@ -2247,7 +2336,7 @@ class PyplisWorker:
         tau_B_warped.img[np.isnan(tau_B_warped.img)] = np.finfo(float).eps
 
         # Plots
-        if plot:
+        if plot and not self.headless:
             self.fig_bg.update_plots(tau_A, tau_B)
 
             # if self.bg_pycam:
@@ -2295,7 +2384,7 @@ class PyplisWorker:
         :returns
         """
         # Set last image to img_tau_prev, as it is used in optical flow computation
-        # TODO I need to think abiout this this may be being called during times when we want to change processing and
+        # TODO I need to think about this this may be being called during times when we want to change processing and
         # TODO we haven't necessarily loaded a new image, so in this case, I think we don't want to shift the old
         # TODO image back one, as it may end up duplicating images??
         # TODO I think this edit, to use img_path_A as a guide makes this work. img_path_A is only not None if we need
@@ -2322,10 +2411,10 @@ class PyplisWorker:
         if self.use_light_dilution and self.first_image:
             lines = [line for line in self.light_dil_lines if isinstance(line, LineOnImage)]
             if len(lines) > 0:
-                print('Modelling light dilution')
+                self.PyplisLogger.debug('Modelling light dilution')
                 self.model_light_dilution(draw=False)
         elif self.use_light_dilution and datetime.timedelta(minutes=self.dil_recal_time) <= dt:
-            print('Estimating new light dilution scattering coefficients')
+            self.PyplisLogger.debug('Estimating new light dilution scattering coefficients')
             self.get_light_dilution_coefficients(plot=False)
 
         # Perform light dilution if we have a correction
@@ -2357,9 +2446,9 @@ class PyplisWorker:
                                                                    params_A=self.background_params_A,
                                                                    params_B=self.background_params_B, plot=False)
                 self.tau_A, self.tau_B, self.tau_B_warped = tau_A, tau_B, tau_B_warped
-            print('Light dilution correction time: {}'.format(time.time()-t))
+            self.PyplisLogger.info(f'Light dilution correction time: {time.time()-t}')
         else:
-            print('Light dilution correction not applied')
+            self.PyplisLogger.info('Light dilution correction not applied')
 
         # Adjust for changing FOV sensitivity if requested
         if self.use_sensitivity_mask:
@@ -2380,11 +2469,11 @@ class PyplisWorker:
         # Calibrate the image
         self.img_cal = self.calibrate_image(self.img_tau, run_cal_doas=run_cal)
 
-        if plot:
+        if plot and not self.headless:
             # TODO should include a tau vs cal flag check, to see whether the plot is displaying AA or ppmm
             self.fig_tau.update_plot(np.array(self.img_tau.img), img_cal=self.img_cal)
 
-    def calibrate_image(self, img, run_cal_doas=False, doas_update=True):
+    def calibrate_image(self, img, run_cal_doas=False, doas_update=True, calib_buff = False):
         """
         Takes tau image and calibrates it using correct calibration mode
         :param img: pyplis.Img or pyplis.ImgStack      Tau image
@@ -2420,6 +2509,17 @@ class PyplisWorker:
                 if self.doas_cal_adjust_offset:
                     cal_img.img = cal_img.img + self.calib_pears.y_offset
 
+                # The first time a calibration is available also calibrate the previous image,
+                # so an emission rate can be generated for it.
+                if not calib_buff and self.img_cal_prev is None:
+                    img_tau_prev = copy.deepcopy(self.img_tau_prev)
+                    cal_img_prev = self.calib_pears.calibrate(img_tau_prev)
+
+                    if self.doas_cal_adjust_offset:
+                        cal_img_prev.img = cal_img_prev.img + self.calib_pears.y_offset
+                    
+                    self.img_cal_prev = cal_img_prev
+
         elif self.cal_type_int == 0:
             if isinstance(img, pyplis.Img):
                 # cal_img = img * self.cell_fit[0]    # Just use cell gradient (not y axis intersect)
@@ -2438,8 +2538,8 @@ class PyplisWorker:
             closest_index = self.calibration_series.index.get_indexer([self.img_A.meta['start_acq']], method='nearest')
 
             # Use index to retrieve calibration coeffients
-            intercept = self.calibration_series.iloc[closest_index]['coeff 0'][0]
-            grad = self.calibration_series.iloc[closest_index]['coeff 1'][0]
+            intercept = self.calibration_series.iloc[closest_index]['coeff 0'].iloc[0]
+            grad = self.calibration_series.iloc[closest_index]['coeff 1'].iloc[0]
 
             # Calibrate image
             cal_img = img * grad
@@ -2463,7 +2563,7 @@ class PyplisWorker:
         :param doas_results:
         :return:
         """
-        print('Performing DOAS FOV search')
+        self.PyplisLogger.info('Performing DOAS FOV search')
         # TODO May want to initiate this DoasFOVEng with info on camera?
         s = pyplis.doascalib.DoasFOVEngine(img_stack, doas_results)
         s.maxrad = self.maxrad_doas  # Set maximum radius of FOV to close to that expected from optical calculations
@@ -2474,19 +2574,19 @@ class PyplisWorker:
         self.centre_pix_x, self.centre_pix_y = self.calib_pears.fov.pixel_position_center(abs_coords=True)
         self.fov_rad = self.calib_pears.fov.pixel_extend(abs_coords=True)
         self.fov = self.calib_pears.fov
-        print('DOAS FOV search complete')
+        self.PyplisLogger.info('DOAS FOV search complete')
         self.save_fov_search()
 
         if self.calib_pears.polyorder == 1 and self.calib_pears.calib_coeffs[0] < 0:
-            print('Warning!! Calibration shows inverse tau-CD relationship. It is likely an error has occurred')
+            self.PyplisLogger.warning('Calibration shows inverse tau-CD relationship. It is likely an error has occurred')
 
         # Flag that we now have a calibration and update time of last calibration to this time
         self.got_doas_fov = True
         self.doas_last_fov_cal = self.img_A.meta['start_acq']
 
         # Plot results if requested, first checking that we have the tkinter frame generated
-        if plot:
-            print('Updating DOAS FOV plot')
+        if plot and not self.headless:
+            self.PyplisLogger.debug('Updating DOAS FOV plot')
             self.fig_doas_fov.update_plot()
 
     def generate_doas_fov(self):
@@ -2510,6 +2610,32 @@ class PyplisWorker:
         self.fov = self.calib_pears.fov
         self.got_doas_fov = True
         self.doas_last_fov_cal = self.img_A.meta['start_acq']
+
+    def check_doas_result_avail(self, img_time, retry_length = 10):
+        """ Check whether doas results for a particular time point are available
+
+        :param datetime img_time: Datetime for current image being processed
+        :param int retry_length: Time in seconds to retry getting results for, defaults to 10
+        :return boolean: Is there a result for this image datetime
+        """
+
+        timeout = datetime.datetime.now() + datetime.timedelta(seconds = retry_length)
+        while (datetime.datetime.now() < timeout):
+            with self.doas_worker.lock:
+                
+                # Check to see if img_time is in the results index, and return if it is
+                if np.any(img_time == self.doas_worker.results.index):
+                    return True 
+
+                # If there are newer results then the result is likely missing and so we can return
+                # sooner
+                if np.any(img_time < self.doas_worker.results.index):
+                    return False
+
+            # Pause for a bit to allow other threads to execute before trying again
+            time.sleep(0.5)
+        
+        return False
 
     def update_doas_calibration(self, img_tau=None, force_fov_cal=False):
         """
@@ -2549,20 +2675,23 @@ class PyplisWorker:
         if (force_fov_cal or self.doas_fov_recal or not self.got_doas_fov) and not self.fix_fov:
             dt = datetime.timedelta(minutes=self.doas_fov_recal_mins)
             oldest_time = img_time - dt
-            with self.doas_worker.lock:
-                if oldest_time >= self.doas_last_fov_cal or force_fov_cal:
+            if oldest_time >= self.doas_last_fov_cal or force_fov_cal:
+                doas_result_avail = self.check_doas_result_avail(img_time)
+                with self.doas_worker.lock:
                     # Check we have some DOAS points
                     if len(self.doas_worker.results) < self.min_doas_points:
-                        print('Require at least {} DOAS points to perform FOV CD-tau calibration. '
-                              'Got only {}'.format(self.min_doas_points, len(self.doas_worker.results)))
+                        self.PyplisLogger.warning(
+                            f'Require at least {self.min_doas_points} DOAS points to perform FOV '
+                            f'CD-tau calibration. Got only {len(self.doas_worker.results)}')
                         return
 
                     try:
                         last_cal = copy.deepcopy(self.doas_last_fov_cal)    # For knowing when to update buffer from
                         stack = self.make_img_stack(time_start=oldest_time)
                         if stack.num_of_imgs < self.min_num_imgs:
-                            print('Require at least {} images to perform FOV CD-tau calibration. '
-                                  'Got only {}'.format(self.min_num_imgs, stack.num_of_imgs))
+                            self.PyplisLogger.warning(
+                                f'Require at least {self.min_num_imgs} images to perform FOV '
+                                f'CD-tau calibration. Got only {stack.num_of_imgs}')
                             return
                         # TODO =========================================
                         # TODO For testing!!!
@@ -2581,13 +2710,16 @@ class PyplisWorker:
                             self.calib_pears.cd_vec,
                             self.calib_pears.cd_vec_err))
                     except Exception as e:
-                        print('Error when attempting to update DOAS calibration: {}'.format(e))
+                        self.PyplisLogger.error(f'Error when attempting to update DOAS calibration: {e}')
 
         # If we don't update fov search then we just update current cal object with new image (as long as we have
         # a doas calibration)
         elif self.got_doas_fov:
+            if self.in_processing or self.watching:
+                doas_result_avail = self.check_doas_result_avail(img_time)
+
             if len(self.doas_worker.results) < 1:
-                print('No DOAS data available for CD-tau calibration')
+                self.PyplisLogger.info('No DOAS data available for CD-tau calibration')
                 return
 
             doas_fov = self.fov
@@ -2598,37 +2730,19 @@ class PyplisWorker:
             tau = tau_fov.mean()
 
             try:
-                timeout = datetime.datetime.now() + datetime.timedelta(seconds = 30)
-                # Keep retrying to get the cd for current time until timeout
-                # Will also exit if a new value with a greater datetime is added
-                results = self.doas_worker.results
-                while (datetime.datetime.now() < timeout) and not np.any(img_time < self.doas_worker.results.index):
-                    with self.doas_worker.lock:
-                        # Get CD for current time
-                        cd = self.doas_worker.results.get(img_time)
-                        if cd is not None:
-                            # Get index for cd_err
-                            cd_err = self.doas_worker.results.fit_errs[
-                                np.where(self.doas_worker.results.index.array == img_time)[0][0]]
-                            break
-                    time.sleep(0.5)
-                else:
-                    # In case while loop immediately exits, because it has more recent data points, we need to try to
-                    # generate cd and cd_err (this may be for the first time). If cd is None we know there is no data
-                    # point for img_time, so we can raise the error which moves us onto the interpolation section.
+                if doas_result_avail:
                     with self.doas_worker.lock:
                         cd = self.doas_worker.results.get(img_time)
-                        if cd is None:
-                            raise KeyError(f"spectra for {img_time} not found")
-                        # Get index for cd_err
                         cd_err = self.doas_worker.results.fit_errs[
-                            np.where(self.doas_worker.results.index.array == img_time)[0][0]]
+                                np.where(self.doas_worker.results.index.array == img_time)[0][0]]
+                else:
+                    raise KeyError(f"spectra for {img_time} not found")
 
             except BaseException as e:
                 
                 # Give warning when unexpected (i.e. non-KeyError) is caught.
                 if type(e) is not KeyError:
-                    print(f"Unexpected error: {e}" )
+                    self.PyplisLogger.error(f"Unexpected error: {e}" )
 
                 with self.doas_worker.lock:
                     # If there is no data for the specific time of the image we will have to interpolate
@@ -2638,9 +2752,9 @@ class PyplisWorker:
                     closest = np.min(np.abs(dts.array))
                     dt = datetime.timedelta(seconds=closest / np.timedelta64(1, 's'))
                     if dt > datetime.timedelta(seconds=self.max_doas_cam_dif):
-                        print('No DOAS data point within {}s of image time: {}. '
-                              'Image is not added to DOAS calibration'.format(self.max_doas_cam_dif,
-                                                                              img_time.strftime('%H:%M:%S')))
+                        self.PyplisLogger.warning(
+                            f'No DOAS data point within {self.max_doas_cam_dif}s of image time: '
+                            f'{img_time.strftime('%H:%M:%S')}. Image is not added to DOAS calibration')
 
                         # Only add if the calibration is already available
                         if self.fit_data.size > 0:
@@ -2667,9 +2781,10 @@ class PyplisWorker:
                         cd = self.doas_worker.results[time_val]
                         # Get index for cd_err
                         cd_err = self.doas_worker.results.fit_errs[self.doas_worker.results.index == time_val]
-                        print('Warning, no DOAS data beyond image time for interpolation, using single closest point')
-                        print('Image time: {}\nDOAS time: {}'.format(img_time.strftime('%H:%M:%S'),
-                                                                     time_val.strftime('%H:%M:%S')))
+                        self.PyplisLogger.warning(
+                            f'no DOAS data beyond image time for interpolation, using single closest point. '
+                            f'Image time: {img_time.strftime('%H:%M:%S')}\n'
+                            f'DOAS time: {time_val.strftime('%H:%M:%S')}')
 
                     elif len(seconds_minus) == 0:
                         idx = np.argmin(seconds_plus)
@@ -2677,9 +2792,10 @@ class PyplisWorker:
                         cd = self.doas_worker.results[time_val]
                         # Get index for cd_err
                         cd_err = self.doas_worker.results.fit_errs[self.doas_worker.results.index == time_val]
-                        print('Warning, no DOAS data before image time for interpolation, using single closest point')
-                        print('Image time: {}\nDOAS time: {}'.format(img_time.strftime('%H:%M:%S'),
-                                                                     time_val.strftime('%H:%M:%S')))
+                        self.PyplisLogger.warning(
+                            f'no DOAS data before image time for interpolation, using single closest point. '
+                            f'Image time: {img_time.strftime('%H:%M:%S')}\n'
+                            f'DOAS time: {time_val.strftime('%H:%M:%S')}')
                     else:
                         # This may work for interpolating
                         cd = np.interp(pd.to_numeric(pd.Series(img_time)).values,
@@ -2687,7 +2803,8 @@ class PyplisWorker:
                         cd_err = np.interp(pd.to_numeric(pd.Series(img_time)).values,
                                            pd.to_numeric(self.doas_worker.results.index).values,
                                            self.doas_worker.results.fit_errs)
-                        print('Interpolated DOAS data for image time {}'.format(img_time.strftime('%H:%M:%S')))
+                        self.PyplisLogger.info(
+                            f'Interpolated DOAS data for image time {img_time.strftime('%H:%M:%S')}')
 
             # Update calibration object
             cal_dict = {'tau': tau, 'cd': cd, 'cd_err': cd_err, 'time': img_time}
@@ -2718,7 +2835,8 @@ class PyplisWorker:
                 self.add_doas_cal_data(cal_dict, recal=True)
 
             # Update doas figure, but no need to change the correlation image as we haven't changed that
-            self.fig_doas_fov.update_plot(update_img=False, reopen=False)
+            if not self.headless:
+                self.fig_doas_fov.update_plot(update_img=False, reopen=False)
 
     def add_doas_cal_data(self, cal_dict, recal=True):
         """
@@ -2774,13 +2892,14 @@ class PyplisWorker:
 
         _, ext = os.path.splitext(filename)
         if ext != '.csv':
-            print('PyplisWorker.load_cal_series: Cannot read file {} as it is not in the correct format (.csv)'.format(filename))
+            self.PyplisLogger.warning(
+                f'PyplisWorker.load_cal_series: Cannot read file "{filename}" as it is not in the correct format (.csv)')
             return
 
         #Extract number of headers
         with open(filename, 'r') as f:
             headerline = f.readline()
-            num_headers = int(headerline.split('=')[-1].split(',')[0].split('\n')[0])
+            num_headers = int(headerline.split('=')[-1].split(',')[0].strip())
 
         # Load in csv to dataframe
         self.calibration_series = pd.read_csv(filename, header=num_headers)
@@ -2829,7 +2948,8 @@ class PyplisWorker:
                 self.cross_corr_series[line].append(np.sum(line_vals))
             self.cross_corr_series['time'].append(img.meta['start_acq'])
         except BaseException as e:
-            print('Could not retrieve integrated tau over PCS lines for cross-correlation\n {}'.format(e))
+            self.PyplisLogger.error(
+                f'Could not retrieve integrated tau over PCS lines for cross-correlation:\n{e}')
 
     def generate_cross_corr(self, series_time, series_young, series_old, distance=None, plot=True):
         """
@@ -2860,8 +2980,9 @@ class PyplisWorker:
             series_old = np.array(series_old)
             series_time = np.array(series_time)
         except BaseException as e:
-            print('Cross correlation aborted! Cannot convert time series arrays to numpy array.\n'
-                  '{}').format(e)
+            self.PyplisLogger.error(
+                f'Cross correlation aborted! Cannot convert time series arrays to numpy array.\n'
+                f'{e}')
             return
         lag, coeffs, s1_ana, s2_ana, max_coeff_signal, ax = find_signal_correlation(series_young, series_old,
                                                                                     time_stamps=series_time, plot=plot)
@@ -2884,18 +3005,19 @@ class PyplisWorker:
                                   'young': [],  # Young plume series list
                                   'old': []}    # Old plume series list
 
-        print('Cross-correlation plume speed results:\n'
-              '--------------------------------------\n'
-              'ICA gap [m]:\t{}\n'
-              'Lag [frames]:\t{}\n'
-              'Lag [s]:\t{}\n'
-              'Plume speed [m/s]:\t{}\n'.format(distance, lag_frames, lag, vel))
+        self.PyplisLogger.info(
+            f'Cross-correlation plume speed results:\n'
+            f'--------------------------------------\n'
+            f'ICA gap [m]:\t{distance}\n'
+            f'Lag [frames]:\t{lag_frames}\n'
+            f'Lag [s]:\t{lag}\n'
+            f'Plume speed [m/s]:\t{vel}\n')
 
         self.cross_corr_info = {'ica_gap': distance,
                                 'lag_frames': lag_frames,
                                 'lag': lag,
                                 'velocity': vel}
-        if plot:
+        if plot and not self.headless:
             self.fig_cross_corr.update_plot(ax, self.cross_corr_info)
 
         self.got_cross_corr = True
@@ -3046,7 +3168,7 @@ class PyplisWorker:
         time_step = img_next.meta['start_acq'] - img_current.meta['start_acq']
         plume_speed = lag_length / time_step.total_seconds()
 
-        print('Nadeau plume speed (m/s): {:.2f}'.format(plume_speed))
+        self.PyplisLogger.info('Nadeau plume speed (m/s): {:.2f}'.format(plume_speed))
         info_dict = {'profile_current': profile_current,
                      'profile_next': profile_next,
                      'x_vals': x_interp,
@@ -3068,8 +3190,8 @@ class PyplisWorker:
         :return:
         """
         if len(self.vel_glob) == 0:
-            print('No wind speed data available for flow_glob.\n'
-                  'Cannot retrieve emission rates via cross-correlation')
+            self.PyplisLogger.warning('No wind speed data available for flow_glob. '
+                                      'Cannot retrieve emission rates via cross-correlation')
             return
 
         # Setup total emissions dictionary (for summing lines)
@@ -3181,7 +3303,7 @@ class PyplisWorker:
         self.reset_cross_corr_buff()
 
         # Plot if requested - updates time series with these new emission rates from flow_glob
-        if plot:
+        if plot and not self.headless:
             self.fig_series.update_plot()
 
     def update_opt_flow_settings(self, **settings):
@@ -3219,7 +3341,7 @@ class PyplisWorker:
         # Generate plume speed array
         self.velo_img = pyplis.image.Img(self.opt_flow.to_plume_speed(self.dist_img_step))
 
-        if plot:
+        if plot and not self.headless:
             # TODO Think about this plotting - I have currently left it as img_tau_next when really it should be img_tau
             # TODO to show the flow field of where the gas is flowing to (maybe?).
             self.fig_tau.update_plot(img_tau_next, img_cal=self.img_cal)
@@ -3230,7 +3352,7 @@ class PyplisWorker:
         if save_horizontal_stats:
             for i, line in enumerate(self.PCS_lines_all):
                 if isinstance(line, LineOnImage):
-                    dirname = os.path.join(self.processed_dir, 'line_{}'.format(i))
+                    dirname = os.path.join(self.processed_dir, f'line_{i}')
                     if not os.path.exists(dirname):
                         os.mkdir(dirname)
                     filename = os.path.join(dirname, 'horizontal_speed.txt')
@@ -3289,7 +3411,7 @@ class PyplisWorker:
         try:
             cd_err = self.calib_pears.err()
         except (ValueError, AttributeError) as e:
-            warnings.warn("DOAS calibration error could not be accessed: {}".format(repr(e)))
+            self.PyplisLogger.warning(f"DOAS calibration error could not be accessed: {repr(e)}")
             cd_err = None
 
         # dt = calc_dt(img, self.img_cal)     # Time incremement betweeen current 2 successive images (probably not needed as I think it is containined in the optical flow object)
@@ -3306,12 +3428,12 @@ class PyplisWorker:
             # This image
             if self.ref_check_mode:
                 if not self.ref_check_lower < avg < self.ref_check_upper:
-                    print("Image contains CDs in ambient region above designated acceptable limit"
-                          "Processing of this image is not being performed")
+                    self.PyplisLogger.warning("Image contains CDs in ambient region above designated acceptable limit. "
+                                              "Processing of this image is not being performed")
                     return None
         except BaseException:
-            print("Failed to retrieve data within background ROI (bg_roi)"
-                  "writing NaN")
+            self.PyplisLogger.error("Failed to retrieve data within background ROI (bg_roi). "
+                                    "writing NaN")
             self.bg_std.append(np.nan)
             self.bg_mean.append(np.nan)
             # If we are in check mode, then we return if we failed to check the CD of the ambient ROI
@@ -3400,9 +3522,9 @@ class PyplisWorker:
                     # Add predominant flow direction (it will be identical to histo values, so we
                     # only need to do this once per line, and we just always store it in flow_histo)
                     orient_series, upper, lower = props.get_orientation_tseries()
-                    res['flow_histo']._flow_orient.append(orient_series[-1])
-                    res['flow_histo']._flow_orient_upper.append(upper[-1])
-                    res['flow_histo']._flow_orient_lower.append(lower[-1])
+                    res['flow_histo']._flow_orient.append(orient_series.iloc[-1])
+                    res['flow_histo']._flow_orient_upper.append(upper.iloc[-1])
+                    res['flow_histo']._flow_orient_lower.append(lower.iloc[-1])
 
                 # Cross-correlation emission rate retrieval
                 if self.velo_modes['flow_glob']:
@@ -3580,7 +3702,7 @@ class PyplisWorker:
 
         self.update_ICA_masses('total', img_time, ICA_mass_total)
 
-        if plot:
+        if plot and not self.headless:
             self.fig_series.update_plot()
 
         return self.results
@@ -3673,7 +3795,7 @@ class PyplisWorker:
                     self.generate_nadeau_line()
                 nadeau_plumespeed, info_dict = self.generate_nadeau_plumespeed(self.img_tau_prev, self.img_tau,
                                                                                self.nadeau_line)
-                if plot:
+                if plot and not self.headless:
                     self.fig_nadeau.nadeau_line = self.nadeau_line
                     self.fig_nadeau.update_pcs_line(draw=False)
                     self.fig_nadeau.update_nad_line_plot(draw=False)
@@ -3700,8 +3822,9 @@ class PyplisWorker:
                 if cross_corr or time_gap >= self.cross_corr_recal:
                     self.generate_cross_corr(self.cross_corr_series['time'],
                                              self.cross_corr_series['young'],
-                                             self.cross_corr_series['old'])
-                    self.get_cross_corr_emissions_from_buff()
+                                             self.cross_corr_series['old'],
+                                             plot=plot)
+                    self.get_cross_corr_emissions_from_buff(plot = plot)
 
 
 
@@ -3739,19 +3862,18 @@ class PyplisWorker:
                                     emission rate data for this time. Old emission rates will be overwritten
         :return:
         """
-        print('Processing image buffer to retrieve emission rate')
+        self.PyplisLogger.debug('Processing image buffer to retrieve emission rate')
 
         img_buff = self.img_buff
 
         if after is None:
             after = datetime.datetime(2000, 1, 1)
 
-        # TODO I may want to think about deciding how far to loop through the buffer here
         # Define number of images to loop through (I can try to go to last image, and if it contains optical flow data
         # I will be able to process it too. Otherwise I can only process all but the final image, since I will need to
         # generate the optical flow)
         if self.idx_current < self.img_buff_size:
-            num_buff = self.idx_current - 1
+            num_buff = self.idx_current
         else:
             num_buff = self.img_buff_size
 
@@ -3763,7 +3885,7 @@ class PyplisWorker:
             # If time of image is before or equal to "after", we ignore it
             # If the results object already has emission rates for this time, we skip it if overwrite=False
             img_time = img_tau.meta['start_acq']
-            if img_time <= after:
+            if img_time < after:
                 continue
             if not overwrite:
                 velo_modes = [mode for mode in self.velo_modes if self.velo_modes[mode]]
@@ -3777,7 +3899,7 @@ class PyplisWorker:
 
             # Calibrate image if it hasn't already been
             if not img_tau.is_calibrated:
-                img_cal = self.calibrate_image(img_tau, doas_update=False)
+                img_cal = self.calibrate_image(img_tau, doas_update=False, calib_buff=True)
 
                 # If the image hasn't already been calibrated we may want to save it if requested
                 if self.save_dict['img_cal']['save']:
@@ -3819,12 +3941,16 @@ class PyplisWorker:
 
             # Calculate emission rate - don't update plot, and then we will do that at the end, for speed
             results = self.calculate_emission_rate(img=img_cal, flow=flow, nadeau_speed=nadeau_plumespeed, plot=False)
-
-        self.fig_series.update_plot()
+        
+        if not self.headless:
+            self.fig_series.update_plot()
 
     def process_sequence(self):
         """Start _process_sequence in a thread, so that this can return after starting and the GUI doesn't lock up"""
         self.set_processing_directory(make_dir=True)
+
+        self.log_path = Path(self.processed_dir).joinpath("PyplisWorker.log").as_posix()
+        LoggerManager.add_file_handler(self.PyplisLogger, self.log_path)
 
         # If a calibration has been preloaded then resave it
         if self.cal_type_int == 3:
@@ -3848,10 +3974,10 @@ class PyplisWorker:
         else:
             raise InvalidCalibration("Preloaded calibration is selected but no calibration has been loaded.")
 
-    def _process_sequence(self):
+    def _process_sequence(self, reset_plot = True):
         """
         Processes the current image directory
-        Direcotry should therefore already have been processed using load_sequence()
+        Directory should therefore already have been processed using load_sequence()
         """
         # Check cross-correlation lines are defined if we have requested cross-correlation
         if self.velo_modes['flow_glob']:
@@ -3880,7 +4006,7 @@ class PyplisWorker:
         self.in_processing = True
 
         # Reset important parameters to ensure we start processing correctly
-        self.reset_self()
+        self.reset_self(reset_plot=reset_plot)
 
         # Set plot iter for this period, get it from current setting for this attribute
         plot_iter = self.plot_iter
@@ -3913,7 +4039,7 @@ class PyplisWorker:
                 pass
 
             # Always plot the final image and always force cross-correlation
-            if i == len(self.img_list) - 1:
+            if i == len(self.img_list) - 1 and not self.headless:
                 plot_iter = True
                 cross_corr = True
 
@@ -3926,10 +4052,10 @@ class PyplisWorker:
                     force_cal = True
 
             # Process image pair
-            print('SO2 cam processor: Processing pair: {}'.format(self.img_list[i][0]))
+            self.PyplisLogger.info(f'Processing pair: {self.img_list[i][0]}')
             try:
-                self.process_pair(self.img_dir + '\\' + self.img_list[i][0],
-                                  self.img_dir + '\\' + self.img_list[i][1],
+                self.process_pair(self.img_dir + '/' + self.img_list[i][0],
+                                  self.img_dir + '/' + self.img_list[i][1],
                                   plot=plot_iter, force_cal=force_cal, cross_corr=cross_corr)
             except FileNotFoundError:
                 traceback.print_exc()
@@ -3953,8 +4079,10 @@ class PyplisWorker:
             # time.sleep(self.wait_time)
 
         proc_time = time.time() - time_proc
-        print('Processing time: {:.1f}'.format(proc_time))
-        print('Time per image: {:.2f}'.format(proc_time / len(self.img_list)))
+        self.PyplisLogger.info('Processing time: {:.1f}'.format(proc_time))
+        self.PyplisLogger.info('Time per image: {:.2f}'.format(proc_time / len(self.img_list)))
+
+        LoggerManager.remove_file_handler(self.PyplisLogger, self.log_path, delete = True)
 
         self.in_processing = False
 
@@ -3981,6 +4109,7 @@ class PyplisWorker:
         Main processing function for continuous processing
         """
         # Reset self
+
         self.reset_self()
 
         # TODO I may need to think about whether I use this to look for images and perform load_sequence() - whihc also
@@ -3997,10 +4126,10 @@ class PyplisWorker:
             img_path_A, img_path_B = self.q.get(block=True)
             
             if img_path_A == self.STOP_FLAG:
-                print('Stopping processing')
+                self.PyplisLogger.debug('Stopping processing')
                 return
 
-            print('Processing pair: {}, {}'.format(img_path_A, img_path_B))
+            self.PyplisLogger.info(f'Processing pair: {img_path_A}, {img_path_B}')
 
             # If we are in display only mode we don't perform processing, just load images and display them
             if self.display_only:
@@ -4014,7 +4143,7 @@ class PyplisWorker:
                 
                 # If this is not the first image and we've started a new day then we need to reset eveything
                 if not self.first_image and self.img_A.meta['start_acq'].day != img_time.day:
-                    print('New image comes from a different day. Finalising previous day of processing.')
+                    self.PyplisLogger.info('New image comes from a different day. Finalising previous day of processing.')
                     self.reset_self()
 
                 # On every first image we need to work out where the image file directory is,
@@ -4022,6 +4151,12 @@ class PyplisWorker:
                 if self.first_image:
                     img_dir = os.path.dirname(img_path_A)
                     self.set_processing_directory(img_dir, make_dir=True)
+
+                    self.log_path = Path(self.processed_dir).joinpath("PyplisWorker.log").as_posix()
+
+                    file_handler = LoggerManager.create_file_handler(self.log_path)
+                    mem_handler = LoggerManager.set_mem_handler_target("PyplisWorker", file_handler)
+                    
                     self.save_config_plus(self.processed_dir)
                     save_last_val_only = False
 
@@ -4029,8 +4164,7 @@ class PyplisWorker:
             try:
                 self.process_pair(img_path_A, img_path_B, plot=self.plot_iter)
             except FileNotFoundError as e:
-                print(e)
-                print("Skipping pair")
+                self.PyplisLogger.error( f"{e}. Skipping pair")
                 continue
 
             # Save all images that have been requested
@@ -4067,19 +4201,27 @@ class PyplisWorker:
             # Incremement current index so that buffer is in the right place
             self.idx_current += 1
 
+            if self.watching:
+                mem_handler.flush()
+
     def start_watching(self, directory=None, recursive=True):
         """
         Setup directory watcher for images - note this is not for watching spectra - use DOASWorker for that
         Also starts a processing thread, so that the images which arrive can be processed
         """
         if self.watching:
-            print('Already watching: {}'.format(self.transfer_dir))
-            print('Please stop watcher before attempting to start new watch. '
-                  'This isssue may be caused by having manual acquisitions running alongside continuous watching')
+            self.PyplisDirWatchLogger.warning(
+                f'Already watching: {self.transfer_dir}' 
+                f'Please stop watcher before attempting to start new watch. '
+                f'This isssue may be caused by having manual acquisitions running alongside continuous watching')
             return
 
         if self.cal_type_int == 3:
             raise InvalidCalibration("Preloaded calibration is invalid for real-time processing")
+
+        
+        LoggerManager.add_mem_handler(self.PyplisLogger, "PyplisWorker")
+        LoggerManager.add_mem_handler(self.PyplisDirWatchLogger, "PyplisWorker")
 
         if directory is not None:
             self.transfer_dir = directory
@@ -4088,9 +4230,9 @@ class PyplisWorker:
             self.watcher = create_dir_watcher(self.transfer_dir, recursive, self.directory_watch_handler)
             self.watcher.start()
             self.watching = True
-            print('Watching {} for new images'.format(self.transfer_dir[-30:]))
+            self.PyplisDirWatchLogger.debug(f'Watching {self.transfer_dir[-30:]} for new images')
         else:
-            print("No Directory to watch provided")
+            self.PyplisDirWatchLogger.debug("No Directory to watch provided")
             return
 
         # Start processing thread from here
@@ -4100,13 +4242,16 @@ class PyplisWorker:
         """Stop directory watcher and end processing thread"""
         if self.watcher is not None and self.watching:
             self.watcher.stop()
-            print('Stopped watching {} for new images'.format(self.transfer_dir[-30:]))
+            self.PyplisDirWatchLogger.debug(f'Stopped watching {self.transfer_dir[-30:]} for new images')
             self.watching = False
 
             # Stop processing thread when we stop watching the directory
             self.q.put([self.STOP_FLAG, None])
+
+            LoggerManager.remove_mem_handler(self.PyplisLogger, "PyplisWorker")
+            LoggerManager.remove_mem_handler(self.PyplisDirWatchLogger, "PyplisWorker", delete=True)
         else:
-            print('No directory watcher to stop')
+            self.PyplisDirWatchLogger.debug('No directory watcher to stop')
 
     def directory_watch_handler(self, pathname, t):
         """Controls the watching of a directory"""
@@ -4127,7 +4272,7 @@ class PyplisWorker:
         while os.path.exists(pathname_lock):
             time.sleep(0.5)
 
-        print('Directory Watcher cam: New file found {}'.format(pathname))
+        self.PyplisDirWatchLogger.info(f'New file found: "{pathname}"')
 
         # Extract file information
         time_key = file_info[self.cam_specs.file_date_loc]
@@ -4147,7 +4292,8 @@ class PyplisWorker:
             self.watched_pair[fltr] = pathname
             # If we have a pair we process it
             if not None in self.watched_pair.values():
-                print('Putting pair into processing: {}'.format(self.watched_pair.values()))
+                self.PyplisDirWatchLogger.info(
+                    f'Putting pair into processing: {self.watched_pair.values()}')
                 self.q.put(list(self.watched_pair.values()))
 
                 self.watched_pair = {self.cam_specs.file_filterids['on']: None,
@@ -4179,21 +4325,21 @@ class PyplisWorker:
             cross_corr_file = os.path.join(self.processed_dir, 'cross_corr_info.txt')
             with open(cross_corr_file, 'a') as f:
                 for key in self.cross_corr_info:
-                    f.write('{}={}\n'.format(key, self.cross_corr_info[key]))
-                f.write('{}'.format(self.cross_corr_lines['young']))
+                    f.write(f'{key}={self.cross_corr_info[key]}\n')
+                f.write(f'{self.cross_corr_lines['young']}')
 
     def generate_DOAS_FOV_info(self):
 
-        pos_string = 'DOAS_FOV_pos [X Y]={} {}\n'.format(self.config["centre_pix_x"], self.config["centre_pix_y"])
-        rad_string = 'DOAS_FOV_radius={}\n'.format(self.config["fov_rad"])
+        pos_string = f'DOAS_FOV_pos [X Y]={self.config["centre_pix_x"]} {self.config["centre_pix_y"]}\n'
+        rad_string = f'DOAS_FOV_radius={self.config["fov_rad"]}\n'
         
         if self.doas_recal:
-            remove_string = 'DOAS_remove_data [minutes]={}\n'.format(self.remove_doas_mins)
+            remove_string = f'DOAS_remove_data [minutes]={self.remove_doas_mins}\n'
         else:
             remove_string = 'DOAS_remove_data [minutes]=False\n'
         
         if self.doas_fov_recal:
-            recal_string = 'DOAS_fov_recal [minutes]={}\n'.format(self.doas_fov_recal_mins)
+            recal_string = f'DOAS_fov_recal [minutes]={self.doas_fov_recal_mins}\n'
         else:
             recal_string = 'DOAS_fov_recal [minutes]=False\n'
 
@@ -4208,7 +4354,7 @@ class PyplisWorker:
             fov_string = self.generate_DOAS_FOV_info()
 
             # Adding 1 to account for the header line itself
-            file.write('headerlines={}\n'.format(fov_string.count("\n") + 1))
+            file.write(f'headerlines={fov_string.count("\n") + 1}\n')
             file.write(fov_string)
         
         # Included to ensure file is closed properly before results are written
@@ -4266,7 +4412,7 @@ class PyplisWorker:
         # Calibration only produced when DOAS in calibration type and not needed for pre-loaded
         if self.cal_type_int in [1,2]:
             self.save_calibration(only_last_value=only_last_value)
-
+   
 class ImageRegistration:
     """
     Image registration class for warping the off-band image to align with the on-band image
@@ -4410,12 +4556,12 @@ class ImageRegistration:
             method = self.method
 
         if method is None:
-            print('No registration object to save as there is currently no image registration applied')
+            self.PyplisLogger.warning('No registration object to save as there is currently no image registration applied')
             return
 
         elif method.lower() == 'cv':
             if not self.got_cv_transform:
-                print('No CV object is available to save. Please run registration first')
+                self.PyplisLogger.warning('No CV object is available to save. Please run registration first')
                 return
             pathname = pathname.split('.')[0] + '.npy'
             arr = np.array(self.warp_matrix_cv)
@@ -4424,7 +4570,7 @@ class ImageRegistration:
 
         elif method.lower() == 'cp':
             if not self.got_cp_transform:
-                print('No Control Point object is available to save. Please run registration first')
+                self.PyplisLogger.warning('No Control Point object is available to save. Please run registration first')
                 return
             pathname = pathname.split('.')[0] + '.pkl'
             with open(pathname, 'wb') as pickle_file:
@@ -4453,7 +4599,7 @@ class ImageRegistration:
             self.got_cv_transform = True
             reg_meth = 2
         else:
-            print('Unrecognised file type, cannot load registration')
+            self.PyplisLogger.warning('Unrecognised file type, cannot load registration')
             return
         
         try:
@@ -4612,6 +4758,8 @@ def plot_pcs_profiles_4_tau_images(tau0, tau1, tau2, tau3, pcs_line):
     ax.legend(loc="best", fancybox=True, framealpha=0.5, fontsize=12)
     return fig
 
+
+    
 
 class UnrecognisedSourceError(BaseException):
     """Error raised for a source which cannot be found online"""

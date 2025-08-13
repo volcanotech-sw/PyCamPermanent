@@ -11,8 +11,8 @@ from pycam.setupclasses import FileLocator
 # PROCESSING
 # ======================================================================================================================
 # Dictionary for species in DOAS retrieval, holding pathnames to reference spectra
-# species = {'SO2': 'C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\PyCamPermanent\\pycam\\doas\\calibration\\Vandaele (2009) x-section in wavelength.txt',
-#            'O3': 'C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\PyCamPermanent\\pycam\\doas\\calibration\\Serdyuchenko_O3_223K.txt'}
+# species = {'SO2': 'C:/Users/tw9616/Documents/PostDoc/Permanent Camera/PyCamPermanent/pycam/doas/calibration/Vandaele (2009) x-section in wavelength.txt',
+#            'O3': 'C:/Users/tw9616/Documents/PostDoc/Permanent Camera/PyCamPermanent/pycam/doas/calibration/Serdyuchenko_O3_223K.txt'}
 
 # TODO I'm getting quite a big difference between ifit ref spectra and Vandaele ref spectra ~20%. Which to use?
 pwd = FileLocator.PYCAM_ROOT_WINDOWS
@@ -30,9 +30,9 @@ if process_settings['doas_method'] == 'doas':
     doas_worker = DOASWorker(spec_dir=process_settings['spec_dir'],
                              dark_dir=process_settings['dark_spec_dir'],
                              q_doas=pyplis_worker.q_doas,
-                             species=species)
+                             species=pyplis_worker.species_paths)
 elif process_settings['doas_method'] == 'ifit':
     doas_worker = IFitWorker(spec_dir=process_settings['spec_dir'],
                              dark_dir=process_settings['dark_spec_dir'],
                              q_doas=pyplis_worker.q_doas,
-                             species=species)
+                             species=pyplis_worker.species_paths)

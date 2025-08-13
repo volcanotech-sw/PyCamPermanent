@@ -10,14 +10,15 @@ import queue
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.integrate as integrate
+from pathlib import Path
 from itertools import compress
 from scipy import signal
 from scipy.optimize import curve_fit, OptimizeWarning
 from tkinter import filedialog
 from pycam.setupclasses import SpecSpecs
 from pycam.io_py import load_spectrum
-from pycam.directory_watcher import create_dir_watcher
 from pycam.doas.spec_worker import SpecWorker, SpectraError
+from pycam.logging.logging_tools import LoggerManager
 from pydoas.analysis import DoasResults
 
 warnings.filterwarnings("ignore", category=OptimizeWarning)
@@ -34,7 +35,7 @@ class DOASWorker(SpecWorker):
 
     :param q_doas: queue.Queue   Queue where final processed dictionary is placed (should be a PyplisWorker.q_doas)
     """
-    def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir='C:\\', dark_dir=None,
+    def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir=None, dark_dir=None,
                  q_doas=queue.Queue()):
         super().__init__(routine, species, spec_specs, spec_dir, dark_dir, q_doas)
         
@@ -101,10 +102,10 @@ class DOASWorker(SpecWorker):
         :param: plot    bool    If true, the first spectra are plotted in the GUI"""
 
         if prompt:
-            spec_dir = filedialog.askdirectory(title='Select spectrum sequence directory', initialdir=self.spec_dir)
+            spec_dir = filedialog.askdirectory(title='Select spectrum sequence directory', initialdir=str(self.spec_dir))
 
             if len(spec_dir) > 0 and os.path.exists(spec_dir):
-                self.spec_dir = spec_dir
+                self.spec_dir = Path(spec_dir)
             else:
                 raise ValueError('Spectrum directory not recognised: {}'.format(spec_dir))
         else:
@@ -121,9 +122,9 @@ class DOASWorker(SpecWorker):
 
         # Set current spectra to first in lists
         if len(self.spec_dict['clear']) > 0:
-            self.wavelengths, self.clear_spec_raw = load_spectrum(self.spec_dir + self.spec_dict['clear'][0])
+            self.wavelengths, self.clear_spec_raw = load_spectrum(str(self.spec_dir) + self.spec_dict['clear'][0])
         if len(self.spec_dict['plume']) > 0:
-            self.wavelengths, self.plume_spec_raw = load_spectrum(self.spec_dir + self.spec_dict['plume'][0])
+            self.wavelengths, self.plume_spec_raw = load_spectrum(str(self.spec_dir) + self.spec_dict['plume'][0])
         if len(self.spec_dict['dark']) > 0:
             ss_id = self.spec_specs.file_ss.replace('{}', '')
             ss = self.spec_dict['plume'][0].split('_')[self.spec_specs.file_ss_loc].replace(ss_id, '')
@@ -466,7 +467,7 @@ class DOASWorker(SpecWorker):
         self.reset_self()
 
         # Get all files
-        spec_files = [f for f in os.listdir(self.spec_dir) if '.npy' in f]
+        spec_files = self.spec_dir.glob('*.npy')
 
         # Sort files alphabetically (which will sort them by time due to file format)
         spec_files.sort()
@@ -477,9 +478,9 @@ class DOASWorker(SpecWorker):
 
         # Loop through all files and add them to queue
         for file in clear_spec:
-            self.q_spec.put(self.spec_dir + file)
+            self.q_spec.put(str(self.spec_dir / file))
         for file in plume_spec:
-            self.q_spec.put(self.spec_dir + file)
+            self.q_spec.put(str(self.spec_dir / file))
 
         # Add the exit flag at the end, to ensure that the process_loop doesn't get stuck waiting on the queue forever
         self.q_spec.put('exit')
@@ -576,25 +577,6 @@ class DOASWorker(SpecWorker):
                 # Now that we have processed first_spec, set flag to False
                 first_spec = False
 
-    def start_watching(self, directory):
-        """
-        Setup directory watcher for images - note this is not for watching spectra - use DOASWorker for that
-        Also starts a processing thread, so that the images which arrive can be processed
-        """
-        if self.watching:
-            print('Already watching for spectra: {}'.format(self.transfer_dir))
-            print('Please stop watcher before attempting to start new watch. '
-                  'This isssue may be caused by having manual acquisitions running alongside continuous watching')
-            return
-        self.watcher = create_dir_watcher(directory, True, self.directory_watch_handler)
-        self.watcher.start()
-        self.transfer_dir = directory
-        self.watching = True
-        print('Watching {} for new spectra'.format(self.transfer_dir[-30:]))
-
-        # Start the processing thread
-        self.start_processing_thread()
-
     def stop_watching(self):
         """Stop directory watcher and end processing thread"""
         self.watcher.stop()
@@ -602,6 +584,10 @@ class DOASWorker(SpecWorker):
 
         # Stop the processing thread
         self.q_spec.put('exit')
+
+        LoggerManager.remove_file_handler(self.SpecLogger, self.log_path)
+        LoggerManager.remove_file_handler(self.SpecDirWatchLogger, self.log_path)
+        LoggerManager.delete_file_handler(self.log_path)
 
     def directory_watch_handler(self, pathname, t):
         """Handles new spectra passed from watcher"""

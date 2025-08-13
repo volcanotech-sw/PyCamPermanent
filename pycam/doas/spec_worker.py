@@ -6,10 +6,13 @@ import os
 import threading
 import numpy as np
 import pandas as pd
+from pathlib import Path
 from astropy.convolution import convolve
+from pycam.directory_watcher import create_dir_watcher
 from pycam.setupclasses import SpecSpecs
 from pydoas.analysis import DoasResults
 from pycam.io_py import load_spectrum
+from pycam.logging.logging_tools import LoggerManager
 
 try:
     from scipy.constants import N_A
@@ -20,8 +23,12 @@ class SpecWorker:
     """
     Parent class for IfitWorker and DoasWorker
     """
-    def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir='C:\\', dark_dir=None,
+    SpecLogger = LoggerManager.add_logger("SpecWorker", "blue")
+    SpecDirWatchLogger = LoggerManager.add_logger("SpecDirWatcher", "purple")
+
+    def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir=None, dark_dir=None,
                  q_doas=queue.Queue()):
+        self.SpecLogger.debug("Initialising SpecWorker")
         self.routine = routine          # Defines routine to be used, either (1) Polynomial or (2) Digital Filtering
         self.spec_specs = spec_specs    # Spectrometer specifications
 
@@ -73,7 +80,8 @@ class SpecWorker:
         self.abs_spec_filt = None
         self.abs_spec_species = dict()  # Dictionary of absorbances isolated for individual species
         self.ILS_wavelengths = None     # Wavelengths for ILS
-        self._ILS = None                 # Instrument line shape (will be a numpy array)
+        self._ILS = None                # Instrument line shape (will be a numpy array)
+        self._include_ils_fit = False   # Whether to include ILS as part of the fit parameters (if False, an ILS must be provided via file)
         self.processed_data = False     # Bool to define if object has processed DOAS yet - will become true once process_doas() is run
 
         self.start_ca = -2000  # Starting column amount for iterations
@@ -117,7 +125,10 @@ class SpecWorker:
 
         self._dark_dir = None
         self.dark_dir = dark_dir        # Directory where dark images are stored
-        self.spec_dir = spec_dir        # Directory where plume spectra are stored
+        if spec_dir:
+            self.spec_dir = Path(spec_dir)        # Directory where plume spectra are stored
+        else:
+            self.spec_dir = None
         self.spec_dict = {}             # Dictionary containing all spectrum files from current spec_dir
 
         # Figures
@@ -210,7 +221,7 @@ class SpecWorker:
         """If dark_dir is changed we need to reset the dark_dict which holds preloaded dark specs"""
         self.dark_dict = {}
         self._dark_dir = value
-        print('Dark spectra directory set: {}'.format(self.dark_dir))
+        self.SpecLogger.debug(f'Dark spectra directory set: {self.dark_dir}')
 
     @property
     def clear_spec_raw(self):
@@ -243,6 +254,19 @@ class SpecWorker:
 
         # If new ILS is generated, then must flag that ref spectrum is no longer convolved with up-to-date ILS
         self.ref_convolved = False
+
+    @property
+    def include_ils_fit(self):
+        return self._include_ils_fit
+
+    @include_ils_fit.setter
+    def include_ils_fit(self, value):
+        self._include_ils_fit = value
+        # Attempt to update analyser with new setting. If using DOASWorker this won't be possible, so using try/except
+        try:
+            self.update_analyser()
+        except AttributeError:
+            pass
 
     def get_spec_time(self, filename):
         """
@@ -299,7 +323,7 @@ class SpecWorker:
         after first interpolating to spectrometer wavelengths
         """
         if self.wavelengths is None:
-            print('No wavelength data to perform convolution')
+            self.SpecLogger.debug('No wavelength data to perform convolution')
             return
 
         # Need an odd sized array for convolution, so if even we omit the last pixel
@@ -371,6 +395,10 @@ class SpecWorker:
         if shift_val is not None:
             setattr(self, "shift", shift_val)
 
+    def set_ils_fit(self, config):
+        """Sets whether ILS is part of the fit parameters or if a predefined ILS is used in the iFit retrieval"""
+        self.include_ils_fit = config.get("include_ils_fit")
+
     def reset_stray_pix(self):
         self._start_stray_pix = None
         self._end_stray_pix = None
@@ -385,7 +413,7 @@ class SpecWorker:
         sd = {}
 
         # Get all files into associated list/dictionary entry
-        sd['all'] = [f for f in os.listdir(self.spec_dir) if self.spec_specs.file_ext in f]
+        sd['all'] = [f for f in os.listdir(str(self.spec_dir)) if self.spec_specs.file_ext in f]
         sd['all'].sort()
         sd['plume'] = [f for f in sd['all']
                        if self.spec_specs.file_type['meas'] + self.spec_specs.file_ext in f]
@@ -421,8 +449,6 @@ class SpecWorker:
 
     def start_processing_thread(self):
         """Public access thread starter for _processing"""
-        # Reset self
-        self.reset_self()
 
         self.processing_in_thread = True
         self.process_thread = threading.Thread(target=self._process_loop, args=())
@@ -434,7 +460,7 @@ class SpecWorker:
         subdir = 'Processed_spec_{}'
         process_time = datetime.datetime.now().strftime(self.save_date_fmt)
         # Save this as an attribute so we only have to generate it once
-        self.doas_outdir = os.path.join(path, subdir.format(process_time))
+        self.doas_outdir = str(Path(path) / subdir.format(process_time))
         if make_dir:
             os.mkdir(self.doas_outdir)
 
@@ -453,14 +479,14 @@ class SpecWorker:
             f.write('Light dilution correction used (on/off)={}\n'.format(self.corr_light_dilution))
             f.write('Light dilution recal time [mins]={}\n'.format(self.recal_ld_mins))
 
-        print('DOAS processing parameters saved: {}'.format(filepath))
+        self.SpecLogger.info(f'DOAS processing parameters saved: {filepath}')
 
     def save_results(self, pathname=None, start_time=None, end_time=None, save_last=False, header=True):
         """Saves doas results"""
 
         # Only continue if there are results to save
         if len(self.results) < 1:
-            print('No DOAS results to save')
+            self.SpecLogger.info('No DOAS results to save')
             return
 
         # Need to generate a filename if one doesn't already exist/isn't provided
@@ -503,8 +529,36 @@ class SpecWorker:
         df.to_csv(pathname, mode = 'a', header = header, index = False)
 
         # Not sure we want to print every time
-        print('DOAS results saved: {}'.format(pathname))
+        self.SpecLogger.info(f'DOAS results saved: {pathname}')
 
+    def start_watching(self, directory, recursive=True):
+        """
+        Setup directory watcher for images - note this is not for watching spectra - use DOASWorker for that
+        Also starts a processing thread, so that the images which arrive can be processed
+        """
+
+        # Reset self
+        self.reset_self()
+
+        if self.watching:
+            self.SpecDirWatchLogger.info(
+                f'Already watching for spectra: {self.transfer_dir}\n'
+                f'Please stop watcher before attempting to start new watch. This isssue may be '
+                f'caused by having manual acquisitions running alongside continuous watching'
+            )
+            return
+        
+        LoggerManager.add_mem_handler(self.SpecLogger, "SpecWorker")
+        LoggerManager.add_mem_handler(self.SpecDirWatchLogger, "SpecWorker")
+
+        self.watcher = create_dir_watcher(directory, recursive, self.directory_watch_handler)
+        self.watcher.start()
+        self.transfer_dir = directory
+        self.watching = True
+        self.SpecDirWatchLogger.info(f'Watching {self.transfer_dir[-30:]} for new spectra')
+
+        # Start the processing thread
+        self.start_processing_thread()
 
 class SpectraError(Exception):
     """

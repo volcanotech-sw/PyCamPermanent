@@ -14,11 +14,11 @@ import os
 import subprocess
 
 from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator, ConfigInfo
-from pycam.networking.sockets import SocketClient, ExternalSendConnection, ExternalRecvConnection
-from pycam.networking.ssh import open_ssh, close_ssh, ssh_cmd
-from pycam.io_py import read_script_crontab, write_script_crontab, reboot_remote_pi
-from pycam.utils import read_file, StorageMount
+from pycam.networking.sockets import SocketClient, ExternalSendConnection, ExternalRecvConnection, read_network_file
+from pycam.io_py import read_script_crontab
+from pycam.utils import read_file, StorageMount, append_to_log_file, recursive_files_in_path, kill_process
 
+print(f"Running {__file__} at {datetime.datetime.now()}")
 
 def check_acq_mode():
     """Checks acquisition mode. If it is in manual, this function closes the program"""
@@ -26,42 +26,44 @@ def check_acq_mode():
     # may not want to be acquiring data)
     with open(FileLocator.RUN_STATUS_PI, 'r') as f:
         info = f.readlines()
-        if len(info) != 1:
-            print('Unexpected format in {}. Continuing without using this file.'.format(FileLocator.RUN_STATUS_PI))
-        else:
-            if 'automated' in info[0]:
-                pass
-            elif 'manual' in info[0]:
+        for line in info:
+            if 'automated' in line:
+                print(f"{line.strip()} - data expected")
+            elif 'manual' in line:
                 print('Instrument is not in automated capture mode, check_run.py is not required.')
                 sys.exit()
 
 
-def check_data(sleep=150, storage_mount=StorageMount(), date_fmt="%Y-%m-%d"):
+def check_data(sleep=90, storage_mount=StorageMount(), date_fmt="%Y-%m-%d"):
     """Check if data exists"""
+    print("Checking if data is being acquired")
     time.sleep(10)
 
     # Check we can look for new data on the SSD - don't want to look in the pycam/Images folder as this will be being
     # deleted as the pi_dbx_upload.py moves files to the cloud
     if not storage_mount.is_mounted:
-        # with open(FileLocator.ERROR_LOG_PI, 'a') as f:
-        #     f.write('{} ERROR! check_run.py: Storage is not mounted. Drive will now be mounted\n'.format(datetime.datetime.now()))
-        # print('ERROR! check_run.py: Storage is not mounted, cannot check for new data\n')
+        # append_to_log_file(FileLocator.ERROR_LOG_PI, '{} ERROR! check_run.py: Storage is not mounted. Cannot check for new data'.format(datetime.datetime.now()))
         # raise Exception
         storage_mount.mount_dev()
 
     # Get specifications of spectrometer and camera settings
     spec_specs = SpecSpecs()
-    cam_specs = CameraSpecs()
+    cam_specs_on = CameraSpecs(band='on')
+    cam_specs_off = CameraSpecs(band='off')
 
     # Create dictionary where each key is the string to look for and the value is the location of the string in the filename
     data_dict = {spec_specs.file_coadd: spec_specs.file_coadd_loc,
-                      cam_specs.file_filterids['on']: cam_specs.file_fltr_loc,
-                      cam_specs.file_filterids['off']: cam_specs.file_fltr_loc}
+                      cam_specs_on.file_filterids['on']: cam_specs_on.file_fltr_loc,
+                      cam_specs_off.file_filterids['off']: cam_specs_off.file_fltr_loc}
 
     # Get current list of images in
     date_1 = datetime.datetime.now().strftime(date_fmt)
     data_path = os.path.join(storage_mount.data_path, date_1)
-    all_dat_old = os.listdir(data_path)
+    try:
+        all_dat_old = recursive_files_in_path(data_path)
+    except Exception as e:
+        print(e)
+        all_dat_old = []
 
     # Sleep for 1.5 minutes to allow script to start running properly
     time.sleep(sleep)
@@ -73,11 +75,15 @@ def check_data(sleep=150, storage_mount=StorageMount(), date_fmt="%Y-%m-%d"):
     # need to check this again after
     if date_2 != date_1:
         data_path = os.path.join(storage_mount.data_path, date_2)
-        all_dat_old = os.listdir(data_path)
+        all_dat_old = recursive_files_in_path(data_path)
         time.sleep(sleep)
 
     # Check data
-    all_dat = os.listdir(data_path)
+    try:
+        all_dat = recursive_files_in_path(data_path)
+    except Exception as e:
+        print(e)
+        all_dat = []
     all_dat_new = [x for x in all_dat if x not in all_dat_old]
 
     # Check all 3 data types to make sure we're acquiring everything
@@ -93,9 +99,30 @@ def check_data(sleep=150, storage_mount=StorageMount(), date_fmt="%Y-%m-%d"):
 
     # If we have all data types, there are no issues so close script
     if data_bools == [True] * 3:
+        print("All 3 data types found")
         return True
     else:
+        print("Not all 3 data types found!!!")
         return False
+
+
+def restart_pycam(force=False, master_script_name="pycam_master2"):
+    """(Re)start the pycam process"""
+    if force:
+        # Kill any existing pycam process
+        print(f"Kill -9'ing {master_script_name}")
+        kill_process(master_script_name)
+        time.sleep(10)
+
+    # Redirect output to NULL so that it doesn't clutter up cron.log
+    subprocess.Popen(
+        f"python3 -u {start_script}",
+        shell=True,
+        executable="/bin/bash",
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
 
 # -----------------------------------------------------------
 # First check if check_run is already running - if so, we don't want to run again as we may interrupt the function
@@ -113,9 +140,6 @@ for line in stdout_lines:
 if count > 1:
     print('check_run.py already running, so exiting...')
     sys.exit()
-# ------------------------------------------------------
-# Check acquisition mode
-check_acq_mode()
 
 # Setups storage mount to know where to look for data
 storage_mount = StorageMount()
@@ -125,6 +149,7 @@ cfg = read_file(FileLocator.CONFIG)
 start_script = cfg[ConfigInfo.start_script]
 stop_script = cfg[ConfigInfo.stop_script]
 scripts = read_script_crontab(FileLocator.SCRIPT_SCHEDULE_PI, [start_script, stop_script])
+master_script_name = os.path.split(cfg[ConfigInfo.master_script])[-1]
 
 start_script_time = datetime.datetime.now()
 start_script_time = start_script_time.replace(hour=scripts[start_script][0],
@@ -132,62 +157,57 @@ start_script_time = start_script_time.replace(hour=scripts[start_script][0],
 stop_script_time = datetime.datetime.now()
 stop_script_time = stop_script_time.replace(hour=scripts[stop_script][0],
                                             minute=scripts[stop_script][1], second=0, microsecond=0)
+print(f"Start at {start_script_time} end at {stop_script_time}")
 
-# Wait until pycam script has been run
+# Check if the master script should be running
 if start_script_time < stop_script_time:
-    while datetime.datetime.now() < start_script_time or datetime.datetime.now() > stop_script_time:
-        print('Start time: {}'.format(start_script_time))
-        print('End time: {}'.format(stop_script_time))
-        time.sleep(60)
-        # Refresh times in case we move into a new day
-        start_script_time = datetime.datetime.now()
-        start_script_time = start_script_time.replace(hour=scripts[start_script][0],
-                                                      minute=scripts[start_script][1], second=0, microsecond=0)
-        stop_script_time = datetime.datetime.now()
-        stop_script_time = stop_script_time.replace(hour=scripts[stop_script][0],
-                                                    minute=scripts[stop_script][1], second=0, microsecond=0)
-
+    if datetime.datetime.now() < start_script_time or datetime.datetime.now() > stop_script_time:
+        print("Master script not expected to be running")
+        sys.exit()
 elif start_script_time > stop_script_time:
-    while datetime.datetime.now() < start_script_time and datetime.datetime.now() > stop_script_time:
-        print('Start time: {}'.format(start_script_time))
-        print('End time: {}'.format(stop_script_time))
-        time.sleep(60)
-        # Refresh times in case we move into a new day
-        start_script_time = datetime.datetime.now()
-        start_script_time = start_script_time.replace(hour=scripts[start_script][0],
-                                                      minute=scripts[start_script][1], second=0, microsecond=0)
-        stop_script_time = datetime.datetime.now()
-        stop_script_time = stop_script_time.replace(hour=scripts[stop_script][0],
-                                                    minute=scripts[stop_script][1], second=0, microsecond=0)
+    if datetime.datetime.now() < start_script_time and datetime.datetime.now() > stop_script_time:
+        print("Master script not expected to be running")
 else:
-    with open(FileLocator.ERROR_LOG_PI, 'a') as f:
-        f.write('ERROR! check_run.py: Pycam start and stop times are the same, this is likely to lead to unexpected behaviour. \n')
+    append_to_log_file(FileLocator.ERROR_LOG_PI, 'ERROR! check_run.py: Pycam start and stop times are the same, this is likely to lead to unexpected behaviour.')
     sys.exit()
+
+# Check acquisition mode, it should only be manual if it was set by an operator
+check_acq_mode()
 
 # Check data, if True is returned we have all data so no issues
 if check_data(storage_mount=storage_mount):
     print('check_run.py: Got all data types, instrument is running correctly')
     sys.exit()
 
-# Check mode hasn't changed to manual
-check_acq_mode()
+# Make sure the master script is running
+print(f"Making sure pycam is running using {start_script}")
+restart_pycam()
+time.sleep(15)
 
 # If there are not all data types, we need to connect to the system and correct it
 # Socket client
-sock = SocketClient(host_ip=cfg[ConfigInfo.host_ip], port=int(cfg[ConfigInfo.port_ext]))
+host_ip, port = read_network_file(FileLocator.NET_EXT_FILE_WINDOWS)
+if host_ip is None or "0.0.0.0":
+    host_ip = cfg[ConfigInfo.host_ip]
+if port is None:
+    port = int(cfg[ConfigInfo.port_ext])
+sock = SocketClient(host_ip=host_ip, port=port)
 try:
+    print("Attempting network stop/start of automatic acquisition")
+
     sock.close_socket()
     sock.connect_socket_timeout(5)
+    sock.test_connection()
 
     # Setup recv comms connection object
     recv_comms = ExternalRecvConnection(sock=sock, acc_conn=False)
     recv_comms.thread_func()
 
-    # # Setup send comms connection object
+    # Setup send comms connection object
     send_comms = ExternalSendConnection(sock=sock, acc_conn=False)
     send_comms.thread_func()
 
-    # Send exit
+    # Stop automatic acquisition
     send_comms.q.put({'SPC': 1, 'SPS': 1})
     resp = recv_comms.q.get(block=True)
 
@@ -204,43 +224,25 @@ try:
         sys.exit()
 
     # Stop pycam
-    send_comms.q.put({'SPC': 1, 'SPS': 1})
-    resp = recv_comms.q.get(block=True)
+    print("Exciting pycam")
     send_comms.q.put({'EXT': 1})
 
+    time.sleep(30)
+
+    # Restart pycam as a last ditch effort
+    restart_pycam()
+    time.sleep(1)
 
 except ConnectionError:
-    with open(FileLocator.ERROR_LOG_PI, 'a') as f:
-        f.write('check_run.py: Error connecting to pycam on port {}.\n'.format(int(cfg[ConfigInfo.port_ext])))
+    append_to_log_file(
+        FileLocator.ERROR_LOG_PI,
+        "check_run.py: Error connecting to pycam on port {}.".format(
+            int(cfg[ConfigInfo.port_ext])
+        ),
+    )
+    # if we can't connect and it's between the time the script is running
+    # something has probably gone really wrong, force a quit and relaunch
+    restart_pycam(force=True, master_script_name=master_script_name)
 
-except BaseException as e:
-    with open(FileLocator.ERROR_LOG_PI, 'a') as f:
-        f.write('check_run.py: Error {}.\n'.format(e))
-
-
-# Reboot remote pi. Then start the remote_picam start script on that pi, then reboot master_pi
-slave_ip = cfg[ConfigInfo.pi_ip]
-reboot_remote_pi(pi_ip=[slave_ip])
-
-# Start slave pi's reboot script which starts both the check_run.py script and the pycam_masterpi.py script
-# We loop through rebooting the pi as sometimes SSH doesn't work on start-up, no idea why....
-while True:
-    try:
-        ssh_cli = open_ssh(slave_ip)
-
-        stdin, stdout, stderr = ssh_cmd(ssh_cli, 'python3 ' + FileLocator.REMOTE_PI_RUN_PYCAM)
-
-        close_ssh(ssh_cli)
-
-        break
-    except Exception:
-        reboot_remote_pi(pi_ip=[slave_ip])
-
-
-
-
-
-
-
-
-
+except Exception as e:
+    append_to_log_file(FileLocator.ERROR_LOG_PI, "check_run.py: Error {}.".format(e))

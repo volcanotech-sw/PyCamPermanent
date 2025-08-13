@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 
 """Contains SSH functions used for some initial communications between pis"""
+from pycam.logging.logging_tools import LoggerManager
 
-import paramiko
+networkLogging = LoggerManager.add_logger("Networking")
 
 
-def open_ssh(ip_addr, uname='pi', pwd='raspberry'):
+def open_ssh(ip_addr, uname='pi', pwd='raspberry', port=22):
     """Opens ssh object and returns client object
 
     Parameters
@@ -18,9 +19,10 @@ def open_ssh(ip_addr, uname='pi', pwd='raspberry'):
         password
     """
     # Set up SSH and log in
+    import paramiko
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(ip_addr, username=uname, password=pwd)
+    client.connect(ip_addr, username=uname, password=pwd, port=port)
 
     return client
 
@@ -49,7 +51,7 @@ def ssh_cmd(client, cmd, background=True):
         cmd += ' &'
 
     # Run command
-    print('Sending SSH command: {}'.format(cmd))
+    networkLogging.info('Sending SSH command: {}'.format(cmd))
     stdin, stdout, stderr = client.exec_command(cmd)
 
     return stdin, stdout, stderr
@@ -106,6 +108,7 @@ def write_to_file(client_ip, filename, data, uname='pi', pwd='raspberry'):
         Password for login on remote computer
     """
     # Setup connection on SSH port (22)
+    import paramiko
     transport = paramiko.Transport((client_ip, 22))
     transport.connect(username=uname, password=pwd)
     sftp = paramiko.SFTPClient.from_transport(transport)

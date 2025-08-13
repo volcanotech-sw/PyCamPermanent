@@ -18,7 +18,7 @@ spec.get_spec()
 print(spec.wavelengths)
 print(spec.spectrum)
 
-wavelengths, sub_spec = spec.extract_subspec(spec.saturation_range)
+wavelengths, sub_spec = spec.extract_subspec(spec.saturation_wavelength_range)
 print(wavelengths)
 print(sub_spec)
 

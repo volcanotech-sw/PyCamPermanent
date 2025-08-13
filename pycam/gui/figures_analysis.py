@@ -13,6 +13,7 @@ from pycam.doas.ifit_worker import IFitWorker
 from pycam.so2_camera_processor import UnrecognisedSourceError
 from pycam.utils import make_circular_mask_line, truncate_path
 from pycam.exceptions import InvalidCalibration
+from pycam.logging.logging_tools import LoggerManager
 
 from pyplis import LineOnImage, Img
 from pyplis.helpers import make_circular_mask, shifted_color_map
@@ -43,6 +44,7 @@ import copy
 
 refresh_rate = 200    # Refresh rate of draw command when in processing thread
 
+GuiLogger = LoggerManager.add_logger("GUI")
 
 class SequenceInfo:
     """
@@ -626,8 +628,8 @@ class ImageSO2(LoadSaveProcessingSettings):
             self.line_draw = self.fig.canvas.callbacks.connect('button_press_event', self.ica_draw)
         elif self.interactive_mode == 1:
             self.fig.canvas.mpl_disconnect(self.line_draw)
-            self.rs = widgets.RectangleSelector(self.ax, self.draw_roi, drawtype='box',
-                                                rectprops=dict(facecolor='red', edgecolor='blue', alpha=0.5, fill=True))
+            self.rs = widgets.RectangleSelector(self.ax, self.draw_roi,
+                                                props=dict(facecolor='red', edgecolor='blue', alpha=0.5, fill=True))
         else:
             raise ValueError('Unrecognised interactive_mode for ImageSO2')
 
@@ -719,7 +721,8 @@ class ImageSO2(LoadSaveProcessingSettings):
                     line_idx = self.current_ica - 1
                     self.del_ica(line_idx)
                 else:
-                    print('No space to add PCS line, please use force_add or delete a line before adding another')
+                    GuiLogger.info('No space to add PCS line, please use force_add or delete a '
+                    'line before adding another')
                     return
 
         # Make line
@@ -767,7 +770,7 @@ class ImageSO2(LoadSaveProcessingSettings):
         ica_num = self.num_ica
         for ica in self.PCS_lines_list[self.num_ica:]:
             if ica is not None:
-                self.del_ica(ica_num)
+                self.del_ica(ica_num, permanent=True)
                 # self.PCS_lines_list[ica_num] = None   # I think this isn't required as it is done in del_ica
             ica_num += 1
 
@@ -874,9 +877,9 @@ class ImageSO2(LoadSaveProcessingSettings):
 
             self.img_canvas.draw()
         else:
-            print('Clicked outside axes bounds but inside plot window')
+            GuiLogger.info('Clicked outside axes bounds but inside plot window')
 
-    def del_ica(self, line_num, update_all=True):
+    def del_ica(self, line_num, update_all=True, permanent = False):
         """Searches axis for line object relating to pyplis line object and removes it
 
         Parameters
@@ -909,6 +912,13 @@ class ImageSO2(LoadSaveProcessingSettings):
         # Once removed, set the line to None
         self.PCS_lines_list[line_num] = None
 
+        if pyplis_worker.auto_nadeau_pcs == line_num and permanent:
+            pyplis_worker.config['auto_nadeau_pcs'] = 0
+            if pyplis_worker.auto_nadeau_line:
+                self.root.after_idle(self.show_auto_nadeau_warn)
+                GuiLogger.info("The ICA line selected for Nadeau line autogeneration was removed. "
+                               "Reverting to ICA line 1 for Nadeau line autogeneration")
+
         if update_all:
             # Gather variables
             self.gather_vars()
@@ -918,6 +928,13 @@ class ImageSO2(LoadSaveProcessingSettings):
 
             # Redraw canvas
             self.img_canvas.draw()
+
+    @staticmethod
+    def show_auto_nadeau_warn():
+        messagebox.showwarning(
+            "Reverting ICA line used for Nadeau line autogeneration",
+            "ICA line used for Nadeau line autogeneration removed\n"
+            "Reverting to ICA line 1 for Nadeau line autogeneration")
 
     def change_cmap(self, cmap):
         """Change colourmap of image"""
@@ -966,7 +983,7 @@ class ImageSO2(LoadSaveProcessingSettings):
         if draw:
             # If in processing, the canvas is drawn a lot, so we don't draw it here
             if not self.pyplis_worker.in_processing:
-                print('Drawing canvas')
+                GuiLogger.debug('Drawing canvas')
                 self.img_canvas.draw()
 
     def plt_opt_flow(self, draw=True):
@@ -1043,7 +1060,7 @@ class ImageSO2(LoadSaveProcessingSettings):
         asp /= self.h_ratio
         self.ax_xsect.set_aspect(asp)
 
-        self.ax_xsect.grid(b=True, which='major')
+        self.ax_xsect.grid(visible=True, which='major')
         self.ax_xsect.legend(loc='upper right')
 
     def update_plot(self, img_tau, img_cal=None, draw=True):
@@ -1125,7 +1142,7 @@ class ImageSO2(LoadSaveProcessingSettings):
                 else:
                     with self.lock:
                         self.img_canvas.draw()
-                        self.cbar.draw_all()
+                        self.cbar._draw_all()
             else:
                 return
         except queue.Empty:
@@ -1393,7 +1410,8 @@ class TimeSeriesFigure:
                                 markersize=self.ER_markersize,
                                 in_kg=False)
                     except KeyError:
-                        print('No emission rate analysis data available for {}'.format(self.line_plot))
+                        GuiLogger.debug(f'No emission rate analysis data available '
+                                        f'for {self.line_plot}')
 
         # Plot the summed total
         if self.plot_total and len(self.total_lines) > 1:
@@ -1412,7 +1430,8 @@ class TimeSeriesFigure:
                                 marker=self.marker,
                                 in_kg=False)
                     except KeyError:
-                        print('No emission rate analysis data available for sum of all ICA lines')
+                        GuiLogger.debug('No emission rate analysis data available for sum of all '
+                                        'ICA lines')
 
         # Adjust ylimits and do general plot tidying
         self.axes[0].autoscale(axis='y')
@@ -1424,7 +1443,7 @@ class TimeSeriesFigure:
         self.axes[2].set_ylabel(r"$\varphi\,[^{\circ}$]")
         self.axes[3].set_ylabel(r"$ROI_{BG}\,[cm^{-2}]$")
         for i in range(len(self.axes)):
-            self.axes[i].grid(b=True, which='major')
+            self.axes[i].grid(visible=True, which='major')
             if i == 1 or i == 2:
                 plt.setp(self.axes[i].get_xticklabels(), visible=False)
 
@@ -2516,11 +2535,11 @@ class PlumeBackground(LoadSaveProcessingSettings):
         rect_dict = dict(fc=self.rect_colours[self.rect_selector.get()], ec=self.rect_colours[self.rect_selector.get()],
                          alpha=0.3, fill=True)
 
-        self.rs_A = widgets.RectangleSelector(self.fig_tau_A.axes[0], self.draw_roi_A, drawtype='box',
-                                              rectprops=rect_dict)
+        self.rs_A = widgets.RectangleSelector(self.fig_tau_A.axes[0], self.draw_roi_A,
+                                              props=rect_dict)
 
-        self.rs_B = widgets.RectangleSelector(self.fig_tau_B.axes[0], self.draw_roi_B, drawtype='box',
-                                              rectprops=rect_dict)
+        self.rs_B = widgets.RectangleSelector(self.fig_tau_B.axes[0], self.draw_roi_B,
+                                              props=rect_dict)
 
     def draw_roi_A(self, eclick, erelease):
         """Draws ROI"""
@@ -3398,7 +3417,7 @@ class ProcessSettings(LoadSaveProcessingSettings):
     def set_cell_cal_dir(self, cal_dir):
         """Directly sets cell calibration directory without filedialog"""
         if not os.path.exists(cal_dir):
-            print('Cannot set calibration directory as requested directory does not exist')
+            GuiLogger.info('Cannot set calibration directory as requested directory does not exist')
             return
         self.cell_cal_dir = cal_dir
         pyplis_worker.config['cell_cal_dir'] = self.cell_cal_dir
@@ -3433,13 +3452,7 @@ class ProcessSettings(LoadSaveProcessingSettings):
         pyplis_worker.config['img_buff_size'] = self.img_buff_size
         pyplis_worker.config['save_opt_flow'] = self.save_opt_flow
         pyplis_worker.config['time_zone'] - self.time_zone
-        if pyplis_worker.config["use_vign_corr"]:
-            pyplis_worker.apply_config(subset=["dark_img_dir"])
-            pyplis_worker.load_BG_img(self.bg_A_path, band='A')
-            pyplis_worker.load_BG_img(self.bg_B_path, band='B')
-        else:
-            pyplis_worker.load_BG_img(FileLocator.ONES_MASK, band='A', ones=True)
-            pyplis_worker.load_BG_img(FileLocator.ONES_MASK, band='B', ones=True)
+        pyplis_worker.load_BG_pair(self.bg_A_path, self.bg_B_path)
 
     def save_close(self):
         """Gathers all variables and then closes"""
@@ -3882,8 +3895,8 @@ class DOASFOVSearchFrame(LoadSaveProcessingSettings):
             else:
                 raise  IndexError
         except (IndexError, TypeError):
-            print('Error when attempting to set DOAS FOV centre pixel. Aborting setting.\n'
-                  'Expected list with length 2, got type: {}'.format(type(value)))
+            GuiLogger.warning(f'Error when attempting to set DOAS FOV centre pixel. Aborting '
+                              f'setting. Expected list with length 2, got type: {type(value)}')
 
     @property
     def fov_rad(self):
@@ -3959,9 +3972,9 @@ class DOASFOVSearchFrame(LoadSaveProcessingSettings):
                 #TODO This plotting isn't working as I want - not updating. Maybe just save each data point to an array
                 #TODO in pyplis_worker and then update the plot each time by clearing the axes and replotting the full
                 #TODO arrays, rather than doing one by one? This would also mean I could save the full arrays later
-                print('Calib time: {}'.format(self.pyplis_worker.img_tau.meta['start_acq']))
-                print('Calib coeffs: {}'.format(self.pyplis_worker.calib_pears.calib_coeffs))
-                print('Calib err: {}'.format(self.pyplis_worker.calib_pears.err()))
+                GuiLogger.debug(f'Calib time: {self.pyplis_worker.img_tau.meta['start_acq']}')
+                GuiLogger.debug(f'Calib coeffs: {self.pyplis_worker.calib_pears.calib_coeffs}')
+                GuiLogger.debug(f'Calib err: {self.pyplis_worker.calib_pears.err()}')
 
                 # Plot slope coefficient
                 self.ax_cal_params_1.plot(self.pyplis_worker.fit_data[:, 0],
@@ -3974,7 +3987,7 @@ class DOASFOVSearchFrame(LoadSaveProcessingSettings):
                 self.ax_cal_params_1.margins(0.05)
                 self.ax_cal_params_2.margins(0.05)
             except (AttributeError, ValueError, TypeError) as e:
-                print('Error in calibration parameter fit plot: {}'.format(e))
+                GuiLogger.warning(f'Error in calibration parameter fit plot: {e}')
 
         # Update correlation image plot
         if update_img:
@@ -4335,11 +4348,11 @@ class CellCalibFrame:
         abs_img = self.pyplis_worker.cell_tau_dict[self.pyplis_worker.sens_mask_ppmm]
         self.abs_im.set_data(abs_img)
         self.ax_abs.set_title('Cell absorbance: {} ppm.m'.format(self.pyplis_worker.sens_mask_ppmm))
-        self.cbar_abs.draw_all()
+        self.cbar_abs._draw_all()
 
         # Plot sensitivity mask
         self.mask_im.set_data(self.pyplis_worker.sensitivity_mask)
-        self.cbar_mask.draw_all()
+        self.cbar_mask._draw_all()
 
         # Set limits for images
         self.scale_imgs(draw=False)
@@ -4530,7 +4543,7 @@ class CrossCorrelationSettings(LoadSaveProcessingSettings):
             self.label_lag_secs.configure(text='{:.1f}'.format(info['lag']))
             self.label_speed.configure(text='{:.1f}'.format(info['velocity']))
         except KeyError:
-            print('No cross-correlation info to update')
+            GuiLogger.warning('No cross-correlation info to update')
 
     def __draw_canv__(self):
         """Draws canvas periodically"""
@@ -4693,9 +4706,12 @@ class NadeauFlowSettings(LoadSaveProcessingSettings):
         row += 1
         lab = ttk.Label(auto_frame, text='ICA line:')
         lab.grid(row=row, column=0, padx=self.pdx, pady=self.pdy, sticky='w')
+        max_lines = len([line for line in self.pyplis_worker.PCS_lines_all if line is not None])
         pcs_spin = ttk.Spinbox(auto_frame, textvariable=self._auto_nadeau_pcs,
-                               from_=1, to=len(self.pyplis_worker.PCS_lines_all), command=self.run_nadeau_line)
+                               from_=1, to=max_lines, command=self.run_nadeau_line)
         pcs_spin.grid(row=row, column=1, sticky='ew', padx=self.pdx, pady=self.pdy)
+        pcs_spin.bind('<FocusOut>', self.run_nadeau_line)
+        pcs_spin.bind('<Return>', self.run_nadeau_line)
 
         # -------------------------------------------
         # Build figure displaying cross-correlation
@@ -4875,8 +4891,8 @@ class NadeauFlowSettings(LoadSaveProcessingSettings):
             else:
                 raise IndexError
         except (IndexError, TypeError):
-            print('Error when attempting to set gas source coordinates. Aborting setting.\n'
-                  'Expected list with length 2, got type: {}'.format(type(value)))
+            GuiLogger.warning(f'Error when attempting to set gas source coordinates. Aborting '
+                              f'setting. Expected list with length 2, got type: {type(value)}')
 
     def update_source_plot(self):
         """Draws source coordinate marker on plot"""
@@ -4949,14 +4965,14 @@ class NadeauFlowSettings(LoadSaveProcessingSettings):
         asp /= self.h_ratio
         self.ax_xsect.set_aspect(asp)
 
-        self.ax_xsect.grid(b=True, which='major')
+        self.ax_xsect.grid(visible=True, which='major')
         self.ax_xsect.set_xlabel('Pixel')
         self.ax_xsect.set_ylabel('\u03C4')
 
         if draw:
             self.q.put(1)
 
-    def run_nadeau_line(self):
+    def run_nadeau_line(self, event = None):
         """Instigates automatic generation of the Nadeau line and plots current line pased on this"""
         # Update pyplis_worker config
         self.gather_vars(update_pyplis=True)
@@ -5094,7 +5110,7 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
         self.dpi = self.fig_setts.dpi
         self.fig_size = self.fig_setts.fig_SO2
         self.img_tau = None
-        self.img_vel = np.zeros([self.cam_specs.pix_num_y, self.cam_specs.pix_num_x], dtype=np.float)
+        self.img_vel = np.zeros([self.cam_specs.pix_num_y, self.cam_specs.pix_num_x], dtype=float)
 
         self.pdx = 5
         self.pdy = 5
@@ -5525,8 +5541,8 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
         self.img_canvas.get_tk_widget().grid(row=0, column=0)
 
         # Add rectangle crop functionality
-        self.rs = widgets.RectangleSelector(self.ax, self.draw_roi, drawtype='box',
-                                            rectprops=dict(facecolor='red', edgecolor='blue', alpha=0.5, fill=True))
+        self.rs = widgets.RectangleSelector(self.ax, self.draw_roi,
+                                            props=dict(facecolor='red', edgecolor='blue', alpha=0.5, fill=True))
 
         # Initial rectangle format
         self.roi_start_x, self.roi_end_x = self.roi_abs[0], self.roi_abs[2]
@@ -6322,7 +6338,8 @@ class LightDilutionSettings(LoadSaveProcessingSettings):
         """Draws grid figure with current doas_worker grid"""
         if self.doas_worker.ifit_so2_0 is not None and self.doas_worker.ifit_so2_1 is not None:
             if self.doas_worker.ifit_so2_0.shape != self.doas_worker.ifit_so2_1.shape:
-                print('Grids for two fit windows are not compatible, canot plot light dilution grid.')
+                GuiLogger.info('Grids for two fit windows are not compatible, cannot plot light '
+                               'dilution grid.')
                 return
 
             self.ax_grid.clear()
@@ -6407,8 +6424,8 @@ class LightDilutionSettings(LoadSaveProcessingSettings):
             self.line_draw = self.fig.canvas.callbacks.connect('button_press_event', self.draw_line)
         else:
             self.fig.canvas.mpl_disconnect(self.line_draw)
-            self.rs = widgets.RectangleSelector(self.ax, self.draw_roi, drawtype='box',
-                                                rectprops=dict(facecolor='red', edgecolor='blue', alpha=0.5, fill=True))
+            self.rs = widgets.RectangleSelector(self.ax, self.draw_roi,
+                                                props=dict(facecolor='red', edgecolor='blue', alpha=0.5, fill=True))
 
     def draw_line(self, event):
         """Draws line on image for light dilution following click event"""

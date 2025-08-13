@@ -2,7 +2,7 @@
 
 ## Documentation
 
-Detailed user and quick start guides can be found at [volcanotech.org](https://www.volcanotech.org/software.html)  
+Detailed user and quick start guides can be found at [volcanotech.co.uk](https://www.volcanotech.co.uk/software.html)  
 
 ## Pre-requsities
 
@@ -26,10 +26,10 @@ cd PyCamPermanent
 - If you don't have `git` installed you can still download and extract [the repository](https://github.com/ubdbra001/PyCamPermanent/tree/standalone) (for instructions, see 'If All Else Fails, Get The Code' on [this page](https://www.howtogeek.com/827348/how-to-download-files-from-github/))
   - Once downloaded you need to extract the files from the zipped file and navigate to the newly extracted directory in your terminal
 
-2. Create a new `python 3.8` conda environment and activate it:
+2. Create a new `python 3.12` conda environment and activate it:
 
 ```sh
-conda create -n pycam python=3.8
+conda create -n pycam python=3.12
 conda activate pycam
 ```
 
@@ -44,3 +44,19 @@ pip install -r requirements.txt
 ```sh
 python run_pycam.py
 ```
+
+## Command Line Tools Documentation
+
+Access to the headless PyCam tools are through the script `process_emission_rates.py`.  
+
+There are 3 commands within the script:
+
+- `doas` - Batch process spectrometer data in `.npy` format to produce a DOAS calibration
+- `pyplis` - Batch process image pairs with DOAS results to produce SO2 emmision results
+- `watcher` - Starts a file watcher that will process any spectrometer or image data found in the specified directory or sub-directories
+
+For detailed usage, run each script with the `--help` flag to view available options and arguments.
+
+### Example
+
+An example of running the tool in watcher mode `python process_emission_rates.py watcher --config_path='C:/Users/myuser/Documents/myconfig.yaml'`

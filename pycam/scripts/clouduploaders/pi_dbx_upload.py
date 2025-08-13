@@ -36,7 +36,7 @@ while True:
         if 'dbx' not in locals():
             # Create dropbox object
             dbx = DropboxIO(watch_folder=FileLocator.IMG_SPEC_PATH, delete_after=True, recursive=True)
-            # dbx = DropboxIO(watch_folder='C:\\Users\\tw9616\\Documents\\PostDoc\\Permanent Camera\\', delete_after=False)
+            # dbx = DropboxIO(watch_folder='C:/Users/tw9616/Documents/PostDoc/Permanent Camera/', delete_after=False)
 
             # Upload any existing files
             dbx.upload_existing_files()

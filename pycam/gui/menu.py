@@ -6,17 +6,18 @@ from pycam.gui.network import ConnectionGUI, instrument_cmd, run_pycam
 import pycam.gui.cfg as cfg
 from pycam.gui.cfg_menu_frames import geom_settings, process_settings, plume_bg, cell_calib, \
     opti_flow, light_dilution, cross_correlation, doas_fov, basic_acq_handler, automated_acq_handler,\
-    calibration_wind, instrument_cfg, temp_log, plume_velocity, nadeau_flow
+    calibration_wind, instrument_cfg, temp_log, plume_velocity, nadeau_flow, comm_recv_handler
 from pycam.gui.misc import About, LoadSaveProcessingSettings
 from pycam.io_py import save_pcs_line, load_pcs_line, save_light_dil_line, load_light_dil_line, create_video
 import pycam.gui.settings as settings
 from pycam.networking.FTP import FileTransferGUI
 from pycam.cfg import pyplis_worker, process_defaults_loc
 from pycam.doas.cfg import doas_worker
-from pycam.setupclasses import FileLocator
+from pycam.setupclasses import FileLocator, ConfigInfo
 from pycam.networking.ssh import open_ssh, ssh_cmd, close_ssh
 from pycam.utils import truncate_path
 from pycam.exceptions import InvalidCalibration
+from pycam.logging.logging_tools import LoggerManager
 
 from pyplis import LineOnImage
 
@@ -29,6 +30,7 @@ from inspect import cleandoc
 import os
 import threading
 
+GuiLogger = LoggerManager.add_logger("GUI")
 
 class PyMenu:
     """tk menu bar for placing along the top o the GUI
@@ -61,7 +63,7 @@ class PyMenu:
         self.menus[tab] = tk.Menu(self.frame, tearoff=0)
 
         # Load options
-        self.load_frame = LoadFrame(self.parent, pyplis_work=pyplis_worker, doas_work=doas_worker)
+        self.load_frame = LoadFrame(self.parent, pyplis_work=pyplis_worker, doas_work=self.doas_worker)
         self.submenu_load = tk.Menu(self.frame, tearoff=0)
         self.menus[tab].add_cascade(label='Load', menu=self.submenu_load)
         self.submenu_load.add_command(label='Load config file', command=self.load_frame.load_config_file)
@@ -104,15 +106,14 @@ class PyMenu:
 
         self.submenu_cmd = tk.Menu(self.frame, tearoff=0)
         self.menus[tab].add_cascade(label='Commands', menu=self.submenu_cmd)
-        self.submenu_cmd.add_command(label='Restart', command=lambda: instrument_cmd('RST'))
-        self.submenu_cmd.add_command(label='Restart cameras', command=lambda: instrument_cmd('RSC'))
-        self.submenu_cmd.add_command(label='Restart spectrometer', command=lambda: instrument_cmd('RSS'))
-        self.submenu_cmd.add_separator()
-        self.submenu_cmd.add_command(label='Run pycam (with automated capture)',
-                                     command=lambda: run_pycam(cfg.sock.host_ip, auto_capt=1))
         self.submenu_cmd.add_command(label='Run pycam (without automated capture)',
                                      command=lambda: run_pycam(cfg.sock.host_ip, auto_capt=0))
+        self.submenu_cmd.add_command(label='Run pycam (with automated capture)',
+                                     command=lambda: run_pycam(cfg.sock.host_ip, auto_capt=1))
+        self.submenu_cmd.add_separator()
         self.submenu_cmd.add_command(label='Stop pycam', command=lambda: instrument_cmd('EXT'))
+        self.submenu_cmd.add_separator()
+        self.submenu_cmd.add_command(label='Restart', command=lambda: instrument_cmd('RST'))
         self.menus[tab].add_separator()
 
         # Data transfer
@@ -120,16 +121,16 @@ class PyMenu:
         self.menus[tab].add_cascade(label='Data Transfer', menu=self.submenu_data)
         # self.submenu_data.add_command(label='Start transfer', command=self.ftp_transfer.start_transfer)
         self.submenu_data.add_command(label='Start transfer (new images only)',
-                                      command=lambda: self.ftp_transfer.start_transfer(new_only=True))
+                                      command=lambda: self.ftp_transfer.start_transfer(new_only=True, recv_handler=comm_recv_handler, indicator=cfg.indicator))
         self.submenu_data.add_command(label='Stop transfer', command=self.ftp_transfer.stop_transfer)
         self.submenu_data.add_command(label='Options', command=self.ftp_transfer.generate_frame)  # Add options such as directory to transfer to/from?? Maybe only transfer certain data - certain times etc
         self.submenu_data.add_separator()
         self.submenu_data.add_command(label='Get temperature log', command=temp_log.generate_frame)
         self.submenu_data.add_separator()
-        self.submenu_data.add_command(label='Mount SSD', command=lambda: self.mount_ssd(cfg.ftp_client.host_ip))
-        self.submenu_data.add_command(label='Unmount SSD', command=lambda: self.unmount_ssd(cfg.ftp_client.host_ip))
+        self.submenu_data.add_command(label='Mount SSD', command=lambda: self.mount_ssd(cfg.ftp_client.host_ip, username=cfg.config[ConfigInfo.uname], password=cfg.config[ConfigInfo.pwd], port=cfg.config[ConfigInfo.ssh_port]))
+        self.submenu_data.add_command(label='Unmount SSD', command=lambda: self.unmount_ssd(cfg.ftp_client.host_ip, username=cfg.config[ConfigInfo.uname], password=cfg.config[ConfigInfo.pwd], port=cfg.config[ConfigInfo.ssh_port]))
         # self.submenu_data.add_command(label='SSD full download', command=cfg.ftp_client.full_ssd_download)
-        # self.submenu_data.add_command(label='Clear SSD data', command=lambda: self.clear_ssd(cfg.ftp_client.host_ip))
+        # self.submenu_data.add_command(label='Clear SSD data', command=lambda: self.clear_ssd(cfg.ftp_client.host_ip, username=cfg.config[ConfigInfo.uname], password=cfg.config[ConfigInfo.pwd], port=cfg.config[ConfigInfo.ssh_port]))
         # self.submenu_data.add_command(label='Free space on SSD', command=lambda: self.free_ssd(cfg.ftp_client.host_ip))
         self.menus[tab].add_separator()
 
@@ -144,6 +145,7 @@ class PyMenu:
                                      command=automated_acq_handler.stop_cont)
         self.submenu_acq.add_separator()
         self.submenu_acq.add_command(label='Update all instrument settings', command=automated_acq_handler.acq_comm)
+        # TODO remove individual camera and spectrometer updating?
         self.submenu_acq.add_command(label='Update spectrometer settings', command=automated_acq_handler.acq_spec_full)
         self.submenu_acq.add_command(label='Update camera settings', command=automated_acq_handler.acq_cam_full)
         self.submenu_acq.add_command(label='Retrieve current settings',
@@ -206,8 +208,8 @@ class PyMenu:
         keys.append(tab)
         self.menus[tab] = tk.Menu(self.frame, tearoff=0)
 
-        self.menus[tab].add_command(label='Load DOAS Results', command=doas_worker.load_results)
-        self.menus[tab].add_command(label='Load DOAS Directory', command=doas_worker.load_dir)
+        self.menus[tab].add_command(label='Load DOAS Results', command=self.doas_worker.load_results)
+        self.menus[tab].add_command(label='Load DOAS Directory', command=self.doas_worker.load_dir)
         self.menus[tab].add_command(label='Process DOAS', command=self.thread_doas_processing)
         self.menus[tab].add_separator()
 
@@ -245,7 +247,7 @@ class PyMenu:
 
     def thread_doas_processing(self):
         """Threads DOAS processsing so gui frees up"""
-        thread = threading.Thread(target=doas_worker.start_processing_threadless, args=())
+        thread = threading.Thread(target=self.doas_worker.start_processing_threadless, args=())
         thread.daemon = True
         thread.start()
 
@@ -269,13 +271,13 @@ class PyMenu:
         """Sets the display mode on click of checkbutton"""
         pyplis_worker.display_only = bool(self.disp_var.get())
 
-    def mount_ssd(self, ip, username='pi', password='raspberry'):
+    def mount_ssd(self, ip, username='pi', password='raspberry', port=22):
         """
         Attempts to mount SSD on raspberry pi
         :param ip:  str     IP address of pi
         """
         try:
-            client = open_ssh(ip, uname=username, pwd=password)
+            client = open_ssh(ip, uname=username, pwd=password, port=port)
             ssh_cmd(client, 'python3 {}'.format(FileLocator.MOUNT_SSD_SCRIPT))
             close_ssh(client)
             messagebox.showinfo('SSD mounted', 'SSD should now be successfully mounted to the Raspberry Pi')
@@ -284,13 +286,13 @@ class PyMenu:
                                  'An error occurred when attempting to mount SSD vis SSH.\n'
                                  '{}'.format(e))
 
-    def unmount_ssd(self, ip, username='pi', password='raspberry'):
+    def unmount_ssd(self, ip, username='pi', password='raspberry', port=22):
         """
         Attempts to mount SSD on raspberry pi
         :param ip:  str     IP address of pi
         """
         try:
-            client = open_ssh(ip, uname=username, pwd=password)
+            client = open_ssh(ip, uname=username, pwd=password, port=port)
             ssh_cmd(client, 'python3 {}'.format(FileLocator.UNMOUNT_SSD_SCRIPT))
             close_ssh(client)
             messagebox.showinfo('SSD unmounted', 'SSD should now be successfully unmounted to the Raspberry Pi')
@@ -299,7 +301,7 @@ class PyMenu:
                                  'An error occurred when attempting to mount SSD vis SSH.\n'
                                  '{}'.format(e))
 
-    def clear_ssd(self, ip, username='pi', password='raspberry'):
+    def clear_ssd(self, ip, username='pi', password='raspberry', port=22):
         """
         Clears all SSD data by SSHing into pi then running the clear_ssd.py script
         :param ip:  str     IP address of pi
@@ -309,7 +311,7 @@ class PyMenu:
                                 'Are you sure you want to proceed?')
         if a:
             try:
-                client = open_ssh(ip, uname=username, pwd=password)
+                client = open_ssh(ip, uname=username, pwd=password, port=22)
                 ssh_cmd(client, 'python3 {}'.format(FileLocator.CLEAR_SSD_SCRIPT))
                 close_ssh(client)
                 messagebox.showinfo('SSD cleared', 'SSD data has been cleared.')
@@ -331,18 +333,23 @@ class PyMenu:
         lab = ttk.Label(self.space_frame, text='Create space (GB):')
         lab.grid(row=1, column=0)
 
+        # Pi login details
+        uname = cfg.config[ConfigInfo.uname]
+        pwd = cfg.config[ConfigInfo.pwd]
+        port = cfg.config[ConfigInfo.ssh_port]
+
         # Free space entry
         free_space = tk.IntVar()
         free_space.set(50)
         entry = ttk.Spinbox(self.space_frame, from_=0, to=1000, increment=5, textvariable=free_space)
         entry.grid(row=1, column=1, sticky='nsew')
 
-        butt = ttk.Button(self.space_frame,text='Create space', command=lambda: self._free_ssd(ip, free_space.get()))
+        butt = ttk.Button(self.space_frame,text='Create space', command=lambda: self._free_ssd(ip, free_space.get(), username=uname, password=pwd, port=port))
         butt.grid(row=2, column=0, sticky='nsew')
         butt = ttk.Button(self.space_frame, text='Cancel', command=self.space_frame.destroy)
         butt.grid(row=2, column=1, sticky='nsew')
 
-    def _free_ssd(self, ip, space, username='pi', password='raspberry'):
+    def _free_ssd(self, ip, space, username='pi', password='raspberry', port=22):
         """
         Frees space on SSD data by SSHing into pi then running the free_space_ssd.py script
         """
@@ -352,7 +359,7 @@ class PyMenu:
                                 'Are you sure you want to proceed?'.format(space))
         if a:
             try:
-                client = open_ssh(ip, uname=username, pwd=password)
+                client = open_ssh(ip, uname=username, pwd=password, port=port)
                 ssh_cmd(client, 'python3 {} {}'.format(FileLocator.FREE_SPACE_SSD_SCRIPT, space))
                 close_ssh(client)
                 messagebox.showinfo('SSD cleared', 'SSD data has been cleared.')
@@ -372,15 +379,15 @@ class PyMenu:
                                             initialdir=FileLocator.IMG_SPEC_PATH_WINDOWS)
         if not directory:
             return
-        print('Unpacking camera data...')
+        GuiLogger.info('Unpacking camera data...')
         cfg.ftp_client.img_dir.unpack_data(directory)
-        print('Unpacking spectrometer data...')
+        GuiLogger.info('Unpacking spectrometer data...')
         cfg.ftp_client.spec_dir.unpack_data(directory)
 
     def stop_sequence_processing(self):
         """Stops sequence processing of SO2 camera and DOAS"""
         pyplis_worker.stop_sequence_processing()
-        doas_worker.stop_sequence_processing()
+        self.doas_worker.stop_sequence_processing()
 
     def start_watching_dir(self):
         try:
@@ -586,7 +593,7 @@ class LoadFrame(LoadSaveProcessingSettings):
             filename = filedialog.askopenfilename(initialdir=self.init_dir, **kwargs)
 
         if len(filename) > 0:
-            line = load_pcs_line(filename)
+            line, _ = load_pcs_line(filename)
             if new_line:
                 line_num = None
             else:
@@ -789,21 +796,22 @@ class LoadFrame(LoadSaveProcessingSettings):
         doas_fov.load_defaults()
         calibration_wind.ils_frame.ILS_path = self.pyplis_worker.config["ILS_path"]
         calibration_wind.ils_frame.load_ILS()
-
         self.pyplis_worker.apply_config()
         self.pyplis_worker.load_sequence(pyplis_worker.img_dir, plot_bg=False)
         self.doas_worker.load_dir(self.pyplis_worker.spec_dir, prompt=False, plot=True)
         self.main_gui.set_transfer_dir()
         self.doas_worker.get_wavelengths(pyplis_worker.config)
         self.doas_worker.get_shift(pyplis_worker.config)
+        self.doas_worker.set_ils_fit(pyplis_worker.config)
         self.main_gui.spec_wind.spec_frame.update_all()
         self.main_gui.spec_wind.doas_frame.update_vals()
-
+        self.doas_worker.species_info = self.pyplis_worker.species_paths
+        calibration_wind.load_ref_species()
         if pyplis_worker.missing_path_param_warn is not None:
             messagebox.showwarning("Missing path params not updated",
                                    pyplis_worker.missing_path_param_warn)
             pyplis_worker.missing_path_param_warn = None
-
+            
     def reset_pcs_lines(self):
         """Reset current PCS lines"""
 
@@ -1100,7 +1108,7 @@ class SaveFrame(LoadSaveProcessingSettings):
     def save_pcs(self):
         """Saves PCS line"""
         if len(self.pyplis_worker.PCS_lines_all) == 0:
-            print('There are no lines to be saved. Please draw an ICA line first')
+            GuiLogger.warning('There are no lines to be saved. Please draw an ICA line first')
             return
 
         filename = filedialog.asksaveasfilename(parent=self.frame, initialdir=os.path.join(self.init_dir, 'pcs_lines'))
@@ -1119,7 +1127,8 @@ class SaveFrame(LoadSaveProcessingSettings):
     def save_dil(self):
         """Saves PCS line"""
         if len(self.dil_lines) == 0:
-            print('There are no lines to be saved. Please draw an light dilution line first')
+            GuiLogger.warning('There are no lines to be saved. '
+                              'Please draw an light dilution line first')
             return
 
         filename = filedialog.asksaveasfilename(parent=self.frame, initialdir=os.path.join(self.init_dir, 'dil_lines'))
