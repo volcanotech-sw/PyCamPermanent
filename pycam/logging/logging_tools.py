@@ -182,7 +182,7 @@ root_logger = logging.getLogger()
 # If the root logger doesn't have a file handler then add one
 if not any(isinstance(handler, logging.FileHandler) for handler in root_logger.handlers):
     # Start by defining the root log path
-    root_log_path = Path.home() / "pycam_logs" / "root.log"
+    root_log_path = Path.home() / "pycam" / "logs" / "root.log"
 
     # Add the file handler
     LoggerManager.add_file_handler(root_logger, root_log_path, level = logging.INFO)

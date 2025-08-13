@@ -6,6 +6,7 @@ Setup classes for defining default parameters or loading in parameters from file
 > Spectrometer attributes
 """
 from pycam.utils import check_filename
+from pycam.logging.logging_tools import LoggerManager
 
 import warnings
 import numpy as np
@@ -14,6 +15,7 @@ import inspect
 import os
 import platform
 
+pycamLogger = LoggerManager.add_logger("Pycam")
 
 pycam_details = {
     'version': '2024.11 - Paricutin',
@@ -58,19 +60,19 @@ class MetaFileLocator(type):
         if attr.endswith("_PI") and not running_on_pi() and not in_gui:
             # this should be a _WINDOWS instead
             attr_new = attr[:-3] + "_WINDOWS"
-            print(f"Using {attr_new} instead of {attr}")
+            pycamLogger.info(f"Using {attr_new} instead of {attr}")
             attr = attr_new
         elif attr.endswith("_WINDOWS") and running_on_pi() and not in_gui:
             # this should be a _PI instead
             attr_new = attr[:-8] + "_PI"
-            print(f"Using {attr_new} instead of {attr}")
+            pycamLogger.info(f"Using {attr_new} instead of {attr}")
             attr = attr_new
 
         try:
             return super().__getattribute__(attr)
         except AttributeError:
             # that attribute name didn't work, instead try for the base name
-            print(f"Failed to find attribute {attr}", end="")
+            pycamLogger.error(f"Failed to find attribute {attr}", end="")
             if not attr.endswith("_PI") and not attr.endswith("_WINDOWS"):
                 # try the attribute with the current os appended
                 if running_on_pi():
@@ -80,7 +82,7 @@ class MetaFileLocator(type):
             else:
                 # try the attribute without the os appended
                 attr = "_".join(attr.split("_")[:-1])
-            print(f", trying {attr} instead")
+            pycamLogger.info(f", trying {attr} instead")
 
         return super().__getattribute__(attr)
 
@@ -333,7 +335,7 @@ class SpecsBase:
 
         self.filename = filename
 
-        print(f"Saving specifications to {filename}")
+        pycamLogger.info(f"Saving specifications to {filename}")
 
         with open(filename, "w") as f:
             # Write header

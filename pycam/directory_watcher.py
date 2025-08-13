@@ -11,6 +11,9 @@ import threading
 import queue
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from pycam.logging.logging_tools import LoggerManager
+
+pycamLogger = LoggerManager.add_logger("Pycam")
 
 
 def can_watch_directories():
@@ -125,13 +128,13 @@ class PiDirectoryWatcher(_DirectoryWatcherBase):
             self.event_handler, self.dir_to_watch, recursive=self.recursive
         )
         self.observer.start()
-        print(f"Observer started for {self.dir_to_watch}")
+        pycamLogger.info(f"Observer started for {self.dir_to_watch}")
         # This just returns here, so if you want to wait for it you'll need a sleep loop or a call to self.observer.join()
 
     def stop(self):
         self.observer.stop()
         self.observer.join()
-        print(f"Observer Stopped for {self.dir_to_watch}")
+        pycamLogger.info(f"Observer Stopped for {self.dir_to_watch}")
 
 
 class Handler(FileSystemEventHandler):

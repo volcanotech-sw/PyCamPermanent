@@ -8,6 +8,7 @@ from pycam.networking.sockets import read_network_file
 from pycam.setupclasses import FileLocator, ConfigInfo
 from pycam.io_py import write_script_crontab, read_script_crontab
 from pycam.utils import read_file
+from pycam.logging.logging_tools import LoggerManager
 
 import tkinter as tk
 import tkinter.ttk as ttk
@@ -18,12 +19,13 @@ import time
 import datetime
 import threading
 
+GuiLogger = LoggerManager.add_logger("GUI")
 
 def run_pycam(ip, auto_capt=1):
     """Runs main pycam script on remote machine"""
     if messagebox.askyesno("Please confirm", "Are you sure you want to run pycam_master2.py?\n"
                                              "Running this on a machine which already has the script running could cause issues"):
-        print('Running pycam_master2.py on {}'.format(ip))
+        GuiLogger.info(f'Running pycam_master2.py on {ip}')
 
         # Read configuration file which contains important information for various things
         config = read_file(FileLocator.CONFIG_WINDOWS)
@@ -184,7 +186,7 @@ class ConnectionGUI:
                 self.update_connection()
 
         except Exception as e:
-            print(e)
+            GuiLogger.error(e)
             self.connection_label.configure(text='No connection found at this address')
 
 
@@ -236,7 +238,7 @@ class GUICommRecvHandler:
         """Gets received communications from the recv_comms queue and acts on them"""
         while not self.stop.is_set():
             comm = self.recv_comms.q.get(block=True)
-            # print(f"GUI incoming comms: {comm}")
+            GuiLogger.debug(f"GUI incoming comms: {comm}")
 
             if 'LOG' in comm:
                 # If getting acquisition flags was purpose of comm we update widgets
@@ -285,7 +287,7 @@ class GUICommRecvHandler:
             #     if id != 'IDN':
             #         mess += '{}: {}\n'.format(id, comm[id])
             self.message_wind.add_message(mess)
-    print("GUI get_comms stopping")
+    GuiLogger.info("GUI get_comms stopping")
 
 
 class InstrumentConfiguration:

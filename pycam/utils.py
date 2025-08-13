@@ -2,6 +2,7 @@
 
 """Utilities for pycam"""
 from pycam.networking.ssh import open_ssh, close_ssh, ssh_cmd
+from pycam.logging.logging_tools import LoggerManager
 
 import os
 import numpy as np
@@ -9,6 +10,8 @@ import subprocess
 import datetime
 import shutil
 import time
+
+PycamLogger = LoggerManager.add_logger("pycam")
 
 def check_filename(filename, ext):
     """Checks filename to ensure it is as expected
@@ -263,14 +266,14 @@ def get_horizontal_plume_speed(opti_flow, col_dist_img, pcs_line, filename=None)
                 with open(filename, 'w') as f:
                     f.write('Time\tMean [m/s]\tMedian [m/s]\n')
             except BaseException as e:
-                print('Could not create x-velocities file: {}'.format(e))
+                PycamLogger.info('Could not create x-velocities file: {}'.format(e))
                 return
 
         try:
             with open(filename, 'a') as f:
                 f.write('{}\t{}\t{}\n'.format(str_time, mean_vel, med_vel))
         except BaseException as e:
-            print('Could not write to x-velocities file: {}'.format(e))
+            PycamLogger.info('Could not write to x-velocities file: {}'.format(e))
             return
 
     return {'mean': mean_vel, 'median': med_vel}
@@ -337,7 +340,7 @@ def truncate_path(path: str, max_length: int) -> str:
         return path
 
 def append_to_log_file(log_file: str, s: str):
-    print(s)
+    PycamLogger.info(s)
     with open(log_file, "a", newline="\n") as f:
         f.write(s + "\n")
 
@@ -404,20 +407,20 @@ class StorageMount:
                 # TODO do some line splitting to get sda path
                 sda_path = line.split()[0]
                 self.dev_path = sda_path
-                print('Found SSD device path at {}'.format(self.dev_path))
+                PycamLogger.info('Found SSD device path at {}'.format(self.dev_path))
 
         if sda_path is None:
-            print('Could not find SSD device in /dev/sd*')
+            PycamLogger.info('Could not find SSD device in /dev/sd*')
             self.dev_path = None
 
     def mount_dev(self):
         """Mount device located at self.dev_path to self.mount_path destination"""
         if self.is_mounted:
-            print('Device is already mounted')
+            PycamLogger.info('Device is already mounted')
             return
 
         if self.dev_path is None:
-            print('No SSD device path to mount')
+            PycamLogger.info('No SSD device path to mount')
             return
 
         if not os.path.exists(self.mount_path):
@@ -442,7 +445,7 @@ class StorageMount:
         # If the data directory doesn't exist, make it (after the device has been successfully mounted
         while not self.is_mounted:
             time.sleep(0.1)
-        print(f"Mounted storage: {self.dev_path} on {self.mount_path}")
+        PycamLogger.info(f"Mounted storage: {self.dev_path} on {self.mount_path}")
         if not os.path.exists(self.data_path):
             subprocess.call(['sudo', 'mkdir', self.data_path])
 
@@ -453,7 +456,7 @@ class StorageMount:
         # unmount the wrong device - so this needs to be thought about some more.
         if self.dev_path and self.is_mounted:
             subprocess.call(['sudo', 'umount', self.dev_path])
-            print(f"Unmounted storage: {self.dev_path} from {self.mount_path}")
+            PycamLogger.info(f"Unmounted storage: {self.dev_path} from {self.mount_path}")
 
     def fsck_dev(self):
         """Run a filesystem check & repair on the device located at self.dev_path"""
@@ -464,7 +467,7 @@ class StorageMount:
             )
             blkid_lines = [line for line in blkid_output if self.dev_path in line]
             if len(blkid_lines) == 0:
-                print("Block device not found for running fsck")
+                PycamLogger.info("Block device not found for running fsck")
                 return
             else:
                 blkid_line = blkid_lines[0].lower()
@@ -475,7 +478,7 @@ class StorageMount:
             elif "vfat" in blkid_line:
                 fsck = ["fsck.vfat", "-p"]
             else:
-                print(f"Unkown filesystem type: {blkid_line}")
+                PycamLogger.info(f"Unkown filesystem type: {blkid_line}")
                 return
             subprocess.call(["sudo"] + fsck + [self.dev_path], timeout=10)
 
@@ -492,7 +495,7 @@ class StorageMount:
             try:
                 shutil.rmtree(full_path)
             except BaseException as e:
-                print("Error: {}".format(e))
+                PycamLogger.info("Error: {}".format(e))
 
     def free_up_space(self, make_space=50):
         """
@@ -526,9 +529,9 @@ class StorageMount:
 
                 # Remove file
                 os.remove(file_path)
-                print("Deleting file: {}".format(os.path.basename(file_path)))
+                PycamLogger.info("Deleting file: {}".format(os.path.basename(file_path)))
             except Exception as e:
-                print("Error: {}".format(e))
+                PycamLogger.info("Error: {}".format(e))
 
             # Find how much space is now left on SSD
             space = self._get_space()

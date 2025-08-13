@@ -7,6 +7,7 @@ Socket setup and control for Raspberry Pi network and connection to the remote c
 from pycam.setupclasses import CameraSpecs, SpecSpecs, FileLocator
 from pycam.utils import check_filename, read_file, append_to_log_file
 from pycam.networking.commands import AcquisitionComms
+from pycam.logging.logging_tools import LoggerManager
 
 import socket
 import struct
@@ -14,6 +15,8 @@ import time
 import queue
 import threading
 import select
+
+networkLogging = LoggerManager.add_logger("Networking")
 
 
 def read_network_file(filename: str) -> tuple[str | None, int | None]:
@@ -190,7 +193,7 @@ class CommsCommandHandler(CommsFuncs):
                 # Make the whole command available as part of the class for accessing IDN of command sender
                 self.comm_cmd = self.q.get(block=True, timeout=0.001)
                 if self.comm_cmd:
-                    print(f"CommsCommandHandler for {self.id} received {self.comm_cmd}")
+                    networkLogging.info(f"CommsCommandHandler for {self.id} received {self.comm_cmd}")
                     if "IDN" in self.comm_cmd:
                         cmd_source = self.comm_cmd["IDN"]
                     else:
@@ -205,7 +208,7 @@ class CommsCommandHandler(CommsFuncs):
                         except TypeError as e:
                             if "positional argument" in str(e):
                                 # hold over from adding command source as an argument, call the old way
-                                print(
+                                networkLogging.warning(
                                     f"WARNING {key}() for {self.id['IDN']} is not accepting cmd_source!!!"
                                 )
                                 getattr(self, key)(self.comm_cmd[key])
@@ -219,10 +222,10 @@ class CommsCommandHandler(CommsFuncs):
             except queue.Empty:
                 pass
         self.working = False
-        print(f"Comms handler stopped for {self.id}!")
+        networkLogging.info(f"Comms handler stopped for {self.id}!")
 
     def EXT(self, value, cmd_source):
-        print(f"Base EXT for {self.id} got value of {value} from {cmd_source}")
+        networkLogging.info(f"Base EXT for {self.id} got value of {value} from {cmd_source}")
         if value:
             self.event.set()
 
@@ -261,9 +264,9 @@ class MasterComms(CommsCommandHandler):
 
     def HLO(self, value, cmd_source):
         """For testing connection"""
-        print("Hello received by the master")
+        networkLogging.info("Hello received by the master")
         if value:
-            print("Response to hello requested, sending...")
+            networkLogging.info("Response to hello requested, sending...")
             # Send response if requested
             self.send_tagged_comms({"HLM": False, "DST": cmd_source})
 
@@ -280,15 +283,15 @@ class MasterComms(CommsCommandHandler):
                 # Value is the remote port
                 for ip,remote_port in self.socket.conn_dict:
                     if value == remote_port:
-                        print(f"GBY: Found matching port for {value}")
+                        networkLogging.info(f"GBY: Found matching port for {value}")
                         to_close = self.socket.conn_dict[(ip,remote_port)][0][0]
                         # Sometimes we can get an error here (presumably due to race conditions)
             if to_close:
                 # We need to do this separately as conn_dict will change size from this
                 self.socket.close_connection(connection=to_close)
         except Exception as e:
-            print("Error disconnecting client:")
-            print(e)
+            networkLogging.error("Error disconnecting client:")
+            networkLogging.error(e)
             pass
 
     def CLI(self, value, cmd_source):
@@ -303,37 +306,37 @@ class MasterComms(CommsCommandHandler):
         if value:
             self.dark_capture["CM1"] = True
             self.dark_capture["CM2"] = True
-        print(f"DKC {self.dark_capture}")
+        networkLogging.info(f"DKC {self.dark_capture}")
 
     def DFC(self, value, cmd_source):
         """Note dark capture finish on camera"""
         if value:
             self.dark_capture[cmd_source] = False
-        print(f"DFC {self.dark_capture}")
+        networkLogging.info(f"DFC {self.dark_capture}")
 
     def DKS(self, value, cmd_source):
         """Note dark capture start on spectrometer"""
         if value:
             self.dark_capture["SPE"] = True
-        print(f"DKS {self.dark_capture}")
+        networkLogging.info(f"DKS {self.dark_capture}")
 
     def DFS(self, value, cmd_source):
         """Note dark capture finish on spectrometer"""
         if value:
             self.dark_capture[cmd_source] = False
-        print(f"DFS {self.dark_capture}")
+        networkLogging.info(f"DFS {self.dark_capture}")
 
     def DXT(self, value, cmd_source):
         """Override exit command"""
         # Pass the command along as an exit for now
-        print(f"Override exit received from {cmd_source}")
+        networkLogging.info(f"Override exit received from {cmd_source}")
         self.socket.send_to_all({"IDN": cmd_source, "EXT": value})
 
     def EXT(self, value, cmd_source):
         """Acts on EXT command, closing everything down"""
-        print(f"Possible shutdown for {self.id}")
+        networkLogging.info(f"Possible shutdown for {self.id}")
         if not value:
-            print("EXT false")
+            networkLogging.info("EXT false")
             self.send_tagged_comms({'ERR': 'EXT'})
             return
         super().EXT(value, cmd_source)
@@ -350,7 +353,7 @@ class MasterComms(CommsCommandHandler):
             self.socket.close_connection(connection=conn[0])
         self.socket.close_socket()
 
-        print('Closed all sockets')
+        networkLogging.info('Closed all sockets')
 
         # Wait for all threads to finish (closing sockets should cause this)
         time_start = time.time()
@@ -359,10 +362,10 @@ class MasterComms(CommsCommandHandler):
                 # Add a timeout so if we are waiting for too long we just close things without waiting
                 time_wait = time.time() - time_start
                 if time_wait > timeout:
-                    print(' Reached timeout limit waiting for shutdown')
+                    networkLogging.info(' Reached timeout limit waiting for shutdown')
                     break
 
-        print('Ext connections finished')
+        networkLogging.info('Ext connections finished')
 
     def RST(self, value, cmd_source):
         """Acts on RST command, restarts entire system. Exit so the daemon script can relaunch us."""
@@ -372,7 +375,7 @@ class MasterComms(CommsCommandHandler):
         """Acts on LOG command, sending the specified log back to the connection"""
         # If value is 0 we simply return the communication - used to confirm we have a connection
         if value == 0:
-            print('Sending handshake reply')
+            networkLogging.info('Sending handshake reply')
             self.send_tagged_comms({'LOG': 0, "DST": cmd_source})
 
         # If we are passed a 1 this is to get all specs from cameras and spectrometer, so we don't need to do anything
@@ -441,7 +444,7 @@ class SocketMeths(CommsFuncs):
         # Generally only flag error on socket server to save duplication
         return_errors = return_errors or isinstance(self, SocketServer)
 
-        # print('Message: {}'.format(mess_list))
+        networkLogging.debug('Message: {}'.format(mess_list))
         # Loop through commands. Stop before the last command as it will be a value rather than key and means we don't
         # hit an IndexError when using i+1
         for i in range(len(mess_list)-1):
@@ -511,7 +514,7 @@ class SocketMeths(CommsFuncs):
         """
         if hasattr(connection, 'sendall'):
             if callable(connection.sendall):
-                # print(f"Sending: {cmd_bytes}")
+                networkLogging.debug(f"Sending: {cmd_bytes}")
                 connection.sendall(cmd_bytes)
         else:
             raise AttributeError('Object {} has no sendall command'.format(connection))
@@ -544,7 +547,7 @@ class SocketMeths(CommsFuncs):
 
                 self.data_buff += received
 
-                # print(f"Raw received: {self.data_buff}")
+                networkLogging.debug(f"Raw received: {self.data_buff}")
 
             # Once we have a full message, with end_str, we return it after removing the end_str and decoding to a str
             if self.end_str in self.data_buff:
@@ -597,16 +600,16 @@ class SocketClient(SocketMeths):
             while not self.connect_stat and not event.is_set():
                 time.sleep(0.05)    # Small sleep so it doesn't go mad
                 try:
-                    print('Client connecting to {}'.format(self.server_addr))
+                    networkLogging.info(f'Client connecting to {self.server_addr}')
                     self.sock.connect(self.server_addr)  # Attempting to connect to the server
                     self.local_ip,self.local_port = self.sock.getsockname()
-                    print(f"Client connected as {self.local_ip}:{self.local_port}")
+                    networkLogging.info(f"Client connected as {self.local_ip}:{self.local_port}")
                     self.connect_stat = True
                 except OSError as e:
                     # If the socket was previously closed we may need to create a new socket object to connect
                     # On windows this will be WinError 10038, or on Linux [Errno 9] Bad file descriptor
                     if 'WinError 10038' in '{}'.format(e) or e.errno == 9:
-                        print('Creating new socket for connection attempt')
+                        networkLogging.info('Creating new socket for connection attempt')
                         self.open_socket()
                         continue
                     raise e
@@ -658,7 +661,7 @@ class SocketClient(SocketMeths):
             self.close_socket()
             self.update_address(self.host_ip, port_num)
             try:
-                print('Testing connection to port: {}'.format(self.port))
+                networkLogging.info(f'Testing connection to port: {self.port}')
                 self.connect_socket_timeout(timeout=timeout)
                 break
             except ConnectionError:
@@ -673,11 +676,11 @@ class SocketClient(SocketMeths):
         """Send client identity information to server"""
         handshake_msg = self.encode_comms(self.id)
         self.send_comms(self.sock, handshake_msg)
-        # print('Sent handshake {} to {}'.format(handshake_msg, self.server_addr))
+        networkLogging.debug('Sent handshake {} to {}'.format(handshake_msg, self.server_addr))
 
     def test_connection(self):
         """Send a message to the server and look for a specific response"""
-        print("Testing connection")
+        networkLogging.info("Testing connection")
         cmd = self.encode_comms({"LOG": 0})
         self.send_comms(self.sock, cmd)
         tries = 6  # five new image messages then a log response
@@ -686,9 +689,9 @@ class SocketClient(SocketMeths):
             reply = self.recv_comms(self.sock)
             reply = self.decode_comms(reply)
             if not len(reply) == 3 or "LOG" not in reply or not reply["LOG"] == 0:
-                print(f"Unrecognised socket reply: {reply}")
+                networkLogging.warning(f"Unrecognised socket reply: {reply}")
             else:
-                print("Got pycam handshake reply")
+                networkLogging.info("Got pycam handshake reply")
                 break
             tries -= 1
         if tries <= 0:
@@ -700,7 +703,7 @@ class SocketClient(SocketMeths):
         """Closes socket by disconnecting from host"""
         if self.sock:
             self.sock.close()
-            print('Closed client socket {}'.format(self.server_addr))
+            networkLogging.info(f'Closed client socket {self.server_addr}')
             self.connect_stat = False
 
     def generate_header(self, msg_size):
@@ -741,7 +744,7 @@ class CamComms(CommsCommandHandler):
 
     def HLO(self, value, cmd_source):
         """For testing connection"""
-        print(f"Hello received by camera {self.id['IDN']}")
+        networkLogging.info(f"Hello received by camera {self.id['IDN']}")
         if value:
             # Send response if requested
             if self.camera.band == 'on':
@@ -784,7 +787,7 @@ class CamComms(CommsCommandHandler):
                         self.camera.shutter_speed = value
                     comm = {'SSA': value}
                 except Exception as e:
-                    print('{}: Error setting shutter speed: {}'.format(__file__, e))
+                    networkLogging.error(f'{__file__}: Error setting shutter speed: {e}')
                     comm = {'ERR': 'SSA'}
             else:
                 comm = {'ERR': 'SSA'}
@@ -811,7 +814,7 @@ class CamComms(CommsCommandHandler):
                         self.camera.shutter_speed = value
                     comm = {'SSB': value}
                 except Exception as e:
-                    print('{}: Error setting shutter speed: {}'.format(__file__, e))
+                    networkLogging.error(f'{__file__}: Error setting shutter speed: {e}')
                     comm = {'ERR': 'SSB'}
             else:
                 comm = {'ERR': 'SSB'}
@@ -1019,7 +1022,7 @@ class CamComms(CommsCommandHandler):
 
     def EXT(self, value, cmd_source):
         """Shuts down camera"""
-        print(f"Possible shutdown for {self.id}")
+        networkLogging.info(f"Possible shutdown for {self.id}")
         try:
             if value:
                 super().EXT(value, cmd_source)
@@ -1027,7 +1030,7 @@ class CamComms(CommsCommandHandler):
                 self.camera.capture_q.put({'exit': True})
                 comm = {'EXT': False}  # confirm exiting, but don't trigger another
             else:
-                print("EXT false")
+                networkLogging.info("EXT false")
                 comm = {'ERR': 'EXT'}
         except:
             comm = {'ERR': 'EXT'}
@@ -1057,7 +1060,7 @@ class SpecComms(CommsCommandHandler):
 
     def HLO(self, value, cmd_source):
         """For testing connection"""
-        print("Hello received by the spectrometer")
+        networkLogging.info("Hello received by the spectrometer")
         if value:
             # Send response if requested
             self.send_tagged_comms({'HLS': False, "DST": cmd_source})
@@ -1270,7 +1273,7 @@ class SpecComms(CommsCommandHandler):
 
     def EXT(self, value, cmd_source):
         """Shuts down spectrometer"""
-        print(f"Possible shutdown for {self.id}")
+        networkLogging.info(f"Possible shutdown for {self.id}")
         try:
             if value:
                 super().EXT(value, cmd_source)
@@ -1278,7 +1281,7 @@ class SpecComms(CommsCommandHandler):
                 self.spectrometer.capture_q.put({'exit': True})
                 comm = {'EXT': False}  # confirm exiting, but don't trigger another
             else:
-                print("EXT false")
+                networkLogging.info("EXT false")
                 comm = {'ERR': 'EXT'}
         except:
             comm = {'ERR': 'EXT'}
@@ -1335,10 +1338,10 @@ class SocketServer(SocketMeths):
             try:
                 self.sock.bind(self.server_addr)
                 self.port = port
-                print('Server bound to port: {}'.format(port))
+                networkLogging.info(f'Server bound to port: {port}')
                 break
             except socket.error as e:
-                print('ERROR in using socket address {}: {}'.format(self.server_addr, e))
+                networkLogging.error(f'ERROR in using socket address {self.server_addr}: {e}')
 
     def open_socket(self, backlog=5, bind=True):
         """Opens socket and listens for connection
@@ -1368,13 +1371,13 @@ class SocketServer(SocketMeths):
         except OSError:
             pass
         self.sock.close()
-        print('Closed socket {}'.format(self.server_addr))
+        networkLogging.info(f'Closed socket {self.server_addr}')
 
     def acc_connection(self):
         """Accept connection and add to listen"""
         # Establish connection with client and append to list of connections
-        print('Accepting connection at {}'.format(self.server_addr))
-        # print('Current number of connections: {}'.format(len(self.connections)))
+        networkLogging.info(f'Accepting connection at {self.server_addr}')
+        networkLogging.debug('Current number of connections: {}'.format(len(self.connections)))
         try:
             connection = self.sock.accept()
             self.connections.append(connection)
@@ -1382,14 +1385,15 @@ class SocketServer(SocketMeths):
             # Receive the handshake to get connection ID
             conn_id = self.recv_comms(connection[0])
             conn_id = self.decode_comms(conn_id)['IDN']
-            print('Got connection from {}:{} with ID: {}'.format(connection[1][0], connection[1][1], conn_id))
+            networkLogging.info(f'Got connection from {connection[1][0]}:{connection[1][1]} '
+                                f'with ID: {conn_id}')
 
             # Remote IP address, our own connection ID thing, remote port (for GBY)
             self.conn_dict[(connection[1][0], connection[1][1])] = connection, conn_id
 
         except BaseException as e:
-            print('Error in accepting socket connection, it is likely that the socket was closed during accepting:')
-            print(e)
+            networkLogging.error('Error in accepting socket connection, it is likely that the socket was closed during accepting:')
+            networkLogging.error(e)
             connection = None
             conn_id = None
 
@@ -1435,11 +1439,11 @@ class SocketServer(SocketMeths):
         """
         remote_port = None
         if connection is not None:
-            print('Trying to close connection: {}'.format(connection))
+            networkLogging.info(f'Trying to close connection: {connection}')
 
             for i in range(len(self.connections)):
                 if connection == self.connections[i][0]:
-                    print("Closing...")
+                    networkLogging.info("Closing...")
 
                     try:
                         # Get ip of connection, just closing print statement
@@ -1448,7 +1452,7 @@ class SocketServer(SocketMeths):
                         # Close the connection
                         connection.close()
                     except OSError:
-                        print('Connection already closed, removing it from list')
+                        networkLogging.warning('Connection already closed, removing it from list')
 
                     # Remove connection from list
                     try:
@@ -1461,20 +1465,20 @@ class SocketServer(SocketMeths):
 
         # Search for ip address in connections list
         elif isinstance(ip, str):
-            print('Trying to close connection from {}'.format(ip))
+            networkLogging.info('Trying to close connection from {}'.format(ip))
             for i in range(len(self.connections)):
                 # Check if ip address is in the addr tuple. If it is, we set conn_num to this connection
                 if ip in self.connections[i][1]:
                     conn_num = i
                     conn = self.connections[conn_num][0]
-                    print("Closing...")
+                    networkLogging.info("Closing...")
 
                     try:
                         remote_port = self.connections[conn_num][0].getpeername()[1]
                         conn.shutdown(socket.SHUT_RDWR)
                         conn.close()
                     except OSError:
-                        print('Connection already closed, removing it from list')
+                        networkLogging.warning('Connection already closed, removing it from list')
 
                     try:
                         # Remove connection from list
@@ -1489,28 +1493,28 @@ class SocketServer(SocketMeths):
         # If explicitly passed the connection number we can just close that number directly
         else:
             if isinstance(conn_num, int):
-                print('Trying to close connection number {}'.format(conn_num))
+                networkLogging.info(f'Trying to close connection number {conn_num}')
                 conn = self.connections[conn_num][0]
-                print("Closing...")
+                networkLogging.info("Closing...")
 
                 try:
                     ip, remote_port = conn.getpeername()
                     conn.shutdown(socket.SHUT_RDWR)
                     conn.close()
                 except OSError:
-                    print('Connection already closed, removing it from list')
+                    networkLogging.warning('Connection already closed, removing it from list')
 
                 del self.connections[conn_num]
 
         if ip is None or remote_port is None:
-            print("Failed to close connection, was it already closed?")
+            networkLogging.warning("Failed to close connection, was it already closed?")
             return
 
         if (ip, remote_port) in self.conn_dict:
             del self.conn_dict[(ip, remote_port)]
-            print("Cleaned up conn_dict")
+            networkLogging.info("Cleaned up conn_dict")
 
-        print(f"Closed connection: {ip}:{remote_port}, {self.port}")
+        networkLogging.info(f"Closed connection: {ip}:{remote_port}, {self.port}")
 
     def send_to_all(self, cmd):
         """Sends a command to all connections on the server
@@ -1522,7 +1526,7 @@ class SocketServer(SocketMeths):
         """
         # Encode dictionary for sending
         cmd_bytes = self.encode_comms(cmd)
-        # print(f"Sending {cmd_bytes}")
+        networkLogging.debug(f"Sending {cmd_bytes}")
 
         # Loop through external connections and send to all over network
         for conn in self.connections:
@@ -1534,9 +1538,7 @@ class SocketServer(SocketMeths):
                     # also do not loop back and send things that came from EXN
                     self.send_comms(conn[0], cmd_bytes)
             except BrokenPipeError:
-                print(
-                    "SocketServer BrokenPipeError: Closing connection {}".format(conn)
-                )
+                networkLogging.error(f"SocketServer BrokenPipeError: Closing connection {conn}")
                 self.close_connection(connection=conn[0])
 
         # Loop through the internal connections and send to all cameras, etc
@@ -1652,7 +1654,7 @@ class CommConnection(Connection):
 
     def _thread_func(self):
         """ Continually loops through receiving communications and passing them to a queue"""
-        print("CommConnection _thread_func starting")
+        networkLogging.info("CommConnection _thread_func starting")
         while not self.event.is_set():
             try:
                 # Receive socket data (this is a blocking process until a complete message is received)
@@ -1680,14 +1682,14 @@ class CommConnection(Connection):
 
             # If connection has been closed, return
             except socket.error:
-                print('Socket Error, socket was closed, aborting CommConnection thread: {}, {}'.format(self.ip,
-                                                                                                       self.sock.port))
+                networkLogging.error(f'Socket Error, socket was closed, '
+                                     f'aborting CommConnection thread: {self.ip}, {self.sock.port}')
                 if isinstance(self.sock, SocketServer):
                     self.sock.close_connection(connection=self.connection)
                 break
 
         # If event is set we need to exit thread and set receiving to False
-        print("CommConnection _thread_func stopping")
+        networkLogging.info("CommConnection _thread_func stopping")
         self.working = False
         self.event.clear()
 
@@ -1708,7 +1710,7 @@ class ExternalRecvConnection(Connection):
 
     def _thread_func(self):
         """ Continually loops through receiving communications and passing them to a queue"""
-        print("ExternalRecvConnection _thread_func starting")
+        networkLogging.info("ExternalRecvConnection _thread_func starting")
         while not self.event.is_set():
             try:
                 # Receive socket data (this is a blocking process until a complete message is received)
@@ -1735,13 +1737,13 @@ class ExternalRecvConnection(Connection):
 
             # If connection has been closed, return
             except socket.error as e:
-                print(e)
-                print('Socket Error, socket was closed, aborting ExternalRecvConnection thread: {}, {}'.format(self.ip,
-                                                                                                       self.sock.port))
+                networkLogging.error(e)
+                networkLogging.error(f'Socket Error, socket was closed, aborting '
+                                     f'ExternalRecvConnection thread: {self.ip}, {self.sock.port}')
                 break
 
         # If event is set we need to exit thread and set receiving to False
-        print("ExternalRecvConnection _thread_func stopping")
+        networkLogging.info("ExternalRecvConnection _thread_func stopping")
         self.working = False
         self.event.clear()
 
@@ -1766,12 +1768,12 @@ class ExternalSendConnection(Connection):
 
     def _thread_func(self):
         """Continually loops through a queue and sends data to the socket"""
-        print("ExternalSendConnection _thread_func starting")
+        networkLogging.info("ExternalSendConnection _thread_func starting")
         while not self.event.is_set():
             try:
                 # Get command from queue
                 cmd = self.q.get(block=True, timeout=1)
-                # print('External comms sending: {}'.format(cmd))
+                networkLogging.debug('External comms sending: {}'.format(cmd))
 
                 # Encode command to bytes
                 cmd_bytes = self.sock.encode_comms(cmd)
@@ -1785,12 +1787,12 @@ class ExternalSendConnection(Connection):
 
             # If connection has been closed, return
             except socket.error as e:
-                print(e)
-                print('Socket Error, socket was closed, aborting ExternalSendConnection thread: {}, {}'.format(self.ip,
-                                                                                                       self.sock.port))
+                networkLogging.error(e)
+                networkLogging.error(f'Socket Error, socket was closed, aborting '
+                                     f'ExternalSendConnection thread: {self.ip}, {self.sock.port}')
                 break
 
         # If event is set we need to exit thread and set receiving to False
-        print("ExternalSendConnection _thread_func stopping")
+        networkLogging.info("ExternalSendConnection _thread_func stopping")
         self.working = False
         self.event.clear()

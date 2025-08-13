@@ -6,6 +6,7 @@ messages other comms
 """
 
 from pycam.setupclasses import CameraSpecs, SpecSpecs
+from pycam.logging.logging_tools import LoggerManager
 import pycam.gui.cfg as cfg
 
 import tkinter as tk
@@ -13,6 +14,7 @@ import tkinter.ttk as ttk
 from tkinter.messagebox import askyesno, showerror, showinfo
 import time
 
+GuiLogger = LoggerManager.add_logger("GUI")
 
 class TkVariables:
     """
@@ -928,7 +930,8 @@ class BasicAcqHandler:
             try:
                 cfg.ftp_client.watch_dir(new_only=True)
             except ConnectionError:
-                print('FTP client failed. Will not be able to transfer acquired data back to host machine')
+                GuiLogger.warning('FTP client failed. Will not be able to transfer acquired data '
+                                  'back to host machine')
 
         # Bring frame to front
         self.frame.attributes('-topmost', 1)

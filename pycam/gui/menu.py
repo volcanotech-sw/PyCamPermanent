@@ -17,6 +17,7 @@ from pycam.setupclasses import FileLocator, ConfigInfo
 from pycam.networking.ssh import open_ssh, ssh_cmd, close_ssh
 from pycam.utils import truncate_path
 from pycam.exceptions import InvalidCalibration
+from pycam.logging.logging_tools import LoggerManager
 
 from pyplis import LineOnImage
 
@@ -29,6 +30,7 @@ from inspect import cleandoc
 import os
 import threading
 
+GuiLogger = LoggerManager.add_logger("GUI")
 
 class PyMenu:
     """tk menu bar for placing along the top o the GUI
@@ -377,9 +379,9 @@ class PyMenu:
                                             initialdir=FileLocator.IMG_SPEC_PATH_WINDOWS)
         if not directory:
             return
-        print('Unpacking camera data...')
+        GuiLogger.info('Unpacking camera data...')
         cfg.ftp_client.img_dir.unpack_data(directory)
-        print('Unpacking spectrometer data...')
+        GuiLogger.info('Unpacking spectrometer data...')
         cfg.ftp_client.spec_dir.unpack_data(directory)
 
     def stop_sequence_processing(self):
@@ -1106,7 +1108,7 @@ class SaveFrame(LoadSaveProcessingSettings):
     def save_pcs(self):
         """Saves PCS line"""
         if len(self.pyplis_worker.PCS_lines_all) == 0:
-            print('There are no lines to be saved. Please draw an ICA line first')
+            GuiLogger.warning('There are no lines to be saved. Please draw an ICA line first')
             return
 
         filename = filedialog.asksaveasfilename(parent=self.frame, initialdir=os.path.join(self.init_dir, 'pcs_lines'))
@@ -1125,7 +1127,8 @@ class SaveFrame(LoadSaveProcessingSettings):
     def save_dil(self):
         """Saves PCS line"""
         if len(self.dil_lines) == 0:
-            print('There are no lines to be saved. Please draw an light dilution line first')
+            GuiLogger.warning('There are no lines to be saved. '
+                              'Please draw an light dilution line first')
             return
 
         filename = filedialog.asksaveasfilename(parent=self.frame, initialdir=os.path.join(self.init_dir, 'dil_lines'))
