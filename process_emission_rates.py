@@ -1,5 +1,6 @@
 import argparse
 import yaml
+import time
 from pathlib import Path
 
 from pycam.doas.ifit_worker import IFitWorker
@@ -93,6 +94,11 @@ if __name__ == "__main__":
         pyplis_worker = setup_pyplis_worker(args.config_path)
         pyplis_worker.doas_worker = setup_ifit_worker(args.config_path)
         pyplis_worker.start_watching_dir()
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            pyplis_worker.stop_watching_dir()
     else:
         raise ValueError("Invalid CLI command. Use 'doas', 'pyplis', or 'watcher'.")
     

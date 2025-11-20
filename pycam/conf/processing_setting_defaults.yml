@@ -23,6 +23,8 @@ time_zone: 0
 pcs_lines:
 - ./pycam/Data/saved_objects/pcs_lines/villaricca_line_1.txt
 - ./pycam/Data/saved_objects/pcs_lines/villaricca_line_2.txt
+pcs_line_young: ./pycam/Data/saved_objects/pcs_lines/villaricca_line_1.txt
+pcs_line_old: ./pycam/Data/saved_objects/pcs_lines/villaricca_line_2.txt
 img_registration: ./pycam/Data/saved_objects/image_registration/villarrica_cv_registration.npy
 dil_lines: 
 - ./pycam/Data/saved_objects/dil_lines/villarica_line_1.txt

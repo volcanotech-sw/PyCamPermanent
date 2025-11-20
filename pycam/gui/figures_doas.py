@@ -182,12 +182,16 @@ class SpectraPlot:
 
     def update_dark(self):
         """Update dark plot with new data"""
+        if self.doas_worker.dark_spec is None:
+            return
         self.ax.lines[0].set_data(self.doas_worker.wavelengths, self.doas_worker.dark_spec)
         self.ax.set_xlim([self.doas_worker.wavelengths[0],self.doas_worker.wavelengths[-1]])
         self.q.put(1)
 
     def update_clear(self):
         """Update clear plot with new data"""
+        if self.doas_worker.clear_spec_raw is None or self.doas_worker.wavelengths is None:
+            return
         self.ax.lines[1].set_data(self.doas_worker.wavelengths, self.doas_worker.clear_spec_raw)
         self.ax.set_xlim([self.doas_worker.wavelengths[0], self.doas_worker.wavelengths[-1]])
         self.q.put(1)
