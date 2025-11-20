@@ -15,6 +15,7 @@ import datetime
 import yaml
 import numpy as np
 import pandas as pd
+import threading
 import matplotlib.pyplot as plt
 from pathlib import Path
 from itertools import compress
@@ -44,22 +45,47 @@ class IFitWorker(SpecWorker):
 
     :param q_doas: queue.Queue   Queue where final processed dictionary is placed (should be a PyplisWorker.q_doas)
     """
-    def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}}, spec_specs=SpecSpecs(), spec_dir='C:/',
-                 dark_dir=None, q_doas=queue.Queue(), frs_path='./pycam/doas/calibration/sao2010.txt'):
-        super().__init__(routine, species, spec_specs, spec_dir, dark_dir, q_doas)
 
+    def __init__(self, routine=2, species={'SO2': {'path': '', 'value': 0}},
+                 spec_specs=SpecSpecs(), spec_dir='C:/',
+                 dark_dir=None, q_doas=queue.Queue(), frs_path='./pycam/doas/calibration/sao2010.txt'):
         # ======================================================================================================================
         # Initial Definitions
         # ======================================================================================================================
         self.time_zone = 0              # Time zone for adjusting data times on load-in (relative to UTC)
 
         self.ppmm_conversion = 2.652e15   # convert absorption cross-section in cm2/molecule to ppm.m (MAY NEED TO CHANGE THIS TO A DICTIONARY AS THE CONVERSION MAY DIFFER FOR EACH SPECIES?)
+        self.ppmm_conv = self.ppmm_conversion
+
+        self.lock = threading.RLock()
 
         self._start_fit_wave_init = 300  # Wavelength space fitting window definitions       Set big range to start Analyser
         self._end_fit_wave_init = 340
 
+        self._start_fit_wave = self._start_fit_wave_init
+        self._end_fit_wave = self._end_fit_wave_init
+        self._start_fit_wave_ld = self._start_fit_wave_init
+        self._end_fit_wave_ld = self._end_fit_wave_init
+
+        self._start_stray_wave = 280
+        self._end_stray_wave = 300
+        self._start_stray_pix = None
+        self._end_stray_pix = None
+
+        self.wavelengths = None
+
         self.spec_time = None           # Time of currently loaded plume_spec
         self.ref_spec_used = list(species.keys())   # Reference spectra we actually want to use at this time (similar to ref_spec_types - perhaps one is obsolete (or should be!)
+        self.ref_spec_types = self.ref_spec_used
+        self.clear_spec_corr = None
+        self.plume_spec_corr = None
+        self.column_density = {}
+        self.ref_spec_fit = {}
+        self.abs_spec_species = {}
+        self.dark_corrected_clear = False
+        self.dark_corrected_plume = False
+        self.stray_corrected_clear = False
+        self.stray_corrected_plume = False
         self.ils_path = None
         
         self.poly_order = 2  # Order of polynomial used to fit residual
@@ -75,7 +101,48 @@ class IFitWorker(SpecWorker):
         self.fig_series = None          # pycam.doas.CDSeries object
 
         # Results object
-        self.results.ldfs = []
+        self.reset_doas_results()
+
+        # 1. ROUTINE & FLAGS
+        self.routine = routine  # Defines routine (1=Poly, 2=Filter)
+        self.processed_data = False  # Flag for GUI to know if results exist
+        self.new_spectra = True  # Optimization flag
+
+        # 2. DARK SPECTRUM HANDLING
+        self.dark_dict = {}  # Cache for dark spectra by shutter speed
+        self.have_dark = False
+        self._dark_spec = None  # Backing variable for dark_spec property
+
+        # 3. RAW SPECTRA BACKING VARIABLES
+        self._clear_spec_raw = None
+        self._plume_spec_raw = None
+
+        # 4. REFERENCE SPECTRUM PROCESSING CONTAINERS
+        # Even if iFit handles some of this, the inherited methods expect these dicts
+        self.ref_spec_interp = {}  # Interpolated to spec wavelengths
+        self.ref_spec_conv = {}  # Convolved with ILS
+        self.ref_spec_cut = {}  # Cut to fit window
+        self.ref_spec_ppmm = {}  # Scaled by conversion factor
+        self.ref_spec_filter = {}  # Filtered reference spectrum
+
+        # 5. STRETCHING PARAMETERS
+        # Needed if stretch_spectrum() is ever called
+        self.stretch_adjuster = 0.0001
+        self.stretch_resample = 100
+
+        # 6. THREADING & WATCHING
+        self.processing_in_thread = False
+        self.watcher = None
+        self.watching = False
+        self.transfer_dir = None
+        self.q_spec = queue.Queue()
+        self.save_date_fmt = '%Y-%m-%dT%H%M%S'
+        self.save_freq = [0, 30]  # Save at minute 0 and 30 of every hour (default)
+
+        # 7. PLOTTING PLACEHOLDERS
+        self.fig_spec = None
+        self.fig_doas = None
+        self.dir_info = None
 
         # ==============================================================================================================
         # iFit setup
@@ -86,6 +153,15 @@ class IFitWorker(SpecWorker):
 
         # Create parameter dictionary
         self.params = Parameters()
+        self.spec_dir = Path(spec_dir)
+        self.spec_specs = spec_specs
+        self.ref_spec = {}
+        self._include_ils_fit = False
+        self.reset_doas_results()
+        self.shift = 0
+        self.shift_tol = 0
+        self.stretch = 1.0
+        self.stretch_tol = 0.0
 
         # Add the gases
         for spec in species:
@@ -153,6 +229,22 @@ class IFitWorker(SpecWorker):
     def plume_spec_shift(self):
         """Shifted plume spectrum (to account for issues with spectrometer calibration"""
         return np.roll(self.plume_spec_corr, self.shift)
+
+    @property
+    def start_fit_wave_ld(self):
+        return self._start_fit_wave_ld
+
+    @start_fit_wave_ld.setter
+    def start_fit_wave_ld(self, value):
+        self._start_fit_wave_ld = value
+
+    @property
+    def end_fit_wave_ld(self):
+        return self._end_fit_wave_ld
+
+    @end_fit_wave_ld.setter
+    def end_fit_wave_ld(self, value):
+        self._end_fit_wave_ld = value
 
     @property
     def LDF(self):
@@ -268,9 +360,9 @@ class IFitWorker(SpecWorker):
         """Loads dark spectrum"""
         filename, ext = os.path.splitext(dark_spec_path)
         if ext == '.npy':
-            wavelengths, spectrum = np.load(dark_spec_path)
+            wavelengths, spectrum = np.load(dark_spec_path, allow_pickle=True)
         elif ext == '.txt':
-            wavelengths, spectrum = np.load(dark_spec_path)
+            wavelengths, spectrum = np.loadtxt(dark_spec_path).T
         else:
             self.SpecLogger.debug('Unrecognised file type for loading clear spectrum')
             return
@@ -280,7 +372,11 @@ class IFitWorker(SpecWorker):
         # Add dark spectrum to current dark_list
         filename = os.path.split(filename)[-1].split('.')[0]
         ss_str = filename.split('_')[self.spec_specs.file_ss_loc]
-        ss = int(ss_str.replace(self.spec_specs.file_ss.replace('{}', ''), ''))
+        clean_ss = ss_str.lower().replace('ms', '').replace('ss', '')
+        prefix_to_remove = self.spec_specs.file_ss.replace('{}', '').lower()
+        clean_ss = clean_ss.replace(prefix_to_remove, '')
+
+        ss = int(clean_ss)
 
         # Update dark dictionary
         if ss in self.dark_dict.keys():
@@ -297,9 +393,9 @@ class IFitWorker(SpecWorker):
         """Loads clear spectrum"""
         filename, ext = os.path.splitext(clear_spec_path)
         if ext == '.npy':
-            wavelengths, spectrum = np.load(clear_spec_path)
+            wavelengths, spectrum = np.load(clear_spec_path, allow_pickle=True)
         elif ext == '.txt':
-            wavelengths, spectrum = np.load(clear_spec_path)
+            wavelengths, spectrum = np.loadtxt(clear_spec_path).T
         else:
             self.SpecLogger.debug('Unrecognised file type for loading clear spectrum')
             return
@@ -367,44 +463,77 @@ class IFitWorker(SpecWorker):
 
     def find_dark_spectrum(self, spec_dir, ss):
         """
-        Searches for suitable dark spectrum in designated directory by finding one with the same shutter speed as
-        passed to function.
-        :return: dark_spec
+        Searches for suitable dark spectrum, adapted to be flexible for Dark/dark.
         """
-        # Ensure ss is an integer
         ss = int(ss)
 
-        # Fast dictionary look up for preloaded dark spectra
-        if ss in self.dark_dict.keys():
-            dark_spec = self.dark_dict[ss]
-            return dark_spec
-
-        # List all dark images in directory
-        dark_list = [f for f in os.listdir(spec_dir)
-                     if self.spec_specs.file_type['dark'] in f and self.spec_specs.file_ext in f]
-
-        # Extract ss from each image and round to 2 significant figures
-        ss_str = self.spec_specs.file_ss.replace('{}', '')
-        ss_list = [int(f.split('_')[self.spec_specs.file_ss_loc].replace(ss_str, '')) for f in dark_list]
-
-        ss_idx = [i for i, x in enumerate(ss_list) if x == ss]
-        ss_spectra = [dark_list[i] for i in ss_idx]
-
-        if len(ss_spectra) < 1:
+        if not os.path.exists(str(spec_dir)):
             return None
 
-        # If we have images, we loop through them to create a coadded image
-        dark_full = np.zeros([self.spec_specs.pix_num, len(ss_spectra)])
-        for i, ss_spectrum in enumerate(ss_spectra):
-            # Load image. Coadd.
-            wavelengths, dark_full[:, i] = load_spectrum(os.path.join(spec_dir, ss_spectrum))
+        try:
+            all_files = os.listdir(spec_dir)
+        except Exception:
+            return None
 
-        # Coadd images to creat single image
+        dark_list = [f for f in all_files
+                     if self.spec_specs.file_type['dark'].lower() in f.lower()
+                     and ('.npy' in f or '.txt' in f)]
+
+        if not dark_list:
+            return None
+
+        ss_matching_files = []
+        ss_str = self.spec_specs.file_ss.replace('{}', '')
+
+        for f in dark_list:
+            try:
+                parts = f.split('_')
+                if len(parts) <= self.spec_specs.file_ss_loc:
+                    continue
+
+                ss_part = parts[self.spec_specs.file_ss_loc]
+
+                ss_raw = ss_part.lower().replace('ss', '').replace('ms', '')
+
+                if int(ss_raw) == ss:
+                    ss_matching_files.append(f)
+            except ValueError:
+                continue
+
+        if not ss_matching_files:
+            return None
+
+        def safe_load(path):
+            """Load files without triggering extension errors"""
+            if path.lower().endswith('.txt'):
+                try:
+                    data = np.loadtxt(path).T
+                    return data[0], data[1]
+                except Exception as e:
+                    print(f"DEBUG: Failed to load txt {path}: {e}")
+                    return None, None
+            else:
+                return load_spectrum(path)
+
+        first_path = os.path.join(spec_dir, ss_matching_files[0])
+        first_wav, first_spec = safe_load(first_path)
+
+        if first_spec is None:
+            return None
+
+        dark_full = np.zeros([len(first_spec), len(ss_matching_files)])
+        dark_full[:, 0] = first_spec
+
+        for i in range(1, len(ss_matching_files)):
+            file_path = os.path.join(spec_dir, ss_matching_files[i])
+            _, spec_data = safe_load(file_path)
+            if spec_data is not None:
+                if len(spec_data) == len(first_spec):
+                    dark_full[:, i] = spec_data
+
+        # Create mean dark spectrum
         dark_spec = np.mean(dark_full, axis=1)
-
-        # Update lookup dictionary for fast retrieval of dark image later
         self.dark_dict[ss] = dark_spec
-
         return dark_spec
 
     def process_doas(self, plot=False):

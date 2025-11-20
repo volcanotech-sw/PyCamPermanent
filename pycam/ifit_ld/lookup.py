@@ -158,7 +158,15 @@ def calc_value(point,tree,polygons,indices,index_by_id):
     '''    
     # Find id of possible polygons. Using STR tree here dramatically improves
     # performance as most invalid polygons are removed.
-    valid_ids = [(index_by_id[id(poly)]) for poly in tree.query(point)]
+    query_result = tree.query(point)
+    if len(query_result) == 0:
+        valid_ids = []
+    elif isinstance(query_result[0], (int, np.integer)):
+        valid_ids = query_result
+    else:
+        valid_ids = [index_by_id[id(poly)] for poly in query_result]
+
+    # valid_ids = [(index_by_id[id(poly)]) for poly in tree.query(point)]
     valid_indices = indices[valid_ids]
     
     # Find possible polygons
@@ -173,7 +181,7 @@ def calc_value(point,tree,polygons,indices,index_by_id):
     for i,poly in enumerate(polygons_poss):
         
         # Calculate barycentric coordinates
-        bary_cords = check_polygon(np.array(point),poly)
+        bary_cords = check_polygon(np.array([point.x, point.y]), poly)
         
         # Check that the barycentric coordinates are all between 
         # 0 and 1

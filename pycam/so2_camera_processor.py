@@ -476,12 +476,24 @@ class PyplisWorker:
 
     def load_pcs_from_config(self):
         """ Load the cross correlation lines used for plume speed calculation from the pcs_lines specified in the config """
-        for i, line_file in enumerate(self.config['pcs_lines']):
-            line, line_type = load_pcs_line(line_file)
-            if line_type:
-                self.cross_corr_lines[line_type] = line
-            self.PCS_lines_all.append(line)
-            self.PCS_lines_all[-1].line_id = str(i)
+        if 'pcs_lines' in self.config and self.config['pcs_lines'] is not None:
+            for i, line_file in enumerate(self.config['pcs_lines']):
+                line, _ = load_pcs_line(line_file)
+                if line:
+                    line.line_id = str(i)
+                    self.PCS_lines_all.append(line)
+
+        if 'pcs_line_young' in self.config and self.config['pcs_line_young']:
+            line_young, _ = load_pcs_line(self.config['pcs_line_young'])
+            if line_young:
+                self.cross_corr_lines['young'] = line_young
+                self.PyplisLogger.info("Loaded 'young' cross-correlation line from pcs_line_young.")
+
+        if 'pcs_line_old' in self.config and self.config['pcs_line_old']:
+            line_old, _ = load_pcs_line(self.config['pcs_line_old'])
+            if line_old:
+                self.cross_corr_lines['old'] = line_old
+                self.PyplisLogger.info("Loaded 'old' cross-correlation line from pcs_line_old.")
         self.PCS_lines = [pcs_line for pcs_line in self.PCS_lines_all if not pcs_line == self.cross_corr_lines['old']]
 
     def save_all_dil(self, save_dir):

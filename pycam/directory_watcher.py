@@ -39,7 +39,7 @@ def can_watch_directories():
         # we use the win32 Python module.
         if sys.platform == 'linux2' or sys.platform == 'linux':
             try:
-                import pyinotify
+                import watchdog
                 result = True
             except ImportError:
                 result = False
