@@ -327,7 +327,7 @@ class IFitWorker(SpecWorker):
         Load raw reference spectrum
         :param update:  bool    If False the analyser isn't updated (just use False when initiating object)
         """
-        self.ref_spec[species] = np.loadtxt(pathname)
+        self.ref_spec[species] = np.loadtxt(pathname, encoding='utf-8')
 
         # If no value is provided:
         # If we already have info on that species' starting value then we use that. Otherwise we set it to 0
@@ -1264,10 +1264,13 @@ class IFitWorker(SpecWorker):
         self.update_grid(int(grid_max_ppmm), int(grid_increment_ppmm))
 
         if has_ldf_incr:
-            grid_increment_ldf = ldf_grid.split('-')[-1].split(self.spec_specs.file_ext)[0]
+            grid_increment_ldf = ldf_grid.split('-')[-1]
+            grid_increment_ldf = grid_increment_ldf.replace('.npy', '')
+
             grid_increment_ldf = float(grid_increment_ldf)
         else:
-            grid_increment_ldf = 0.005      # Old setting was always this
+            grid_increment_ldf = 0.005  # Old setting was always this
+
         self.update_grid_ldf(grid_increment_ldf)
 
         if not use_new_window:

@@ -52,25 +52,42 @@ def setup_pyplis_worker(config_path):
     pyplis_worker.doas_worker = setup_ifit_worker(config_path) 
     return pyplis_worker
 
+
 def setup_ifit_worker(config_path):
     with open(config_path, "r") as file:
         config = yaml.safe_load(file)
 
-    # Expand paths
-    ils_path = PyplisWorker.expand_config_path(None, path=config['ILS_path'], config_dir=Path(config_path).parent)
-    ld_lookup_1 = PyplisWorker.expand_config_path(None, path=config['ld_lookup_1'], config_dir=Path(config_path).parent)
-    ld_lookup_2 = PyplisWorker.expand_config_path(None, path=config['ld_lookup_2'], config_dir=Path(config_path).parent)
-    spec_dir = PyplisWorker.expand_config_path(None, path=config['spec_dir'], config_dir=Path(config_path).parent)
-    dark_dir = PyplisWorker.expand_config_path(None, path=config['dark_img_dir'], config_dir=Path(config_path).parent)
+    config_dir = Path(config_path).parent
+    dark_dir_path = PyplisWorker.expand_config_path(None, path=config['dark_spec_dir'], config_dir=config_dir)
+    spec_dir = PyplisWorker.expand_config_path(None, path=config['spec_dir'], config_dir=config_dir)
+    ils_path = PyplisWorker.expand_config_path(None, path=config['ILS_path'], config_dir=config_dir)
+    ld_lookup_1 = PyplisWorker.expand_config_path(None, path=config['ld_lookup_1'], config_dir=config_dir)
+    ld_lookup_2 = PyplisWorker.expand_config_path(None, path=config['ld_lookup_2'], config_dir=config_dir)
 
-    # Create ifit object
-    ifit_worker = IFitWorker(species=config['species_paths'], dark_dir=config['dark_img_dir'])
-    ifit_worker.load_ils(ils_path)  # Load ILS
+    file_ext = '.npy'
+    dark_path_obj = Path(dark_dir_path)
+
+    if dark_path_obj.exists():
+        # Check for .npy files first
+        if any(dark_path_obj.glob('*.npy')):
+            file_ext = '.npy'
+        # If no .npy, check for .txt
+        elif any(dark_path_obj.glob('*.txt')):
+            file_ext = '.txt'
+
+    ifit_worker = IFitWorker(species=config['species_paths'], dark_dir=dark_dir_path)
+
+    ifit_worker.spec_specs.file_ext = file_ext
+
+    ifit_worker.load_ils(ils_path)
     ifit_worker.load_ld_lookup(ld_lookup_1, fit_num=0)
     ifit_worker.load_ld_lookup(ld_lookup_2, fit_num=1)
-    ifit_worker.corr_light_dilution = 0.0
-    ifit_worker.dark_dir = dark_dir
-    ifit_worker.load_dir(spec_dir, plot=False, process_first=False)  # Load spectra directory
+    ifit_worker.corr_light_dilution = config.get('use_light_dilution_spec', 0)
+    ifit_worker.LDF = config.get('LDF', 0.0)
+
+    ifit_worker.dark_dir = dark_dir_path
+
+    ifit_worker.load_dir(spec_dir, plot=False, process_first=False)
     ifit_worker.get_wavelengths(config)
     ifit_worker.get_shift(config)
     ifit_worker.spec_dir = Path(spec_dir)

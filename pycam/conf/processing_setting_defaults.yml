@@ -67,6 +67,7 @@ doas_fov_recal: 0
 fix_fov: 0
 max_doas_cam_dif: 2
 polyorder_cal: 1
+reg_model: Polynomial
 fov_rad: 0
 centre_pix_x: 0
 centre_pix_y: 0
