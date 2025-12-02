@@ -3546,6 +3546,7 @@ class DOASFOVSearchFrame(LoadSaveProcessingSettings):
                      'fix_fov': int,
                      'maxrad_doas': float,
                      'polyorder_cal': int,
+                     'reg_model': str,
                      'centre_pix_x': int,
                      'centre_pix_y': int,
                      'fov_rad': float}
@@ -3570,6 +3571,9 @@ class DOASFOVSearchFrame(LoadSaveProcessingSettings):
         self._fix_fov = tk.BooleanVar()             # Fixes the FOV - no FOV re-calibration at all will occur
 
         self._polyorder_cal = tk.IntVar()
+        self._reg_model = tk.StringVar()
+        self.reg_opts = ['Polynomial', 'Linear (Zero Intercept)', 'Orthogonal', 'Robust']
+        self._reg_model.set(self.reg_opts[0])
 
         self.load_defaults()
 
@@ -3587,6 +3591,7 @@ class DOASFOVSearchFrame(LoadSaveProcessingSettings):
         self.pyplis_worker.config['centre_pix_x'] = self.centre_pix_x
         self.pyplis_worker.config['centre_pix_y'] = self.centre_pix_y
         self.pyplis_worker.config['fov_rad'] = self.fov_rad
+        self.pyplis_worker.config['reg_model'] = self.reg_model
         self.pyplis_worker.apply_config(subset=self.vars.keys()) # Not 100% sure if this is needed here or could be moved into the if-statement
         if self.fix_fov:
             self.pyplis_worker.generate_doas_fov()
@@ -3687,6 +3692,12 @@ class DOASFOVSearchFrame(LoadSaveProcessingSettings):
         spin = ttk.Spinbox(self.frame_opts, textvariable=self._polyorder_cal, from_=1, to=10, increment=1,
                            width=5, font=self.main_gui.main_font)
         spin.grid(row=row, column=1, sticky='nsew', padx=2, pady=2)
+        row += 1
+
+        lab = ttk.Label(self.frame_opts, text='Regression Model:', font=self.main_gui.main_font)
+        lab.grid(row=row, column=0, sticky='w', padx=2, pady=2)
+        om = ttk.OptionMenu(self.frame_opts, self._reg_model, self.reg_model, *self.reg_opts)
+        om.grid(row=row, column=1, sticky='nsew', padx=2, pady=2)
         row += 1
 
         butt_frame = ttk.Frame(self.frame_opts)
@@ -3931,6 +3942,14 @@ class DOASFOVSearchFrame(LoadSaveProcessingSettings):
     @polyorder_cal.setter
     def polyorder_cal(self, value):
         self._polyorder_cal.set(value)
+
+    @property
+    def reg_model(self):
+        return self._reg_model.get()
+
+    @reg_model.setter
+    def reg_model(self, value):
+        self._reg_model.set(value)
 
     def update_vars(self):
         """Updates FOV variables based on pyplis worker"""

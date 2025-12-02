@@ -47,6 +47,8 @@ import warnings
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
 from pathlib import Path
+from scipy.odr import ODR, Model, RealData
+from scipy.optimize import least_squares
 
 from inspect import cleandoc
 warnings.simplefilter("ignore", UserWarning)
@@ -2581,7 +2583,8 @@ class PyplisWorker:
         s.maxrad = self.maxrad_doas  # Set maximum radius of FOV to close to that expected from optical calculations
         s.g2dasym = False  # Allow only circular FOV (not eliptical)
         self.calib_pears = s.perform_fov_search(method='pearson')
-        self.calib_pears.fit_calib_data(polyorder=polyorder)
+        # self.calib_pears.fit_calib_data(polyorder=polyorder)
+        self.perform_calibration_fit()
         self.record_fit_data()
         self.centre_pix_x, self.centre_pix_y = self.calib_pears.fov.pixel_position_center(abs_coords=True)
         self.fov_rad = self.calib_pears.fov.pixel_extend(abs_coords=True)
@@ -2649,6 +2652,67 @@ class PyplisWorker:
         
         return False
 
+    def perform_calibration_fit(self):
+        """
+        Performs calibration fitting based on the selected regression model.
+        Updates self.calib_pears coefficients and residuals.
+        """
+        reg_model = self.config.get('reg_model', 'Polynomial')
+
+        # Get data vectors
+        x = self.calib_pears.tau_vec
+        y = self.calib_pears.cd_vec
+
+        # Ensure we have data
+        if len(x) < 2:
+            return
+
+        if reg_model == 'Linear (Zero Intercept)':
+            # Force fit through 0,0 (y = mx)
+            slope, _, _, _ = np.linalg.lstsq(x[:, np.newaxis], y, rcond=None)
+
+            self.calib_pears.calib_coeffs = np.array([slope[0], 0.0])  # [slope, intercept]
+            self.calib_pears.polyorder = 1
+            self.calib_pears.residual = y - (x * slope[0])
+
+        elif reg_model == 'Orthogonal':
+            # Orthogonal Distance Regression (y = mx + c)
+            # Minimizes perpendicular distance to the line
+            def linear_func(p, x):
+                return p[0] * x + p[1]
+
+            linear_model = Model(linear_func)
+            data = RealData(x, y)
+            # Initialize with standard polyfit estimate to help convergence
+            init = np.polyfit(x, y, 1)
+            odr = ODR(data, linear_model, beta0=init)
+            out = odr.run()
+
+            self.calib_pears.calib_coeffs = out.beta  # [slope, intercept]
+            self.calib_pears.polyorder = 1
+            self.calib_pears.residual = y - (out.beta[0] * x + out.beta[1])
+            self.PyplisLogger.info(f"ODR Fit: Slope={out.beta[0]:.2f}, Intercept={out.beta[1]:.2f}")
+
+        elif reg_model == 'Robust':
+            # Robust Regression (Huber loss) (y = mx + c)
+            # Resistant to outliers
+            def func(p, x, y):
+                return (p[0] * x + p[1]) - y
+
+            # Initialize
+            init = np.polyfit(x, y, 1)
+            # soft_l1 is the Huber loss function
+            res = least_squares(func, x0=init, args=(x, y), loss='soft_l1', f_scale=0.1)
+
+            self.calib_pears.calib_coeffs = res.x  # [slope, intercept]
+            self.calib_pears.polyorder = 1
+            self.calib_pears.residual = y - (res.x[0] * x + res.x[1])
+            self.PyplisLogger.info(f"Robust Fit: Slope={res.x[0]:.2f}, Intercept={res.x[1]:.2f}")
+
+        else:
+            # Default Polynomial (standard pyplis behavior)
+            polyorder = self.config.get('polyorder_cal', 1)
+            self.calib_pears.fit_calib_data(polyorder=polyorder)
     def update_doas_calibration(self, img_tau=None, force_fov_cal=False):
         """
         Updates DOAS results to include more data, or FOV location is also updated if this is requested and in the
@@ -2862,7 +2926,8 @@ class PyplisWorker:
 
         # Recalibrate
         if recal:
-            self.calib_pears.fit_calib_data()
+            # self.calib_pears.fit_calib_data()
+            self.perform_calibration_fit()
             self.record_fit_data()
 
     def rem_doas_cal_data(self, time_obj, inplace=True, recal=True):
@@ -2887,7 +2952,11 @@ class PyplisWorker:
 
         # Rerun calibration fitting and then return object
         if recal:
-            calib_dat.fit_calib_data()
+            # calib_dat.fit_calib_data()
+            if inplace:
+                self.perform_calibration_fit()
+            else:
+                calib_dat.fit_calib_data()
         return calib_dat
 
     def load_cal_series(self, filename):
