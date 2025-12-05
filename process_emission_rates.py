@@ -63,7 +63,7 @@ def setup_ifit_worker(config_path):
     dark_dir = PyplisWorker.expand_config_path(None, path=config['dark_img_dir'], config_dir=Path(config_path).parent)
 
     # Create ifit object
-    ifit_worker = IFitWorker(species=config['species_paths'], dark_dir=config['dark_img_dir'])
+    ifit_worker = IFitWorker(species=config['species_paths'], dark_dir=config['dark_spec_dir'])
     ifit_worker.load_ils(ils_path)  # Load ILS
     ifit_worker.load_ld_lookup(ld_lookup_1, fit_num=0)
     ifit_worker.load_ld_lookup(ld_lookup_2, fit_num=1)
