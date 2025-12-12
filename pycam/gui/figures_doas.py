@@ -1314,3 +1314,5 @@ class ILSFrame:
 
     def set_ILS_fit(self):
         self.doas_worker.include_ils_fit = self.include_ils_fit
+        self.doas_worker.process_doas(plot=True)
+        
