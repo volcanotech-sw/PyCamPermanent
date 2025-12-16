@@ -480,7 +480,7 @@ class StorageMount:
             else:
                 PycamLogger.info(f"Unkown filesystem type: {blkid_line}")
                 return
-            subprocess.call(["sudo"] + fsck + [self.dev_path], timeout=10)
+            subprocess.call(["sudo"] + fsck + [self.dev_path], timeout=30)
 
     def del_all_data(self):
         """
