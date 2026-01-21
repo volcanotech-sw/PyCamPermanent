@@ -4461,6 +4461,9 @@ class PyplisWorker:
             fit_df = pd.DataFrame(self.fit_data[None, -1], columns = self.fit_header)
             header = False
 
+        tau_df = tau_df.sort_values("timepoint")
+        fit_df = fit_df.sort_values("timepoint")
+
         full_df = pd.merge_asof(tau_df, fit_df, "timepoint")
         full_df.to_csv(self.calibration_file_path, mode = "a", header=header)
 
