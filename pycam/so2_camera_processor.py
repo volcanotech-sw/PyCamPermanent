@@ -1388,6 +1388,10 @@ class PyplisWorker:
         :return:
         """
         self.img_B.img_warped = self.img_reg.register_image(self.img_A.img, self.img_B.img, **kwargs)
+        try:
+            self.vigncorr_B_warped = pyplis.Img(self.img_reg.register_image(self.vigncorr_A.img, self.vigncorr_B.img))
+        except AttributeError:
+            pass
 
     def update_img_buff(self, img_tau, file_A, file_B, opt_flow=None, nadeau_plumespeed=None):
         """
@@ -2129,6 +2133,23 @@ class PyplisWorker:
         new_image.meta['pix_height'] = meta_image.meta['pix_height']
         new_image.edit_log['darkcorr'] = meta_image.edit_log['darkcorr']
 
+    def apply_vignette_correction(self, img, band):
+        """
+        Applies vignette correction to img based on band
+        """
+        vign_corr_img = pyplis.Img(img.img / getattr(self, 'vign_{}'.format(band)))
+        vign_corr_img.edit_log['vigncorr'] = True
+        setattr(self, 'vigncorr_{}'.format(band), vign_corr_img)
+        self.update_meta(getattr(self, 'vigncorr_{}'.format(band)), img)
+
+        if band == 'B':
+            # Create a warped version of off-band
+            self.vigncorr_B_warped = pyplis.Img(self.img_reg.register_image(self.vigncorr_A.img, self.vigncorr_B.img))
+            self.update_meta(self.vigncorr_B_warped, self.vigncorr_B)
+            self.vigncorr_B_warped.edit_log['vigncorr'] = True
+
+        return vign_corr_img
+
     def model_background(self, imgs={'A': None, 'B': None, 'B_warped': None}, set_vign=True, mode=None,
                          params_A=None, params_B=None, plot=True):
         """
@@ -2170,20 +2191,9 @@ class PyplisWorker:
 
         # Generate vignette corrected images if requested.
         if set_vign:
-            vigncorr_A = pyplis.Img(img_A.img / self.vign_A)
-            self.vigncorr_A = vigncorr_A
-            self.update_meta(self.vigncorr_A, img_A)
-            vigncorr_B = pyplis.Img(img_B.img / self.vign_B)
-            self.vigncorr_B = vigncorr_B
-            self.update_meta(self.vigncorr_B, img_B)
-            self.vigncorr_A.edit_log['vigncorr'] = True
-            self.vigncorr_B.edit_log['vigncorr'] = True
-
-            # Create a warped version - required for light dilution work
-            vigncorr_B_warped = pyplis.Img(self.img_reg.register_image(self.vigncorr_A.img, self.vigncorr_B.img))
-            self.vigncorr_B_warped = vigncorr_B_warped
-            self.update_meta(self.vigncorr_B_warped, self.vigncorr_B)
-            self.vigncorr_B_warped.edit_log['vigncorr'] = True
+            vigncorr_A = self.apply_vignette_correction(img_A, 'A')
+            vigncorr_B = self.apply_vignette_correction(img_B, 'B')
+            vigncorr_B_warped = self.vigncorr_B_warped
 
         # Find clear sky regions if requested
         if self.auto_param_bg and params_A is None:
