@@ -72,7 +72,7 @@ class MetaFileLocator(type):
             return super().__getattribute__(attr)
         except AttributeError:
             # that attribute name didn't work, instead try for the base name
-            pycamLogger.error(f"Failed to find attribute {attr}", end="")
+            pycamLogger.error(f"Failed to find attribute {attr}")
             if not attr.endswith("_PI") and not attr.endswith("_WINDOWS"):
                 # try the attribute with the current os appended
                 if running_on_pi():
