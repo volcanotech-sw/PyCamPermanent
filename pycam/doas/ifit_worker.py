@@ -394,10 +394,15 @@ class IFitWorker(SpecWorker):
             return None
 
         # If we have images, we loop through them to create a coadded image
-        dark_full = np.zeros([self.spec_specs.pix_num, len(ss_spectra)])
         for i, ss_spectrum in enumerate(ss_spectra):
-            # Load image. Coadd.
-            wavelengths, dark_full[:, i] = load_spectrum(os.path.join(spec_dir, ss_spectrum))
+            # Get first spectrum and use its length to determine the size of the array
+            if i == 0:
+                wavelengths, dark_0 = load_spectrum(os.path.join(spec_dir, ss_spectrum))
+                dark_full = np.zeros([len(dark_0), len(ss_spectra)])
+                dark_full[:, i] = dark_0
+            else:
+                # Load image. Coadd.
+                wavelengths, dark_full[:, i] = load_spectrum(os.path.join(spec_dir, ss_spectrum))
 
         # Coadd images to creat single image
         dark_spec = np.mean(dark_full, axis=1)
