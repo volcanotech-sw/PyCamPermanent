@@ -810,7 +810,7 @@ class IFitWorker(SpecWorker):
                     self.process_doas()
                     self.SpecLogger.info(f'Time taken to process {pathname}: {time.time() - time_1:.5f}')
                 except ValueError as e:
-                    self.SpecLogger.info(f'scipy least squares fit failed. spectrum not processed: {pathname}')
+                    self.SpecLogger.warning(f'scipy least squares fit failed. spectrum not processed: {pathname}')
                     if self.watching:
                         mem_handler.flush()
                     continue
