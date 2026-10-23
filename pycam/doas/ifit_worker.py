@@ -803,8 +803,17 @@ class IFitWorker(SpecWorker):
                     self.fig_spec.update_plume()
 
                 time_1 = time.time()
-                self.process_doas()
-                self.SpecLogger.info(f'Time taken to process {pathname}: {time.time() - time_1:.5f}')
+
+                # Process spectrum.
+                # Catch error thrown by scipy and continue with processing next spectrum if this happens.
+                try:
+                    self.process_doas()
+                    self.SpecLogger.info(f'Time taken to process {pathname}: {time.time() - time_1:.5f}')
+                except ValueError as e:
+                    self.SpecLogger.info(f'scipy least squares fit failed. spectrum not processed: {pathname}')
+                    if self.watching:
+                        mem_handler.flush()
+                    continue
 
                 # Gather all relevant information and spectra and pass it to PyplisWorker
                 processed_dict = {'processed': True,             # Flag whether this is a complete, processed dictionary
