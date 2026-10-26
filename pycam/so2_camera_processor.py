@@ -38,10 +38,12 @@ import pickle
 import copy
 from tkinter import filedialog, messagebox
 import tkinter as tk
+import sv_ttk
 import matplotlib.pyplot as plt
 import numpy as np
 import os
 import cv2
+import ffpiv
 from skimage import transform as tf
 import warnings
 from ruamel.yaml import YAML
@@ -49,10 +51,13 @@ from ruamel.yaml.comments import CommentedMap
 from pathlib import Path
 from scipy.odr import ODR, Model, RealData
 from scipy.optimize import least_squares
+from scipy.interpolate import RegularGridInterpolator
+from scipy.stats import t
 
 from inspect import cleandoc
 warnings.simplefilter("ignore", UserWarning)
 warnings.simplefilter("ignore", RuntimeWarning)
+warnings.simplefilter("ignore", FutureWarning)
 
 yaml = YAML()
 
@@ -172,7 +177,8 @@ class PyplisWorker:
                            "flow_raw": False,           # Raw optical flow output
                            "flow_histo": True,          # Histogram analysis
                            "flow_hybrid": False,        # Hybrid histogram
-                           "flow_nadeau": False}        # Nadeau cross-correlation technique
+                           "flow_nadeau": False,        # Nadeau cross-correlation technique
+                           "flow_ffpiv": False}         # Particle Image Velocimetry technique
         self.cross_corr_recal = 10                      # Time (minutes) to rune cross-correlation analysis
         self.cross_corr_last = 0                        # Last time cross-correlation was run
         self.cross_corr_info = {}
@@ -336,7 +342,7 @@ class PyplisWorker:
         self.STOP_FLAG = 'end'      # Flag for stopping processing queue
         self.save_date_fmt = '%Y-%m-%dT%H%M%S'
 
-        self.fit_data = np.empty(shape = (0, 3 + self.polyorder_cal + 1))
+        self.fit_data = np.empty(shape = (0, 4 + self.polyorder_cal + 1))
         self.tau_vals = []
 
         self.geom_dict = {}
@@ -610,6 +616,49 @@ class PyplisWorker:
         with open(full_path, "w") as file:
             yaml.dump(self.raw_configs["default"], file)
 
+    def generate_ffpiv_flow(self, img_tau_prev=None, img_tau_curr=None):
+        """Generates velocity vectors using FF-PIV or OpenPIV"""
+        if img_tau_prev is None:
+            img_tau_prev = self.img_tau_prev
+        if img_tau_curr is None:
+            img_tau_curr = self.img_tau
+
+        time_step = img_tau_curr.meta['start_acq'] - img_tau_prev.meta['start_acq']
+        dt = time_step.total_seconds()
+        if dt <= 0:
+            dt = 1.0
+
+        win = self.config.get('ffpiv_window_size', 64)
+        overlap = self.config.get('ffpiv_overlap', 32)
+        method = self.config.get('ffpiv_method', 'Fast')
+
+        if method == 'Detailed (OpenPIV)':
+            import openpiv.windef as windef
+            settings = windef.PIVSettings()
+            settings.windowsizes = (win, win // 2)
+            settings.overlap = (overlap, overlap // 2)
+            settings.num_iterations = 2
+            settings.subpixel_method = 'gaussian'
+            settings.sig2noise_validate = True
+            settings.replace_vectors = True
+
+            x, y, u, v, mask = windef.simple_multipass(img_tau_prev.img, img_tau_curr.img, settings)
+        else:
+            import ffpiv
+            u, v = ffpiv.piv(
+                img_tau_prev.img,
+                img_tau_curr.img,
+                window_size=(win, win),
+                overlap=(overlap, overlap)
+            )
+
+        u_vel = u / dt
+        v_vel = v / dt
+        sig2noise = np.ones_like(u)
+
+        self.piv_flow = {'u': u_vel, 'v': v_vel, 'snr': sig2noise, 'dt': dt}
+        return self.piv_flow
+
     @property
     def location(self):
         return self._location
@@ -705,6 +754,14 @@ class PyplisWorker:
     @flow_nadeau.setter
     def flow_nadeau(self, value):
         self.velo_modes['flow_nadeau'] = value
+
+    @property
+    def flow_ffpiv(self):
+        return self.velo_modes['flow_ffpiv']
+
+    @flow_ffpiv.setter
+    def flow_ffpiv(self, value):
+        self.velo_modes['flow_ffpiv'] = value
 
     @property
     def save_img_aa(self):
@@ -3455,16 +3512,31 @@ class PyplisWorker:
         return ICA_Mass
 
     def update_results(self, res, flow_id, **kwargs):
-        """Append results to results dictionary
-
-        :param dict res: Results dictionary
-        :param str flow_id: Flow type
-        """
+        """Append results to results dictionary and calculate min/max bounds"""
         res[flow_id]._start_acq.append(kwargs['start_acq'])
         res[flow_id]._phi.append(kwargs['phi'])
         res[flow_id]._phi_err.append(kwargs['phi_err'])
         res[flow_id]._velo_eff.append(kwargs['velo_eff'])
         res[flow_id]._velo_eff_err.append(kwargs['velo_eff_err'])
+
+        # Calculate bounded errors
+        phi = kwargs['phi']
+        v = kwargs['velo_eff']
+        v_err = kwargs['velo_eff_err']
+
+        frac_v_err = (v_err / v) if (v and v != 0) else 0.0
+        frac_cal_err = getattr(self, 'current_calib_err_frac', 0.0)
+
+        # Combine velocity error and dynamic calibration error in quadrature
+        total_frac_err = np.sqrt(np.nan_to_num(frac_v_err) ** 2 + np.nan_to_num(frac_cal_err) ** 2)
+
+        # Initialize custom arrays if they don't exist yet
+        if not hasattr(res[flow_id], '_phi_min'):
+            res[flow_id]._phi_min = []
+            res[flow_id]._phi_max = []
+
+        res[flow_id]._phi_min.append(phi * (1 - total_frac_err))
+        res[flow_id]._phi_max.append(phi * (1 + total_frac_err))
 
     def update_total_emissions(self, total_emissions, flow_id, line_include, **kwargs):
         """ Appends results to total emaissions dictionary if line_include is True
@@ -3526,7 +3598,8 @@ class PyplisWorker:
                            'flow_raw': {'phi': [], 'phi_err': [], 'veff': [], 'veff_err': []},
                            'flow_histo': {'phi': [], 'phi_err': [], 'veff': [], 'veff_err': []},
                            'flow_hybrid': {'phi': [], 'phi_err': [], 'veff': [], 'veff_err': []},
-                           'flow_nadeau': {'phi': [], 'phi_err': [], 'veff': [], 'veff_err': []}}
+                           'flow_nadeau': {'phi': [], 'phi_err': [], 'veff': [], 'veff_err': []},
+                           'flow_ffpiv': {'phi': [], 'phi_err': [], 'veff': [], 'veff_err': []}}
         
         ICA_mass_total = 0
 
@@ -3768,18 +3841,118 @@ class PyplisWorker:
                     res['flow_hybrid']._frac_optflow_ok.append(1 - frac_bad)
                     res['flow_hybrid']._frac_optflow_ok_ica.append(ica_fac_ok)
 
-                    
+                # FF-PIV / OpenPIV emission rate retrieval
+                if self.velo_modes.get('flow_ffpiv', False):
+                    if hasattr(self, 'piv_flow') and self.piv_flow is not None:
+                        try:
+                            self.PyplisLogger.debug(f"Starting PIV calculation for line {line.line_id}")
+                            pts = np.vstack((line.profile_coords[1, :], line.profile_coords[0, :])).T
+
+                            win = self.config.get('ffpiv_window_size', 64)
+                            step = win - self.config.get('ffpiv_overlap', 32)
+                            y_dim, x_dim = self.piv_flow['u'].shape
+
+                            y_grid = np.linspace(win // 2, win // 2 + (y_dim - 1) * step, y_dim)
+                            x_grid = np.linspace(win // 2, win // 2 + (x_dim - 1) * step, x_dim)
+
+                            interp_u = RegularGridInterpolator((y_grid, x_grid), self.piv_flow['u'],
+                                                                bounds_error=False, fill_value=0)
+                            interp_v = RegularGridInterpolator((y_grid, x_grid), self.piv_flow['v'],
+                                                                bounds_error=False, fill_value=0)
+
+                            dx_piv = interp_u(pts)
+                            dy_piv = interp_v(pts)
+
+                            veff_arr = np.dot(n, (dx_piv, dy_piv))[cond] * distarr
+
+                            # Scrub NaN values natively from the tracking array to protect the integrator
+                            valid_mask = ~np.isnan(veff_arr)
+                            veff_clean = veff_arr[valid_mask]
+
+                            # Apply the exact same mask to the column densities and distances to maintain shape match
+                            cds_clean = cds[valid_mask]
+                            distarr_clean = distarr[valid_mask]
+
+                            integration_style = self.config.get('ffpiv_integration', 'Mean')
+
+                            if integration_style == 'Point-by-Point':
+                                veff_use = veff_clean
+                                veff_err_use = veff_clean * self.optflow_err_rel_veff
+                                veff_log = veff_clean.mean() if len(veff_clean) > 0 else 0.0
+
+                            elif integration_style == 'Peak Histogram':
+                                valid_v = veff_clean[veff_clean > 0]
+                                if len(valid_v) > 2:
+                                    hist, bin_edges = np.histogram(valid_v, bins='auto')
+                                    peak_bin = np.argmax(hist)
+                                    veff_use = (bin_edges[peak_bin] + bin_edges[peak_bin + 1]) / 2
+                                else:
+                                    veff_use = veff_clean.mean() if len(veff_clean) > 0 else 0.0
+                                veff_err_use = veff_use * self.optflow_err_rel_veff
+                                veff_log = veff_use
+
+                            else:  # Mean
+                                veff_use = veff_clean.mean() if len(veff_clean) > 0 else 0.0
+                                veff_err_use = veff_use * self.optflow_err_rel_veff
+                                veff_log = veff_use
+
+                            # Note we are now passing the matched _clean arrays
+                            phi, phi_err = self.det_emission_rate_kgs(cds_clean, veff_use, distarr_clean, cd_err,
+                                                                      veff_err_use, disterr)
+
+                            self.update_results(res, 'flow_ffpiv', start_acq=img_time, phi=phi, phi_err=phi_err,
+                                                velo_eff=veff_log, velo_eff_err=veff_err_use if isinstance(veff_err_use,
+                                                                                                           float) else veff_err_use.mean())
+                            self.update_total_emissions(total_emissions, 'flow_ffpiv', line_include, phi=phi,
+                                                        phi_err=phi_err, velo_eff=veff_log,
+                                                        velo_eff_err=veff_err_use if isinstance(veff_err_use,
+                                                                                                float) else veff_err_use.mean())
+
+                        except Exception as e:
+                            import traceback
+                            self.PyplisLogger.error(
+                                f"PIV failed for line {line.line_id}: {repr(e)}\n{traceback.format_exc()}")
+                            self.update_results(res, 'flow_ffpiv', start_acq=img_time, phi=0.0, phi_err=0.0,
+                                                velo_eff=0.0, velo_eff_err=0.0)
+                            self.update_total_emissions(total_emissions, 'flow_ffpiv', line_include, phi=0.0,
+                                                        phi_err=0.0, velo_eff=0.0, velo_eff_err=0.0)
+
+                        except Exception as e:
+                            import traceback
+                            self.PyplisLogger.error(
+                                f"PIV failed for line {line.line_id}: {repr(e)}\n{traceback.format_exc()}")
+                            self.update_results(res, 'flow_ffpiv', start_acq=img_time, phi=0.0, phi_err=0.0,
+                                                velo_eff=0.0, velo_eff_err=0.0)
+                            self.update_total_emissions(total_emissions, 'flow_ffpiv', line_include, phi=0.0,
+                                                        phi_err=0.0, velo_eff=0.0, velo_eff_err=0.0)
+
         # Sum all lines of equal times and make this a 'total' EmissionRates object. So have a total
         # for each flow type
         for mode in self.velo_modes:
             if self.velo_modes[mode]:
+                phi_tot = np.nansum(total_emissions[mode]['phi'])
+                velo_eff_tot = np.nanmean(total_emissions[mode]['veff'])
+                velo_eff_err_tot = np.sqrt(np.nansum(np.power(total_emissions[mode]['veff_err'], 2)))
+
                 self.results['total'][mode]._start_acq.append(img_time)
-                self.results['total'][mode]._phi.append(np.nansum(total_emissions[mode]['phi']))
+                self.results['total'][mode]._phi.append(phi_tot)
                 self.results['total'][mode]._phi_err.append(
                     np.sqrt(np.nansum(np.power(total_emissions[mode]['phi_err'], 2))))
-                self.results['total'][mode]._velo_eff.append(np.nanmean(total_emissions[mode]['veff']))
-                self.results['total'][mode]._velo_eff_err.append(
-                    np.sqrt(np.nansum(np.power(total_emissions[mode]['veff_err'], 2))))
+                self.results['total'][mode]._velo_eff.append(velo_eff_tot)
+                self.results['total'][mode]._velo_eff_err.append(velo_eff_err_tot)
+
+                # Apply the dynamic error to the totals
+                frac_v_err = (velo_eff_err_tot / velo_eff_tot) if (
+                            velo_eff_tot and velo_eff_tot != 0 and not np.isnan(velo_eff_tot)) else 0.0
+                frac_cal_err = getattr(self, 'current_calib_err_frac', 0.0)
+                total_frac_err = np.sqrt(np.nan_to_num(frac_v_err) ** 2 + np.nan_to_num(frac_cal_err) ** 2)
+
+                if not hasattr(self.results['total'][mode], '_phi_min'):
+                    self.results['total'][mode]._phi_min = []
+                    self.results['total'][mode]._phi_max = []
+
+                self.results['total'][mode]._phi_min.append(phi_tot * (1 - total_frac_err))
+                self.results['total'][mode]._phi_max.append(phi_tot * (1 + total_frac_err))
 
         self.update_ICA_masses('total', img_time, ICA_mass_total)
 
@@ -3884,6 +4057,13 @@ class PyplisWorker:
                     self.fig_nadeau.update_results(nadeau_plumespeed, info_dict)
             else:
                 nadeau_plumespeed = None
+
+            if self.velo_modes.get('flow_ffpiv', False):
+                try:
+                    self.PyplisLogger.debug("Generating FF-PIV flow in process_pair")
+                    self.generate_ffpiv_flow()
+                except Exception as e:
+                    self.PyplisLogger.error(f"Failed to generate FF-PIV flow: {repr(e)}")
 
             # Calibrate image if we have a calibrated image
             if self.img_cal_prev is not None:
@@ -4019,6 +4199,13 @@ class PyplisWorker:
                     nadeau_plumespeed = buff_dict['nadeau_plumespeed']
             else:
                 nadeau_plumespeed = None
+
+            if self.velo_modes.get('flow_ffpiv', False):
+                try:
+                    self.PyplisLogger.debug(f"Generating FF-PIV flow from buffer index {i}")
+                    self.generate_ffpiv_flow(img_tau_prev=img_tau, img_tau_curr=img_buff[i + 1]['img_tau'])
+                except Exception as e:
+                    self.PyplisLogger.error(f"Failed to generate FF-PIV flow from buffer: {repr(e)}")
 
             # Calculate emission rate - don't update plot, and then we will do that at the end, for speed
             results = self.calculate_emission_rate(img=img_cal, flow=flow, nadeau_speed=nadeau_plumespeed, plot=False)
@@ -4413,6 +4600,7 @@ class PyplisWorker:
 
         pos_string = f'DOAS_FOV_pos [X Y]={self.config["centre_pix_x"]} {self.config["centre_pix_y"]}\n'
         rad_string = f'DOAS_FOV_radius={self.config["fov_rad"]}\n'
+        reg_string = f'Regression_Model={self.reg_model}\n'
         
         if self.doas_recal:
             remove_string = f'DOAS_remove_data [minutes]={self.remove_doas_mins}\n'
@@ -4424,7 +4612,7 @@ class PyplisWorker:
         else:
             recal_string = 'DOAS_fov_recal [minutes]=False\n'
 
-        return pos_string + rad_string + remove_string + recal_string
+        return pos_string + rad_string + remove_string + recal_string + reg_string
 
     def write_calib_headerlines(self):
 
@@ -4451,7 +4639,12 @@ class PyplisWorker:
             # Generate column heading for tau and fit dfs
             coeff_headers = [f"coeff {i}" for i in range(self.polyorder_cal+1)]
             self.tau_header = ["timepoint", "optical depth (tau)", "col density (doas)", "col density (error)"]
-            self.fit_header = ["timepoint"] + coeff_headers + ["MSE", "r-squared"]
+            # Generate column heading for tau and fit dfs
+            coeff_headers = [f"coeff {i}" for i in range(self.polyorder_cal + 1)]
+            self.tau_header = ["timepoint", "optical depth (tau)", "col density (doas)", "col density (error)"]
+
+            # Add n_points to the header
+            self.fit_header = ["timepoint"] + coeff_headers + ["MSE", "r-squared", "n_points"]
 
             tau_df = pd.DataFrame(self.tau_vals, columns = self.tau_header)
             fit_df = pd.DataFrame(self.fit_data, columns = self.fit_header)
@@ -4460,6 +4653,9 @@ class PyplisWorker:
             tau_df = pd.DataFrame(self.tau_vals[None, -1], columns = self.tau_header)
             fit_df = pd.DataFrame(self.fit_data[None, -1], columns = self.fit_header)
             header = False
+
+        tau_df["timepoint"] = pd.to_datetime(tau_df["timepoint"])
+        fit_df["timepoint"] = pd.to_datetime(fit_df["timepoint"])
 
         tau_df = tau_df.sort_values("timepoint")
         fit_df = fit_df.sort_values("timepoint")
@@ -4471,9 +4667,19 @@ class PyplisWorker:
         # Save fit statistics
         mse = np.mean(self.calib_pears.residual ** 2)
         r2 = 1 - (mse / np.var(self.calib_pears.cd_vec))
+        n = len(self.calib_pears.cd_vec)
 
-        fit_data = np.hstack((self.calib_pears.stop, np.flip(self.calib_pears.calib_coeffs), mse, r2))
-        self.fit_data = np.append(self.fit_data, fit_data[np.newaxis, :], axis = 0)
+        # Calculate dynamic 95% CI fraction for the slope
+        m = self.calib_pears.calib_coeffs[0]
+        if n > 2 and 0 < r2 < 1:
+            SE_m = (m / np.sqrt(n - 2)) * np.sqrt((1 - r2) / r2)
+            t_crit = t.ppf(0.975, df=n - 2)
+            self.current_calib_err_frac = (t_crit * SE_m) / m
+        else:
+            self.current_calib_err_frac = 0.0
+
+        fit_data = np.hstack((self.calib_pears.stop, np.flip(self.calib_pears.calib_coeffs), mse, r2, n))
+        self.fit_data = np.append(self.fit_data, fit_data[np.newaxis, :], axis=0)
 
     def start_watching_dir(self):
 

@@ -18,6 +18,7 @@ from matplotlib import gridspec
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.spines
 import matplotlib.cm as cm
+import matplotlib.patches as patches
 
 import numpy as np
 import threading
@@ -33,27 +34,23 @@ class ImageFigure:
     Class for plotting an image and associated widgets, such as cross-sectinal DNs
     :param: img_reg     ImageRegistrationFrame
     """
+
     def __init__(self, main_gui, frame, img_reg, lock=threading.Lock(), name='Image', band='A',
                  image=np.zeros([CameraSpecs().pix_num_y, CameraSpecs().pix_num_x]),
                  start_update_thread=False):
 
         self.main_gui = main_gui
-
-        # Get root - used for plotting using refresh after in _draw_canv_()
         parent_name = frame.winfo_parent()
         self.root = frame._nametowidget(parent_name)
-
         self.parent = frame
         self.frame = ttk.LabelFrame(self.parent, text=name)
         self.img_reg = img_reg
         self.lock = lock
         self.update_thread = None
-
-        self.q = queue.Queue()      # Queue for requesting canvas draw (when in processing thread)
+        self.q = queue.Queue()
         self.draw_time = time.time()
-        self.plot_lag = 0.5         # Minimum time between successive draw() calls. Prevents GUI freezing
+        self.plot_lag = 0.5
 
-        # Set self to pyplis worker figure object
         setattr(pyplis_worker, 'fig_{}'.format(band), self)
 
         self.image = image
@@ -62,48 +59,68 @@ class ImageFigure:
 
         self.pdx = 2
         self.pdy = 2
-
         self.img_fig_size = cfg.gui_setts.fig_img
         self.dpi = cfg.gui_setts.dpi
 
-        self._row_colour = 'limegreen'  # Colour of cross-section plotting for row
-        self._col_colour = 'red'        # Colour of cross-section plotting for column
-        self._init_img_row = 50         # Starting row position
-        self._init_img_col = 50         # Starting column position
-        self._row = tk.IntVar()
-        self._col = tk.IntVar()
+        # Updated Colors
+        self._row_colour = 'navy'
+        self._col_colour = '#CC5500'
 
-        self._img_type = tk.IntVar()
+        self._row = tk.IntVar(value=int(self.specs.pix_num_y / 2))
+        self._col = tk.IntVar(value=int(self.specs.pix_num_x / 2))
+
+        self._img_type = tk.IntVar(value=1)
         self.img_type = 1
 
-        # Build figure
+        # New toggle variable defaulting to False (Hidden)
+        self._show_xsect = tk.BooleanVar(value=False)
+
+        # Build figure first
         self._build_img_fig()
 
-        # Build cross-section control panel
-        self._build_xsect_panel()
-
-        self.img_type_frame = ttk.LabelFrame(self.frame, text='Image display')
+        # Build Image Options frame
+        self.img_type_frame = ttk.LabelFrame(self.frame, text='Image Options')
         self.img_type_frame.grid(row=0, column=0, columnspan=3, sticky='nsew', padx=5, pady=5)
 
         rad_1 = ttk.Radiobutton(self.img_type_frame, text='Raw image', variable=self._img_type, value=1,
                                 command=self.update_plot)
         rad_2 = ttk.Radiobutton(self.img_type_frame, text='Vignette corrected', variable=self._img_type, value=2,
                                 command=self.update_plot)
-        rad_3 = ttk.Radiobutton(self.img_type_frame, text='Light dilution corrected', variable=self._img_type, value=3,
-                                command=self.update_plot)
+
         rad_1.grid(row=0, column=0, pady=5, sticky='w')
-        rad_2.grid(row=0, column=1, pady=5)
-        rad_3.grid(row=0, column=2, pady=5)
+        rad_2.grid(row=0, column=1, pady=5, sticky='w')
+
+        # Add Reset button
+        self.reset_butt = ttk.Button(self.img_type_frame, text='Reset Control Points', command=self.cp_reset)
+        self.reset_butt.grid(row=0, column=2, padx=5, pady=5, sticky='e')
+
+        self._img_type = tk.IntVar(value=1)
+        self.img_type = 1
+
+        # Variables for overlays and toggles
+        if self.band == 'A':
+            self._show_spec_fov = tk.BooleanVar(value=False)
+            self._show_spec_conc = tk.BooleanVar(value=False)
+            self.spec_conc_text = self.ax.text(0.05, 0.95, '', transform=self.ax.transAxes,
+                                               color='cyan', fontsize=12, fontweight='bold',
+                                               verticalalignment='top', zorder=10)
+            self.spec_conc_text.set_visible(False)
+        elif self.band == 'B':
+            self._show_abs = tk.BooleanVar(value=False)
+            self._cmap = tk.StringVar(value='seismic')
+
+        # Add Toggle Checkbox
+        self.xsect_check = ttk.Checkbutton(self.img_type_frame, text='Show Cross-Sections', variable=self._show_xsect,
+                                           command=self.toggle_xsect)
+        self.xsect_check.grid(row=0, column=3, pady=5, sticky='e')
+
         self.img_type_frame.grid_columnconfigure(0, weight=1)
         self.img_type_frame.grid_columnconfigure(1, weight=1)
         self.img_type_frame.grid_columnconfigure(2, weight=1)
+        self.img_type_frame.grid_columnconfigure(3, weight=1)
 
-        # Grid each frame
-        self.xsect_frame.grid(row=1, column=0, padx=5, pady=5, sticky='w')
-        self.fig_frame.grid(row=2, column=0, columnspan=3, padx=5, pady=5)
-
-        self.reset_butt = ttk.Button(self.frame, text='Reset\n Control Points', command=self.cp_reset)
-        self.reset_butt.grid(row=1, column=2, padx=5, pady=5, sticky='nsew')
+        # Grid the figure frame
+        self.fig_frame.grid(row=1, column=0, columnspan=3, padx=5, pady=5)
 
         if start_update_thread:
             self.start_update_thread()
@@ -141,19 +158,22 @@ class ImageFigure:
     def _build_img_fig(self):
         """Builds image figure using matplotlib"""
         self.fig_frame = ttk.Frame(self.frame, relief=tk.RAISED, borderwidth=3)
+        self.fig_frame.grid_columnconfigure(0, weight=1)
 
-        self.prev_butt = tk.Button(self.fig_frame, text='<', command=pyplis_worker.previous_image)
-        self.next_butt = tk.Button(self.fig_frame, text='>', command=pyplis_worker.next_image)
-        self.prev_butt.grid(row=0, column=0, sticky='nsew')
-        self.next_butt.grid(row=0, column=1, sticky='nsew')
+        # TOP ROW: Parsed Date/Time and Shutter Speed Label
+        self.lbl_title = ttk.Label(self.fig_frame, text="Awaiting Data...", font=("TkDefaultFont", 11, "bold"))
+        self.lbl_title.grid(row=0, column=0, pady=(5, 0))
 
-        # Generate figure and axes
         self.fig = plt.Figure(figsize=self.img_fig_size, dpi=self.dpi)
-        gs = gridspec.GridSpec(2, 2, width_ratios=[648, 200], height_ratios=[486, 200])
-        self.ax = self.fig.add_subplot(gs[0])
+
+        # 4:3 GridSpec implementation
+        self.gs = gridspec.GridSpec(2, 2,
+                                    width_ratios=[self.specs.pix_num_x, 200],
+                                    height_ratios=[self.specs.pix_num_y, 200])
+        self.ax = self.fig.add_subplot(self.gs[0, 0])
         self.ax.set_aspect(1)
-        self.plt_col = self.fig.add_subplot(gs[1], sharey=self.ax)
-        self.plt_row = self.fig.add_subplot(gs[2], sharex=self.ax)
+        self.plt_col = self.fig.add_subplot(self.gs[0, 1], sharey=self.ax)
+        self.plt_row = self.fig.add_subplot(self.gs[1, 0], sharex=self.ax)
 
         plt.setp(self.plt_col.get_yticklabels(), visible=False)
         plt.setp(self.ax.get_xticklabels(), visible=False)
@@ -165,14 +185,19 @@ class ImageFigure:
                 child.set_color(cfg.axes_colour)
         self.ax.tick_params(axis='both', colors=cfg.axes_colour, direction='in', top='on', right='on')
         self.img_disp = self.ax.imshow(self.image, cmap=cm.gray, interpolation='none', vmin=0,
-                                       vmax=self.specs._max_DN, aspect='equal')  # FOR GREYSCALE
-        self.img_disp_row, = self.ax.plot([0, self.specs.pix_num_x], [self._init_img_row, self._init_img_row],
+                                       vmax=self.specs._max_DN, aspect='equal')
+        self.img_disp_row, = self.ax.plot([0, self.specs.pix_num_x], [self.row, self.row],
                                           color=self._row_colour, lw=2)
-        self.img_disp_col, = self.ax.plot([self._init_img_col, self._init_img_col], [0, self.specs.pix_num_y],
+        self.img_disp_col, = self.ax.plot([self.col, self.col], [0, self.specs.pix_num_y],
                                           color=self._col_colour, lw=2)
+
+        if self.band == 'A':
+            self.spec_fov_circle = patches.Circle((0, 0), radius=10, fill=False, edgecolor='cyan', linewidth=2)
+            self.ax.add_patch(self.spec_fov_circle)
+            self.spec_fov_circle.set_visible(False)
+
         self.ax.set_xlim([0, self.specs.pix_num_x - 1])
         self.ax.set_ylim([self.specs.pix_num_y - 1, 0])
-        self.ax.set_title('Test Image', color=cfg.axes_colour)
         self.ax.set_ylabel('Pixel', color=cfg.axes_colour)
 
         for child in self.plt_row.get_children():
@@ -188,74 +213,154 @@ class ImageFigure:
 
         self.pix_row = np.arange(0, self.specs.pix_num_x, 1)
         self.pix_col = np.arange(0, self.specs.pix_num_y, 1)
-        self.row_DN = self.image[self._init_img_row, :]
-        self.col_DN = self.image[:, self._init_img_row]
+        self.row_DN = self.image[self.row, :]
+        self.col_DN = self.image[:, self.col]
 
         self.line_row, = self.plt_row.plot(self.pix_row, self.row_DN, color=self._row_colour)
         self.line_col, = self.plt_col.plot(self.col_DN, self.pix_col, color=self._col_colour)
 
-        # ------------------------------------------------------
-        # Plot settings
-        # ------------------------------------------------------
         self.plt_row.set_xlabel('Pixel', color=cfg.axes_colour)
         self.plt_row.set_ylabel('DN', color=cfg.axes_colour)
         self.plt_col.set_xlabel('DN', color=cfg.axes_colour)
-        # self.plt_col.set_ylabel('Pixel', color='white')
-        # self.plt_row.set_xlim(0, self.imgSizeX)
         self.plt_row.set_ylim(0, self.specs._max_DN)
         self.plt_col.set_xlim(0, self.specs._max_DN)
-        self.plt_col.set_ylim(self.specs.pix_num_y, 0)
+
+        # Primary Grid
         self.plt_row.grid(visible=True, which='major')
         self.plt_col.grid(visible=True, which='major')
 
-        # Get subplot size right
-        asp = np.diff(self.plt_col.get_ylim())[0] / np.diff(self.plt_col.get_xlim())[0]
-        asp /= np.abs(np.diff(self.ax.get_ylim())[0] / np.diff(self.ax.get_xlim())[0])
-        asp /= (648 / 200)
-        self.plt_col.set_aspect(abs(1/asp))
+        # Add Secondary Percentage Axes
+        self.plt_row_pct = self.plt_row.twinx()
+        self.plt_row_pct.set_ylim(0, 100)
+        self.plt_row_pct.set_ylabel('%', color=cfg.axes_colour)
+        self.plt_row_pct.tick_params(axis='y', colors=cfg.axes_colour, direction='in')
 
-        self.fig.tight_layout()  # Make plots extend right to edges of figure (or at least to a good fit)
-        self.fig.subplots_adjust(hspace=0.1, wspace=486 / 6480)     # Make space between subplots equal
+        self.plt_col_pct = self.plt_col.twiny()
+        self.plt_col_pct.set_xlim(0, 100)
+        self.plt_col_pct.set_xlabel('%', color=cfg.axes_colour)
+        self.plt_col_pct.tick_params(axis='x', colors=cfg.axes_colour, direction='in')
 
-        # -------------------------------------
+        self.fig.tight_layout()
+        self.fig.subplots_adjust(hspace=0.1, wspace=0.1)
+
         self.img_canvas = FigureCanvasTkAgg(self.fig, master=self.fig_frame)
         with self.lock:
             self.img_canvas.draw()
-        self.img_canvas.get_tk_widget().grid(row=1, column=0, columnspan=2, sticky='nsew')
+        self.img_canvas.get_tk_widget().grid(row=1, column=0, sticky='nsew')
 
-        # Control point selection binding for GUI start-up state
+        # BOTTOM ROW: Controls (<, filename, >)
+        self.bottom_controls = ttk.Frame(self.fig_frame)
+        self.bottom_controls.grid(row=2, column=0, sticky='ew', padx=5, pady=5)
+        self.bottom_controls.grid_columnconfigure(1, weight=1)
+
+        self.prev_butt = tk.Button(self.bottom_controls, text='  <  ', command=pyplis_worker.previous_image)
+        self.prev_butt.grid(row=0, column=0, sticky='w')
+
+        self.lbl_filename = ttk.Label(self.bottom_controls, text="")
+        self.lbl_filename.grid(row=0, column=1)
+
+        self.next_butt = tk.Button(self.bottom_controls, text='  >  ', command=pyplis_worker.next_image)
+        self.next_butt.grid(row=0, column=2, sticky='e')
+
+        # Bind events for interaction
+        self.dragging_line = None
+        self.fig.canvas.mpl_connect('button_press_event', self.on_press)
+        self.fig.canvas.mpl_connect('motion_notify_event', self.on_motion)
+        self.fig.canvas.mpl_connect('button_release_event', self.on_release)
         self.cp_event_A = self.fig.canvas.mpl_connect('button_press_event', self.cp_select)
-        self.plt_CP = []        # List to hold all scattar points for CP plot
-        self.txt_CP = []        # List to hold all scatter point text markers for CP plot
-        self.num_cp_txt = 1     # Count for text on scatter point
 
-        # Initiate thread-safe plot updating
+        self.plt_CP = []
+        self.txt_CP = []
+        self.num_cp_txt = 1
+
+        # Run toggle once to apply default visibility
+        self.toggle_xsect()
         self.__draw_canv__()
 
-    def _build_xsect_panel(self):
-        """Builds control panel GUI for adjusting x-sections in image"""
-        self.xsect_frame = ttk.LabelFrame(self.frame, text="Image cross-sectional DNs", relief=tk.GROOVE,
-                                          borderwidth=2)
+    def toggle_xsect(self):
+        """Toggles the visibility of the cross-section subplots and robustly resizes the main image."""
+        show = self._show_xsect.get()
 
-        # Row spinbox
-        row_label = ttk.Label(self.xsect_frame, text="Row:", font=self.main_gui.main_font)
-        row_label.grid(row=0, column=0, padx=self.pdx, pady=self.pdy, sticky='w')
-        self.row = self._init_img_row
-        self.img_row = ttk.Spinbox(self.xsect_frame, from_=0, to=self.specs.pix_num_y-1, width=4,
-                                   textvariable=self._row, font=self.main_gui.main_font)
-        self.img_row.grid(row=0, column=1, padx=self.pdx, pady=self.pdy, sticky='w')
-        self.img_row.bind('<FocusOut>', self.x_sect_plot)
-        self.img_row.bind('<Return>', self.x_sect_plot)
+        self.plt_row.set_visible(show)
+        self.plt_row_pct.set_visible(show)
+        self.plt_col.set_visible(show)
+        self.plt_col_pct.set_visible(show)
+        self.img_disp_row.set_visible(show)
+        self.img_disp_col.set_visible(show)
 
-        # Column spinbox
-        row_col = ttk.Label(self.xsect_frame, text="Column:", font=self.main_gui.main_font)
-        row_col.grid(row=0, column=2, padx=self.pdx, pady=self.pdy, sticky='w')
-        self.col = self._init_img_col
-        self.img_col = ttk.Spinbox(self.xsect_frame, from_=0, to=self.specs.pix_num_x-1, width=4,
-                                   textvariable=self._col, font=self.main_gui.main_font)
-        self.img_col.grid(row=0, column=3, padx=self.pdx, pady=self.pdy, sticky='w')
-        self.img_col.bind('<FocusOut>', self.x_sect_plot)
-        self.img_col.bind('<Return>', self.x_sect_plot)
+        # Force matplotlib to recalculate the main axes footprint
+        if show:
+            self.ax.set_subplotspec(self.gs[0, 0])
+        else:
+            self.ax.set_subplotspec(self.gs[:, :])
+
+        self.ax.update_params()
+        self.ax.set_position(self.ax.get_subplotspec().get_position(self.fig))
+        self.fig.canvas.draw_idle()
+
+    def on_press(self, event):
+        if getattr(self.img_reg, 'reg_meth', 0) == 1:
+            return
+
+        if event.inaxes != self.ax:
+            return
+
+        tolerance = 15
+        if event.ydata is not None and abs(event.ydata - self.row) < tolerance:
+            self.dragging_line = 'row'
+        elif event.xdata is not None and abs(event.xdata - self.col) < tolerance:
+            self.dragging_line = 'col'
+
+    def on_motion(self, event):
+        if getattr(self, 'dragging_line', None) is None or event.inaxes != self.ax:
+            return
+
+        if self.dragging_line == 'row' and event.ydata is not None:
+            new_val = int(event.ydata)
+            if 0 <= new_val < self.specs.pix_num_y:
+                self.row = new_val
+        elif self.dragging_line == 'col' and event.xdata is not None:
+            new_val = int(event.xdata)
+            if 0 <= new_val < self.specs.pix_num_x:
+                self.col = new_val
+
+        self.x_sect_plot()
+
+    def on_release(self, event):
+        self.dragging_line = None
+
+    def toggle_spec_fov(self):
+        """Toggles the visibility of the spectrometer FOV circle on Image A."""
+        if hasattr(self, 'spec_fov_circle'):
+            self.spec_fov_circle.set_visible(self._show_spec_fov.get())
+            self.img_canvas.draw()
+
+    def locate_spectrometer(self):
+        """Locates the spectrometer FOV, drawing a 1-degree circle on Image A."""
+        if self.band != 'A':
+            return
+
+        # Fetch coordinates directly from the loaded pyplis_worker config
+        cx = pyplis_worker.config.get('centre_pix_x', 0)
+        cy = pyplis_worker.config.get('centre_pix_y', 0)
+
+        # Determine center point and trigger warning if defaulting
+        if cx == 0 and cy == 0:
+            cx = self.specs.pix_num_x / 2
+            cy = self.specs.pix_num_y / 2
+            messagebox.showwarning("Spectrometer Location", "Defaulted to centre, no spectrometer FOV loaded.")
+
+        # Calculate a 1-degree FOV radius in pixels dynamically
+        deg_per_pix = self.specs.fov_x / self.specs.pix_num_x
+        radius_pix = 1.0 / deg_per_pix if deg_per_pix > 0 else 10  # Fallback to 10 if fov_x is 0
+
+        # Update circle properties
+        self.spec_fov_circle.center = (cx, cy)
+        self.spec_fov_circle.set_radius(radius_pix)
+
+        # Automatically check the box and force the display update
+        self._show_spec_fov.set(True)
+        self.toggle_spec_fov()
 
     def x_sect_plot(self, event = None, draw=True):
         """Updates cross-section plot"""
@@ -281,54 +386,192 @@ class ImageFigure:
             #         self.img_canvas.draw()
             #         self.draw_time = time.time()
 
+    def on_press(self, event):
+        """Detects if the user clicks near the row or column cross-section lines."""
+        # Abort line dragging if the user is currently placing Control Points
+
+        if event.inaxes != self.ax:
+            return
+
+        # Pixel tolerance for grabbing the line
+        tolerance = 15
+
+        if event.ydata is not None and abs(event.ydata - self.row) < tolerance:
+            self.dragging_line = 'row'
+        elif event.xdata is not None and abs(event.xdata - self.col) < tolerance:
+            self.dragging_line = 'col'
+
+    def on_motion(self, event):
+        """Updates the line position and plot while dragging."""
+        if self.dragging_line is None or event.inaxes != self.ax:
+            return
+
+        if self.dragging_line == 'row' and event.ydata is not None:
+            new_val = int(event.ydata)
+            # Constrain to image bounds
+            if 0 <= new_val < self.specs.pix_num_y:
+                self.row = new_val
+
+        elif self.dragging_line == 'col' and event.xdata is not None:
+            new_val = int(event.xdata)
+            if 0 <= new_val < self.specs.pix_num_x:
+                self.col = new_val
+
+        self.x_sect_plot()
+
+    def on_release(self, event):
+        """Stops the dragging action."""
+        self.dragging_line = None
+
+    def toggle_xsect(self):
+        """Toggles the visibility of the cross-section subplots and resizes the main image."""
+        show = self._show_xsect.get()
+
+        # Toggle subplots and lines
+        self.plt_row.set_visible(show)
+        self.plt_row_pct.set_visible(show)
+        self.plt_col.set_visible(show)
+        self.plt_col_pct.set_visible(show)
+        self.img_disp_row.set_visible(show)
+        self.img_disp_col.set_visible(show)
+
+        # Adjust main axes to span the entire GridSpec if cross-sections are hidden
+        if show:
+            self.ax.set_subplotspec(self.gs[0, 0])
+        else:
+            self.ax.set_subplotspec(self.gs[:, :])
+
+        self.fig.tight_layout()
+        if hasattr(self, 'img_canvas'):
+            self.img_canvas.draw()
+
+    def toggle_spec_conc(self):
+        if hasattr(self, 'spec_conc_text'):
+            self.spec_conc_text.set_visible(self._show_spec_conc.get())
+            self.img_canvas.draw()
+
+    def toggle_abs_img(self):
+        self.update_plot()
+
+    def change_cmap(self, cmap):
+        show_absorption = getattr(self, '_show_abs', None) and self._show_abs.get()
+        if show_absorption:
+            self.img_disp.set_cmap(getattr(cm, cmap))
+            self.img_canvas.draw()
+
     def update_plot(self, img_path=None, draw=True):
-        """
-        Automatically updates image figure and all associated subplots. Bases update on img_type flag
-        :param img: np.ndarray  Image array
-        :param img_path: str    Image name to be set as title
-        :return:
-        """
-        # Only upate image path if provided with one
         if img_path is not None:
-            filename = img_path.split('\\')[-1].split('/')[-1]  # Extract filename from full path
-            self.ax.set_title(filename)
+            filename = img_path.split('\\')[-1].split('/')[-1]
+            if hasattr(self, 'lbl_filename'):
+                self.lbl_filename.config(text=filename)
 
-        # Select correct image
-        if self.img_type == 3:
-            if pyplis_worker.got_light_dil:
-                if self.band == 'A':
-                    self.image = pyplis_worker.lightcorr_A.img
-                elif self.band == 'B':
-                    self.image = pyplis_worker.lightcorr_B_warped.img
+            # Parse Date/Time and Shutter Speed for the title
+            if hasattr(self, 'lbl_title'):
+                try:
+                    parts = filename.split('_')
+                    dt_part = parts[0]
+                    date_str = dt_part[:10]
+                    time_str = f"{dt_part[11:13]}:{dt_part[13:15]}:{dt_part[15:17]}"
+
+                    ss_str = "Unknown SS"
+                    for p in parts:
+                        if 'ss' in p:
+                            ss_val = float(p.replace('ss', ''))
+                            if ss_val >= 1000000:
+                                ss_str = f"{ss_val / 1000000:.2f} s"
+                            else:
+                                ss_str = f"{ss_val / 1000:.1f} ms"
+                            break
+
+                    band_str = "310 nm (On-Band)" if self.band == 'A' else "330 nm (Off-Band)"
+                    self.lbl_title.config(text=f"{date_str}  {time_str}   |   Shutter Speed: {ss_str}   |   {band_str}")
+                except Exception:
+                    self.lbl_title.config(text=filename)
             else:
-                self.img_type = 1
+                self.ax.set_title(filename)
 
-        if self.img_type == 1:
-            if self.band == 'A':
-                self.image = pyplis_worker.img_A.img
-            elif self.band == 'B':
-                self.image = pyplis_worker.img_B.img_warped
+        # Image selection logic
+        show_absorption = getattr(self, '_show_abs', None) and self._show_abs.get()
 
-        elif self.img_type == 2:
-            if self.band == 'A':
-                self.image = pyplis_worker.vigncorr_A.img
-            elif self.band == 'B':
-                self.image = pyplis_worker.vigncorr_B_warped.img
+        if show_absorption and hasattr(pyplis_worker, 'img_tau') and pyplis_worker.img_tau is not None:
+            self.image = pyplis_worker.img_tau.img
+        else:
+            if self.img_type == 3:
+                if pyplis_worker.got_light_dil:
+                    self.image = pyplis_worker.lightcorr_A.img if self.band == 'A' else pyplis_worker.lightcorr_B_warped.img
+                else:
+                    self.img_type = 1
 
-        # Update image
+            if self.img_type == 1:
+                self.image = pyplis_worker.img_A.img if self.band == 'A' else pyplis_worker.img_B.img_warped
+            elif self.img_type == 2:
+                self.image = pyplis_worker.vigncorr_A.img if self.band == 'A' else pyplis_worker.vigncorr_B_warped.img
+
         self.img_disp.set_data(self.image)
 
-        # Update subplots - this includes a call to draw() so the figure will be updated after this
-        self.x_sect_plot(draw = draw)
+        # Colormap and limits logic
+        if show_absorption:
+            cmap_str = self._cmap.get() if hasattr(self, '_cmap') else 'seismic'
+            self.img_disp.set_cmap(getattr(cm, cmap_str))
+
+            # Dynamically scale clim to prevent black screen on absorption images
+            valid_pixels = self.image[~np.isnan(self.image)]
+            vmax = np.percentile(valid_pixels, 99) if valid_pixels.size > 0 else 0.5
+            vmin = np.percentile(valid_pixels, 1) if valid_pixels.size > 0 else -0.1
+            self.img_disp.set_clim(vmin=vmin, vmax=max(vmax, 0.05))
+        else:
+            self.img_disp.set_cmap(cm.gray)
+            self.img_disp.set_clim(vmin=0, vmax=self.specs._max_DN)
+
+        # Spectrometer overlay fix using direct pyplis_worker attribute
+        if self.band == 'A' and getattr(self, '_show_spec_conc', None) and self._show_spec_conc.get():
+            try:
+                # Direct access to the active doas_worker via pyplis_worker
+                doas_w = getattr(pyplis_worker, 'doas_worker', None)
+
+                if doas_w is not None and hasattr(doas_w, 'column_density'):
+                    # Fetch the current value from the active dictionary
+                    latest_so2 = doas_w.column_density.get('SO2', 0.0)
+
+                    if latest_so2 is None:
+                        latest_so2 = 0.0
+
+                    latest_so2 = float(latest_so2)
+
+                    # Convert to ppm.m if it's in molecules/cm^2 (iFit outputs large magnitudes)
+                    if abs(latest_so2) > 1e10:
+                        ppmm_conv = getattr(doas_w, 'ppmm_conv', 2.652e15)
+                        latest_so2 /= ppmm_conv
+
+                    # Clamp negative baseline noise to 0.0
+                    if latest_so2 < 0:
+                        latest_so2 = 0.0
+
+                    # Apply LaTeX formatting for the subscript 2
+                    self.spec_conc_text.set_text(r"Spec SO$_2$: {:.2f} ppm.m".format(latest_so2))
+                else:
+                    self.spec_conc_text.set_text(r"Spec SO$_2$: Awaiting Data")
+            except Exception as e:
+                print("Spec SO2 Overlay Error:", e)  # Keeps the exception out of the UI
+                self.spec_conc_text.set_text(r"Spec SO$_2$: Error")
+
+            self.spec_conc_text.set_visible(True)
+        elif self.band == 'A' and hasattr(self, 'spec_conc_text'):
+            self.spec_conc_text.set_visible(False)
+
+        self.x_sect_plot(draw=draw)
 
     def cp_select(self, event):
         """
         Controls click events on figure for control point selection
-        :return:
         """
-        # TODO make coordinates_A link to coordinates_{} of the ImageRegistrationFrame class - so need to pass that class to this
-        # TODO update the other attributes below which aren't yet linked to the current class (copied/pasted from old code)
         if event.inaxes is self.ax:
+            # Abort dropping a control point if the user clicked near the draggable lines
+            tolerance = 15
+            if (event.ydata is not None and abs(event.ydata - self.row) < tolerance) or \
+                    (event.xdata is not None and abs(event.xdata - self.col) < tolerance):
+                return
+
             # Set update coordinates
             getattr(self.img_reg, 'coordinates_{}'.format(self.band)).append((event.xdata, event.ydata))
 
@@ -338,7 +581,8 @@ class ImageFigure:
             self.ax.set_ylim(self.specs.pix_num_y, 0)
 
             # Appending text point handle to txt_CP list
-            self.txt_CP.append(self.ax.text(event.xdata, event.ydata - 10, str(self.num_cp_txt), color="red", fontsize=12))
+            self.txt_CP.append(
+                self.ax.text(event.xdata, event.ydata - 10, str(self.num_cp_txt), color="red", fontsize=12))
             self.num_cp_txt += 1
             self.img_canvas.draw()
         else:
@@ -401,7 +645,11 @@ class ImageFigure:
                 return
         except queue.Empty:
             pass
-        self.root.after(refresh_rate, self.__draw_canv__)
+
+        try:
+            self.root.after(refresh_rate, self.__draw_canv__)
+        except tk.TclError:
+            pass
 
 
 class ImageRegistrationFrame:
@@ -527,6 +775,7 @@ class ImageRegistrationFrame:
         :param bool rerun: Should the registration be re-run
         
         """
+        meth = int(meth)  # Cast to int to fix Tkinter string return bug
         kwargs = {}     # Dictionary for arguments for image registration settings (only used in CP I think)
 
         # Removing warp
@@ -609,6 +858,7 @@ class ImageRegistrationFrame:
 
         :param int meth: Variable representing the different registration options
         """
+        meth = int(meth)  # Cast to int to fix Tkinter string return bug
 
         if meth == 1:
             self.img_reg.got_cp_transform = False

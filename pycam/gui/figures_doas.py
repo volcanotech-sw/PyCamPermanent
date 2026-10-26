@@ -427,9 +427,7 @@ class DOASPlot(LoadSaveProcessingSettings):
         # Tabbed figure setup for all species and residual
         # ----------------------------------------------------------------
         # Setup up tab wideget for each species
-        style = self.gui.style
-        style.configure('One.TNotebook.Tab', **self.gui.layout_old[0][1])
-        self.tabs = ttk.Notebook(self.frame, style='One.TNotebook.Tab')
+        self.tabs = ttk.Notebook(self.frame)
         self.tabs.bind('<Button-1>', self.__update_tab__)
         self.species_tabs = dict()
         self.species_tabs['Total'] = ttk.Frame(self.tabs, borderwidth=2)
@@ -641,7 +639,7 @@ class DOASFigure:
 
         if isinstance(self.doas_worker, DOASWorker):
             self.ax.set_title('SO2 Column density [ppm.m]: {}          STD Error: {}'.format(
-                self.doas_worker.column_density['SO2'], self.doas_worker.std_err))
+                self.doas_worker.column_density.get('SO2', 0), self.doas_worker.std_err))
         elif isinstance(self.doas_worker, IFitWorker):
             if self.species != 'Total' and self.species != 'residual':
                 self.ax.set_title('{} Column density [cm-2]: {:.2e}          STD Error: {:.2e}'
@@ -811,9 +809,7 @@ class CalibrationWindow:
         self.ref_spec_frame = ttk.Frame(self.frame, relief=tk.RAISED, borderwidth=4)
         self.ref_spec_frame.pack(side=tk.LEFT, anchor='nw')
 
-        style = self.gui.style
-        style.configure('One.TNotebook.Tab', **self.gui.layout_old[0][1])
-        self.tabs = ttk.Notebook(self.ref_spec_frame, style='One.TNotebook.Tab')
+        self.tabs = ttk.Notebook(self.ref_spec_frame)
         self.species_tabs = dict()
         self.tabs.pack(side=tk.TOP, anchor='nw', fill=tk.BOTH, padx=2, pady=2)
 

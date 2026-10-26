@@ -4,14 +4,14 @@
 
 # FTP INFORMATION
 uname=pi                            # Raspberry pi username
-pwd=raspberry                       # Raspberry pi password
+pwd=Reventador2023!                       # Raspberry pi password
 ftppwd=raspftp                      # Raspberry pi FTP password
 data_dir=/home/pi/pycam/Images/     # Directory where images and spectra are saved. NOTE: Currently must mirror FileLocator.IMG_SPEC_PATH
 local_data_dir=./pycam/Data/                   # Local directory for saving data
 
 # IP ADDRESSES
 listen_ip=0.0.0.0                     # IP address of pi to listen on (comma separated for multiple addresses)
-host_ip=192.168.5.5                   # IP address of the pi to connect to from the GUI
+host_ip=100.81.73.88                   # IP address of the pi to connect to from the GUI
 
 # PORTS
 port_ext=12347                      # External communication port (laptop etc)

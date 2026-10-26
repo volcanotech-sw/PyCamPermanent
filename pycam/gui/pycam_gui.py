@@ -14,8 +14,8 @@
 from pycam.gui.menu import PyMenu
 from pycam.gui.windows import CameraWind, SpecWind, AnalysisWind
 from pycam.gui.cfg_menu_frames import geom_settings, process_settings, plume_bg, doas_fov, opti_flow, \
-    light_dilution, cross_correlation, basic_acq_handler, automated_acq_handler, instrument_cfg, calibration_wind,\
-    comm_recv_handler, cell_calib, nadeau_flow
+    light_dilution, cross_correlation, automated_acq_handler, instrument_cfg, calibration_wind,\
+    comm_recv_handler, nadeau_flow
 import pycam.gui.cfg as cfg
 from pycam.cfg import pyplis_worker
 from pycam.doas.cfg import doas_worker
@@ -24,6 +24,8 @@ import tkinter as tk
 import tkinter.ttk as ttk
 from tkinter import messagebox
 from ttkthemes import ThemedStyle
+import sv_ttk
+import matplotlib.pyplot as plt
 
 import sys
 import warnings
@@ -34,7 +36,21 @@ class PyCam(ttk.Frame):
     def __init__(self, root, x_size, y_size):
         ttk.Frame.__init__(self, root)
         self.root = root
-        self.root.title('PyCam')
+        self.root.title('PyCamPermanent')
+        self.root.protocol('WM_DELETE_WINDOW', self.exit_app)
+
+        # Apply the modern Sun Valley theme (defaults to dark, or specify "light")
+        sv_ttk.set_theme("light")
+
+        # Keep your font scaling
+        self.gui_setts = cfg.gui_setts
+        font_size = self.gui_setts.font_size
+
+        # Configure the default ttk style to use your font, sv_ttk handles the rest
+        self.style = ttk.Style()
+        self.style.configure('.', font=(self.gui_setts.font, font_size))
+
+        self.root.title('PyCamPermanent')
         self.root.protocol('WM_DELETE_WINDOW', self.exit_app)
 
         # Load in configuration file(s)
@@ -64,9 +80,6 @@ class PyCam(ttk.Frame):
         self.style.set_theme('breeze')
         self.style.configure('.', font=('Helvetica', font_size))
 
-        self.layout_old = self.style.layout('TNotebook.Tab')
-        self.style.layout('TNotebook.Tab', [])          # Turns off notepad bar
-
         # Menu bar setup
         self.menu = PyMenu(self, self.root, pyplis_worker, doas_worker)
         self.root.config(menu=self.menu.frame)
@@ -93,7 +106,6 @@ class PyCam(ttk.Frame):
     def info_load(self):
         """Instantiates all frames which require some kind of start-up instantiation"""
         instrument_cfg.initiate_variable(self)
-        basic_acq_handler.initiate_variables(self)
         automated_acq_handler.add_settings_objs(self.cam_wind.acq_settings, self.spec_wind.acq_settings)
         automated_acq_handler.add_connection(cfg.indicator)
         # TODO add message_wind to add_widgets() and make it so that comm_recv_handler writes received comms to there
@@ -108,7 +120,6 @@ class PyCam(ttk.Frame):
         plume_bg.start_draw(self.root)
         doas_fov.start_draw(self.root)      # start drawing of frame
         doas_fov.initiate_variables(self)
-        cell_calib.initiate_variables(self)
         cross_correlation.start_draw(self.root)
         cross_correlation.initiate_variables(self)
         nadeau_flow.start_draw(self.root)
@@ -132,6 +143,8 @@ class PyCam(ttk.Frame):
         self.spec_wind.doas_frame.update_vals()
         doas_worker.process_doas(plot=True)
         self.set_transfer_dir()
+        is_dark = sv_ttk.get_theme() == "dark"
+        self.menu.update_plot_theme(is_dark)
 
     def set_transfer_dir(self):
         """Sets transfer directory if it appears in the currently loaded config"""
@@ -146,6 +159,14 @@ class PyCam(ttk.Frame):
             messagebox.showwarning("Default Config Error",
                                    pyplis_worker.load_default_conf_errors)
             pyplis_worker.load_default_conf_errors = None
+
+    def update_plot_theme(is_dark: bool):
+        if is_dark:
+            plt.style.use('dark_background')
+            # Custom overrides for dark mode
+        else:
+            plt.style.use('default')
+            # Custom overrides for light mode
 
     def exit_app(self):
         """Closes application"""

@@ -4,8 +4,8 @@
 
 from pycam.gui.network import ConnectionGUI, instrument_cmd, run_pycam
 import pycam.gui.cfg as cfg
-from pycam.gui.cfg_menu_frames import geom_settings, process_settings, plume_bg, cell_calib, \
-    opti_flow, light_dilution, cross_correlation, doas_fov, basic_acq_handler, automated_acq_handler,\
+from pycam.gui.cfg_menu_frames import geom_settings, process_settings, plume_bg, \
+    opti_flow, light_dilution, cross_correlation, doas_fov, automated_acq_handler,\
     calibration_wind, instrument_cfg, temp_log, plume_velocity, nadeau_flow, comm_recv_handler
 from pycam.gui.misc import About, LoadSaveProcessingSettings
 from pycam.io_py import save_pcs_line, load_pcs_line, save_light_dil_line, load_light_dil_line, create_video
@@ -23,6 +23,9 @@ from pyplis import LineOnImage
 
 import tkinter as tk
 import tkinter.ttk as ttk
+import sv_ttk
+import matplotlib.pyplot as plt
+import pycam.gui.cfg as cfg
 from tkinter import filedialog
 from tkinter import messagebox
 from shutil import copyfile
@@ -50,7 +53,7 @@ class PyMenu:
         self.doas_worker = doas_work
         self.ftp_transfer = FileTransferGUI(cfg.ftp_client, self.pyplis_worker, self.doas_worker,
                                             cfg.current_dir_img, cfg.current_dir_spec, self)
-
+        cfg.ftp_transfer_gui = self.ftp_transfer
         # Setup dictionary to hold menu tabs and list to hold the menu tab names. Each menu tab is held in the
         # dictionary with the assocaited key stored in keys. This makes cascade setup easy by looping through keys
         self.menus = dict()
@@ -134,11 +137,9 @@ class PyMenu:
         # self.submenu_data.add_command(label='Free space on SSD', command=lambda: self.free_ssd(cfg.ftp_client.host_ip))
         self.menus[tab].add_separator()
 
-        # Manual acquisition
+        # Acquisition Settings
         self.submenu_acq = tk.Menu(self.frame, tearoff=0)
         self.menus[tab].add_cascade(label='Acquisition settings', menu=self.submenu_acq)
-        self.submenu_acq.add_command(label='Manual acquisition', command=basic_acq_handler.build_manual_capture_frame)
-        self.submenu_acq.add_separator()
         self.submenu_acq.add_command(label='Start automated acquisition',
                                      command=lambda: automated_acq_handler.acq_comm(start_cont=True))
         self.submenu_acq.add_command(label='Stop automated acquisition',
@@ -173,6 +174,9 @@ class PyMenu:
         self.menus[tab].add_radiobutton(label='Analysis window', value=2, var=self.init_var,
                                         command=lambda: self.parent.windows.select(2))
 
+        self.menus[tab].add_separator()
+        self.menus[tab].add_command(label='Toggle Dark/Light Mode', command=self.toggle_theme)
+
         # -------------------------------------------------------------------------------------------------
 
         # Processing Settings tab
@@ -189,8 +193,6 @@ class PyMenu:
         # Calibration cascade
         self.submenu_cal = tk.Menu(self.frame, tearoff=0)
         self.submenu_cal.add_command(label="DOAS calibration", command=calibration_wind.generate_frame)
-        self.submenu_cal.add_command(label='Cell calibration',
-                                     command=lambda: cell_calib.update_plot(generate_frame=True))
         self.submenu_cal.add_command(label="Camera-DOAS calibration", command=doas_fov.generate_frame)
         self.menus[tab].add_cascade(label="Calibration", menu=self.submenu_cal)
 
@@ -236,7 +238,7 @@ class PyMenu:
         self.menus[tab] = tk.Menu(self.frame, tearoff=0)
         self.menus[tab].add_command(label='About', command=About)
 
-        # Loop through keys to setup cascading menus
+        # Loop through keys to setup cascading menus EXACTLY ONCE
         for key in keys:
             self.frame.add_cascade(label=key, menu=self.menus[key])
 
@@ -410,6 +412,119 @@ class PyMenu:
                                     'calibration file has been loaded. Please select a file to '
                                     'load to enable calibration.')
 
+    def toggle_theme(self):
+        """Switches between light and dark modes globally and updates all plots."""
+        import sv_ttk
+        import matplotlib.pyplot as plt
+        import pycam.gui.cfg as cfg
+
+        # Toggle native Tkinter theme
+        sv_ttk.toggle_theme()
+        is_dark = sv_ttk.get_theme() == "dark"
+
+        # Define exact sv_ttk hex codes
+        bg_color = "#1c1c1c" if is_dark else "#fafafa"
+        fg_color = "#ffffff" if is_dark else "#313131"
+
+        # Update PyCam's global config variables for future plots
+        cfg.fig_face_colour = bg_color
+        cfg.axes_colour = fg_color
+
+        # Update Matplotlib global parameters
+        plt.rcParams.update({
+            "figure.facecolor": bg_color,
+            "axes.facecolor": bg_color,
+            "axes.edgecolor": fg_color,
+            "axes.labelcolor": fg_color,
+            "text.color": fg_color,
+            "xtick.color": fg_color,
+            "ytick.color": fg_color,
+            "grid.color": fg_color,
+            "grid.alpha": 0.2
+        })
+
+        # Dynamically recolor ALL active embedded figures (bounding boxes, backgrounds, text)
+        for fig_num in plt.get_fignums():
+            fig = plt.figure(fig_num)
+            fig.set_facecolor(bg_color)
+            for ax in fig.get_axes():
+                ax.set_facecolor(bg_color)
+                ax.tick_params(colors=fg_color)
+                ax.xaxis.label.set_color(fg_color)
+                ax.yaxis.label.set_color(fg_color)
+                ax.title.set_color(fg_color)
+
+                # Recolor the bounding boxes (spines)
+                for spine in ax.spines.values():
+                    spine.set_color(fg_color)
+
+            # Redraw the canvas
+            fig.canvas.draw_idle()
+
+        # Force the Message window text box to update
+        self.update_message_box(bg_color, fg_color)
+
+    def update_message_box(self, bg_color, fg_color):
+        """Overrides hardcoded Text widget backgrounds in the MessageWindow."""
+        try:
+            # The MessageWindow is instantiated in windows.py
+            mess_frame = self.parent.cam_wind.mess_wind.frame
+            import tkinter as tk
+            for child in mess_frame.winfo_children():
+                if isinstance(child, tk.Text) or isinstance(child, tk.Listbox):
+                    child.configure(bg=bg_color, fg=fg_color, insertbackground=fg_color)
+        except AttributeError:
+            pass
+
+    def update_plot_theme(self, is_dark):
+        """Updates Matplotlib rcParams and redraws embedded canvases to match sv_ttk."""
+        import matplotlib.pyplot as plt
+        import pycam.gui.cfg as cfg
+
+        if is_dark:
+            bg_color = "#1c1c1c"
+            fg_color = "#ffffff"
+            plt.style.use('dark_background')
+        else:
+            bg_color = "#ffffff"  # Forced to pure white
+            fg_color = "#000000"  # Forced to pure black
+            plt.style.use('default')
+
+        # Update PyCam's global config variables so any dynamically generated figures use them
+        cfg.fig_face_colour = bg_color
+        cfg.axes_colour = fg_color
+
+        # Update Matplotlib's global rcParams
+        plt.rcParams.update({
+            "figure.facecolor": bg_color,
+            "axes.facecolor": bg_color,
+            "axes.edgecolor": fg_color,
+            "axes.labelcolor": fg_color,
+            "text.color": fg_color,
+            "xtick.color": fg_color,
+            "ytick.color": fg_color,
+            "grid.color": fg_color,
+            "grid.alpha": 0.2
+        })
+
+        # Dynamically loop through ALL active embedded figures and recolor them instantly
+        for fig_num in plt.get_fignums():
+            fig = plt.figure(fig_num)
+            fig.set_facecolor(bg_color)
+            for ax in fig.get_axes():
+                ax.set_facecolor(bg_color)
+                ax.tick_params(colors=fg_color)
+                ax.xaxis.label.set_color(fg_color)
+                ax.yaxis.label.set_color(fg_color)
+                ax.title.set_color(fg_color)
+
+                # Recolor the axis border lines (spines)
+                for spine in ax.spines.values():
+                    spine.set_color(fg_color)
+
+            # Safely trigger a redraw on the embedded Tkinter canvas
+            fig.canvas.draw_idle()
+
 class Settings:
     """Class to control the settings from the GUI toolbar"""
     def __init__(self, parent):
@@ -421,9 +536,6 @@ class Settings:
                                                  int(self.frame.winfo_screenheight()/10)))
 
         # Setup notebook tabs
-        style = parent.style
-        style.configure('One.TNotebook.Tab', **parent.layout_old[0][1])
-        self.windows = ttk.Notebook(self.frame, style='One.TNotebook.Tab')
         self.windows.pack(fill='both', expand=1, padx=5, pady=5)
 
         # Generate the frames for each tab

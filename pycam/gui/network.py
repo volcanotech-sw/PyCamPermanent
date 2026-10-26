@@ -5,7 +5,7 @@
 import pycam.gui.cfg as cfg
 from pycam.networking.ssh import open_ssh, close_ssh, ssh_cmd
 from pycam.networking.sockets import read_network_file
-from pycam.setupclasses import FileLocator, ConfigInfo
+from pycam.setupclasses import FileLocator, ConfigInfo, CameraSpecs
 from pycam.io_py import write_script_crontab, read_script_crontab
 from pycam.utils import read_file
 from pycam.logging.logging_tools import LoggerManager
@@ -152,8 +152,12 @@ class ConnectionGUI:
 
     def get_ports(self, key, file_path=FileLocator.NET_PORTS_FILE_WINDOWS):
         """Gets list of all ports that might be used for comms"""
-        info = read_file(file_path)
-        self.port_list = [int(x) for x in info[key].split(',')]
+        try:
+            info = read_file(file_path)
+            self.port_list = [int(x) for x in info[key].split(',')]
+        except Exception as e:
+            GuiLogger.warning(f"Could not load ports file: {e}")
+            self.port_list = [5000, 5001, 5002]  # Fallback ports to prevent UI crash
 
     def update_connection(self):
         """Updates socket address information"""
@@ -443,6 +447,26 @@ class InstrumentConfiguration:
         row += 1
         butt = ttk.Button(frame_cron, text='Update', command=self.update_acq_time)
         butt.grid(row=row, column=0, columnspan=4, sticky='e', padx=2, pady=2)
+
+        # ----------------
+        # Imaging Parameters (Moved from Camera Window)
+        # ----------------
+        row += 1
+        specs = CameraSpecs()
+        self.img_param_frame = ttk.LabelFrame(frame_cron, text='Imaging Parameters', relief=tk.GROOVE)
+        self.img_param_frame.grid(row=row, column=0, columnspan=4, padx=5, pady=10, sticky='nsew')
+
+        ttk.Label(self.img_param_frame, text=f'Image resolution: x {specs.pix_num_x}   y {specs.pix_num_y}',
+                  font=self.main_gui.main_font).grid(row=0, column=0, padx=5, pady=2, sticky='w')
+        ttk.Label(self.img_param_frame, text=f'Field of view [°]: x {specs.fov_x}   y {specs.fov_y}',
+                  font=self.main_gui.main_font).grid(row=1, column=0, padx=5, pady=2, sticky='w')
+        ttk.Label(self.img_param_frame, text=f'Focal Length [mm]: {specs.estimate_focal_length() * 1000:.3f}',
+                  font=self.main_gui.main_font).grid(row=2, column=0, padx=5, pady=2, sticky='w')
+        ttk.Label(self.img_param_frame, text=f'Bit depth: {specs.bit_depth}', font=self.main_gui.main_font).grid(row=3,
+                                                                                                                 column=0,
+                                                                                                                 padx=5,
+                                                                                                                 pady=2,
+                                                                                                                 sticky='w')
 
     def update_acq_time(self):
         """Updates acquisition period of instrument"""

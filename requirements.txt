@@ -3,7 +3,7 @@ geonum
 LatLon23
 matplotlib
 basemap
-numpy
+numpy==1.26.4
 opencv-python
 pandas
 paramiko
@@ -23,3 +23,7 @@ pyplis @ git+https://github.com/volcanotech-sw/pyplis.git@sources_fix_312
 pydoas @ git+https://github.com/volcanotech-sw/pydoas.git@typing_updates
 iFit @ git+https://github.com/volcanotech-sw/iFit.git@make-pip-install
 colorlog
+sv_ttk
+ffpiv
+numba
+rocket-fft

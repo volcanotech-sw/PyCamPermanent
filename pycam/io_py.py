@@ -414,6 +414,8 @@ def save_emission_rates_as_txt(path, emission_dict, ICA_dict, only_last_value=Fa
     emis_cols = {
         "_phi": "flux_(kg/s)",
         "_phi_err": "flux_err",
+        "_phi_min": "flux_min_(kg/s)",
+        "_phi_max": "flux_max_(kg/s)",
         "_velo_eff": "velo_eff_(m/s)",
         "_velo_eff_err": "velo_eff_err",
         "_frac_optflow_ok": "frac_optflow_ok",
@@ -456,6 +458,11 @@ def save_emission_rates_as_txt(path, emission_dict, ICA_dict, only_last_value=Fa
             else:
                 # Convert emis_dict object to dataframe
                 emission_df = emis_dict.to_pandas_dataframe()
+
+                if hasattr(emis_dict, '_phi_min'):
+                    emission_df['_phi_min'] = emis_dict._phi_min
+                    emission_df['_phi_max'] = emis_dict._phi_max
+
                 header = True
 
             emission_df = emission_df.join(ICA_masses_df)
@@ -478,9 +485,15 @@ def get_last_emission_vals(emission_obj):
     """
     index = [emission_obj._start_acq[-1]]
     last_vals = {key: [value[-1]] if len(value) > 0 else [np.nan]
-                    for key, value in emission_obj.to_dict().items()}
+                 for key, value in emission_obj.to_dict().items()}
     del last_vals["_start_acq"]
-    return DataFrame(last_vals, index = index)
+
+    # Inject custom dynamically-added attributes for live updates
+    if hasattr(emission_obj, '_phi_min'):
+        last_vals['_phi_min'] = [emission_obj._phi_min[-1]] if len(emission_obj._phi_min) > 0 else [np.nan]
+        last_vals['_phi_max'] = [emission_obj._phi_max[-1]] if len(emission_obj._phi_max) > 0 else [np.nan]
+
+    return DataFrame(last_vals, index=index)
 
 
 def write_script_crontab(filename, cmd, time_on):

@@ -41,8 +41,30 @@ from pandas import Series
 import io
 import pickle
 import copy
+import contextlib
 
-refresh_rate = 200    # Refresh rate of draw command when in processing thread
+
+@contextlib.contextmanager
+def suppress_pyplot_draw():
+    """Temporarily intercepts and mutes rogue Pyplis draw calls."""
+    _orig_plt_draw = plt.draw
+    plt.draw = lambda *args, **kwargs: None
+
+    # Also patch the pyplis.utils namespace in case they imported draw directly
+    import pyplis.utils
+    _orig_utils_draw = getattr(pyplis.utils, 'draw', None)
+    if _orig_utils_draw:
+        pyplis.utils.draw = lambda *args, **kwargs: None
+
+    try:
+        yield
+    finally:
+        plt.draw = _orig_plt_draw
+        if _orig_utils_draw:
+            pyplis.utils.draw = _orig_utils_draw
+
+
+refresh_rate = 200  # Refresh rate of draw command when in processing thread
 
 GuiLogger = LoggerManager.add_logger("GUI")
 
@@ -731,8 +753,9 @@ class ImageSO2(LoadSaveProcessingSettings):
         line.color = self.line_colours[line_idx]
         self.PCS_lines_list[line_idx] = line
         # Plot pyplis object on figure
-        self.PCS_lines_list[line_idx].plot_line_on_grid(ax=self.ax, include_normal=1,
-                                                       include_roi_rot=True, label=lbl)
+        with suppress_pyplot_draw():
+            self.PCS_lines_list[line_idx].plot_line_on_grid(ax=self.ax, include_normal=1,
+                                                           include_roi_rot=True, label=lbl)
 
         # Gather variables to update pyplis_worker object
         self.gather_vars()
@@ -800,8 +823,9 @@ class ImageSO2(LoadSaveProcessingSettings):
                                                            line_id=lbl)
 
             # Plot pyplis object on figure
-            self.PCS_lines_list[ica_idx].plot_line_on_grid(ax=self.ax, include_normal=1,
-                                                           include_roi_rot=True, label=lbl)
+            with suppress_pyplot_draw():
+                self.PCS_lines_list[ica_idx].plot_line_on_grid(ax=self.ax, include_normal=1,
+                                                               include_roi_rot=True, label=lbl)
 
             # Gather variables to update pyplis_worker object
             self.gather_vars()
@@ -866,8 +890,9 @@ class ImageSO2(LoadSaveProcessingSettings):
                                                            line_id=lbl)
 
                 # Plot pyplis object on figure
-                self.PCS_lines_list[PCS_idx].plot_line_on_grid(ax=self.ax, include_normal=1,
-                                                               include_roi_rot=True, label=lbl)
+                with suppress_pyplot_draw():
+                    self.PCS_lines_list[PCS_idx].plot_line_on_grid(ax=self.ax, include_normal=1,
+                                                                   include_roi_rot=True, label=lbl)
 
                 # Update lines
                 self.gather_vars()
@@ -1163,7 +1188,7 @@ class TimeSeriesFigure:
         self.q = queue.Queue()
         self.settings = setts
 
-        self.frame = tk.Frame(self.parent, relief=tk.RAISED, borderwidth=2)
+        self.frame = ttk.Frame(self.parent, relief=tk.RAISED, borderwidth=2)
 
         # Plot Options
         self.style = 'default'
@@ -1172,7 +1197,8 @@ class TimeSeriesFigure:
                             'flow_nadeau': {'ls': 'solid', 'marker': 'x', 'colour': 'silver'},
                             'flow_raw': {'ls': 'dotted', 'marker': '1', 'colour': 'darkorange'},
                             'flow_histo': {'ls': 'dashed', 'marker': '2', 'colour': 'darkmagenta'},
-                            'flow_hybrid': {'ls': 'dashdot', 'marker': '3', 'colour': 'fuchsia'}
+                            'flow_hybrid': {'ls': 'dashdot', 'marker': '3', 'colour': 'fuchsia'},
+                            'flow_ffpiv': {'ls': 'dashed', 'marker': '4', 'colour': 'cyan'}
                             }
         self.colours = self.pyplis_worker.fig_tau.line_colours
         self.marker = '.'
@@ -1282,6 +1308,18 @@ class TimeSeriesFigure:
             self.disp_plot_checks['flow_hybrid'].configure(state=tk.ACTIVE)
         else:
             self.disp_plot_checks['flow_hybrid'].configure(state=tk.DISABLED)
+
+    @property
+    def flow_ffpiv(self):
+        return self._flow_ffpiv.get()
+
+    @flow_ffpiv.setter
+    def flow_ffpiv(self, value):
+        self._flow_ffpiv.set(value)
+        if value:
+            self.disp_plot_checks['flow_ffpiv'].configure(state=tk.NORMAL)
+        else:
+            self.disp_plot_checks['flow_ffpiv'].configure(state=tk.DISABLED)
 
     def _build_opts(self):
         """Builds options widget"""
@@ -2254,10 +2292,10 @@ class PlumeBackground(LoadSaveProcessingSettings):
 
         # Line profiles
         row += 1
-        prof_frame_A = tk.LabelFrame(self.ref_area_frame, text='Profiles')
+        prof_frame_A = ttk.LabelFrame(self.ref_area_frame, text='Profiles')
         prof_frame_A.grid(row=row, column=0, sticky='nsew', padx=2, pady=2)
 
-        notebook = ttk.Notebook(prof_frame_A, style='One.TNotebook.Tab')
+        notebook = ttk.Notebook(prof_frame_A)
         notebook.pack(fill='both', expand=1, padx=5, pady=5)
 
         on_band_frame = ttk.Frame(notebook)
@@ -2266,7 +2304,7 @@ class PlumeBackground(LoadSaveProcessingSettings):
         notebook.add(off_band_frame, text='Off-band')
 
         # Row profile
-        row_frame = tk.LabelFrame(on_band_frame, relief=tk.RAISED, text='Row')
+        row_frame = ttk.LabelFrame(on_band_frame, relief=tk.RAISED, text='Row')
         row_frame.grid(row=0, column=0, sticky='nsew', padx=2, pady=2)
         lab_1 = ttk.Label(row_frame, text='Row number:')
         lab_1.grid(row=0, column=0, sticky='w', padx=2, pady=2)
@@ -2285,7 +2323,7 @@ class PlumeBackground(LoadSaveProcessingSettings):
         spin.grid(row=2, column=1, padx=2, pady=2, sticky='ew')
 
         # Column profile
-        col_frame = tk.LabelFrame(on_band_frame, relief=tk.RAISED, text='Column')
+        col_frame = ttk.LabelFrame(on_band_frame, relief=tk.RAISED, text='Column')
         col_frame.grid(row=0, column=1, sticky='nsew', padx=2, pady=2)
         lab_1 = ttk.Label(col_frame, text='Column number:')
         lab_1.grid(row=0, column=0, sticky='w', padx=2, pady=2)
@@ -2304,7 +2342,7 @@ class PlumeBackground(LoadSaveProcessingSettings):
         spin.grid(row=2, column=1, padx=2, pady=2, sticky='ew')
 
         # Row profile
-        row_frame = tk.LabelFrame(off_band_frame, relief=tk.RAISED, text='Row')
+        row_frame = ttk.LabelFrame(off_band_frame, relief=tk.RAISED, text='Row')
         row_frame.grid(row=0, column=0, sticky='nsew', padx=2, pady=2)
         lab_1 = ttk.Label(row_frame, text='Row number:')
         lab_1.grid(row=0, column=0, sticky='w', padx=2, pady=2)
@@ -2323,7 +2361,7 @@ class PlumeBackground(LoadSaveProcessingSettings):
         spin.grid(row=2, column=1, padx=2, pady=2, sticky='ew')
 
         # Column profile
-        col_frame = tk.LabelFrame(off_band_frame, relief=tk.RAISED, text='Column')
+        col_frame = ttk.LabelFrame(off_band_frame, relief=tk.RAISED, text='Column')
         col_frame.grid(row=0, column=1, sticky='nsew', padx=2, pady=2)
         lab_1 = ttk.Label(col_frame, text='Column number:')
         lab_1.grid(row=0, column=0, sticky='w', padx=2, pady=2)
@@ -3631,11 +3669,11 @@ class DOASFOVSearchFrame(LoadSaveProcessingSettings):
     def _build_opts(self):
         """Builds FOV options frame"""
         # Frame holding all UI widgets
-        self.frame_ui = tk.Frame(self.frame)
+        self.frame_ui = ttk.Frame(self.frame)
 
         # ---------------------------------------------------------------
         # Options frame
-        self.frame_opts = tk.LabelFrame(self.frame_ui, text='Calibration options', relief=tk.RAISED, borderwidth=2)
+        self.frame_opts = ttk.LabelFrame(self.frame_ui, text='Calibration options', relief=tk.RAISED, borderwidth=2)
         self.frame_opts.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
 
         row = 0
@@ -4714,7 +4752,7 @@ class NadeauFlowSettings(LoadSaveProcessingSettings):
 
         # Auto retrieval frame
         row += 1
-        auto_frame = tk.Frame(self.frame_opts_nad, relief=tk.RAISED, borderwidth=2)
+        auto_frame = ttk.Frame(self.frame_opts_nad, relief=tk.RAISED, borderwidth=2)
         auto_frame.grid(row=row, column=0, rowspan=2, columnspan=2, sticky='nsew')
 
         row = 0
@@ -5164,6 +5202,7 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
                      'flow_histo': int,
                      'flow_hybrid': int,
                      'flow_nadeau': int,
+                     'flow_ffpiv': int,
                      'use_multi_gauss': int,
                      'cross_corr_recal': int
                      }
@@ -5191,6 +5230,7 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
         self._flow_histo = tk.IntVar()
         self._flow_hybrid = tk.IntVar()
         self._flow_nadeau = tk.IntVar()
+        self._flow_ffpiv = tk.IntVar()
 
         # Load default values
         self.load_defaults()
@@ -5214,7 +5254,7 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
         # -------------------------
         # Build optical flow figure
         # -------------------------
-        self.frame_fig = tk.Frame(self.scroll_frame, relief=tk.RAISED, borderwidth=3)
+        self.frame_fig = ttk.Frame(self.scroll_frame, relief=tk.RAISED, borderwidth=3)
         self.frame_fig.grid(row=0, column=0, columnspan=2, padx=5, pady=5)
         # self.frame.rowconfigure(0, weight=1)
         self._build_fig_img()
@@ -5314,6 +5354,8 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
         check_glob.grid(row=0, column=3, padx=2, pady=2, sticky='w')
         check_glob = ttk.Checkbutton(self.flow_frame, text='Nadeau', variable=self._flow_nadeau)
         check_glob.grid(row=0, column=4, padx=2, pady=2, sticky='w')
+        check_glob = ttk.Checkbutton(self.flow_frame, text='FF-PIV', variable=self._flow_ffpiv)
+        check_glob.grid(row=0, column=5, padx=2, pady=2, sticky='w')
         # ----------------------------------
 
         # Set buttons
@@ -5462,6 +5504,14 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
     @flow_nadeau.setter
     def flow_nadeau(self, value):
         self._flow_nadeau.set(value)
+
+    @property
+    def flow_ffpiv(self):
+        return self._flow_ffpiv.get()
+
+    @flow_ffpiv.setter
+    def flow_ffpiv(self, value):
+        self._flow_ffpiv.set(value)
 
     @property
     def use_multi_gauss(self):
@@ -5713,15 +5763,209 @@ class OptiFlowSettings(LoadSaveProcessingSettings):
         self.frame.after(refresh_rate, self.__draw_canv__)
 
 
+class FFPIVSettings(LoadSaveProcessingSettings):
+    """
+    FF-PIV plume speed settings class
+    """
+
+    def __init__(self, generate_frame=False, pyplis_work=pyplis_worker, cam_specs=CameraSpecs(), fig_setts=gui_setts):
+        self.name = 'FF-PIV flow'
+        self.pyplis_worker = pyplis_work
+        self.cam_specs = cam_specs
+        self.dpi = fig_setts.dpi
+        self.in_frame = False
+
+        # This line MUST exist here to prevent the AttributeError during startup
+        self.vars = {'ffpiv_window_size': int, 'ffpiv_overlap': int}
+
+        if generate_frame:
+            self.initiate_variables()
+            self.generate_frame(None)
+
+    def initiate_variables(self, main_gui=None):
+        self._ffpiv_window_size = tk.IntVar(value=144)
+        self._ffpiv_overlap = tk.IntVar(value=112)
+        self._ffpiv_method = tk.StringVar(value='Fast')
+        self._ffpiv_integration = tk.StringVar(value='Mean')
+
+        self.vars['ffpiv_method'] = str
+        self.vars['ffpiv_integration'] = str
+
+    def update_variables(self):
+        if not hasattr(self, '_ffpiv_window_size'):
+            return
+
+        for key in self.vars.keys():
+            if key in self.pyplis_worker.config:
+                setattr(self, key, self.pyplis_worker.config[key])
+
+    def gather_vars(self, update_pyplis=False):
+        if not hasattr(self, '_ffpiv_window_size'):
+            return
+
+        for key in self.vars:
+            self.pyplis_worker.config[key] = getattr(self, key)
+        if update_pyplis:
+            self.pyplis_worker.apply_config(subset=self.vars.keys())
+
+    @property
+    def ffpiv_window_size(self):
+        return self._ffpiv_window_size.get()
+
+    @ffpiv_window_size.setter
+    def ffpiv_window_size(self, value):
+        self._ffpiv_window_size.set(value)
+
+    @property
+    def ffpiv_overlap(self):
+        return self._ffpiv_overlap.get()
+
+    @property
+    def ffpiv_method(self):
+        return self._ffpiv_method.get()
+
+    @ffpiv_method.setter
+    def ffpiv_method(self, value):
+        self._ffpiv_method.set(value)
+
+    @property
+    def ffpiv_integration(self):
+        return self._ffpiv_integration.get()
+
+    @ffpiv_integration.setter
+    def ffpiv_integration(self, value):
+        self._ffpiv_integration.set(value)
+
+    @ffpiv_overlap.setter
+    def ffpiv_overlap(self, value):
+        self._ffpiv_overlap.set(value)
+
+    def run_preview(self):
+        """Runs FF-PIV on the current images and updates the preview plot"""
+        self.gather_vars(update_pyplis=True)
+        self.pyplis_worker.generate_ffpiv_flow()
+        self.update_plot()
+
+    def generate_frame(self, frame):
+        if not hasattr(self, '_ffpiv_window_size'):
+            self.initiate_variables()
+
+        self.frame = ttk.Frame(frame)
+        self.in_frame = True
+        self.update_variables()
+
+        self.frame_opts = ttk.LabelFrame(self.frame, text='FF-PIV Options', relief=tk.RAISED, borderwidth=3)
+        self.frame_opts.grid(row=0, column=0, sticky='nw', padx=5, pady=5)
+
+        row = 0
+        lab = ttk.Label(self.frame_opts, text='Window Size (pixels):')
+        lab.grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        spin = ttk.Spinbox(self.frame_opts, from_=16, to=256, increment=16, textvariable=self._ffpiv_window_size,
+                           width=5, command=self.gather_vars)
+        spin.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+
+        row += 1
+        lab = ttk.Label(self.frame_opts, text='Overlap (pixels):')
+        lab.grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        spin = ttk.Spinbox(self.frame_opts, from_=8, to=128, increment=8, textvariable=self._ffpiv_overlap, width=5,
+                           command=self.gather_vars)
+        spin.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+
+        row += 1
+
+        row += 1
+
+        lab = ttk.Label(self.frame_opts, text='Algorithm:')
+        lab.grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        method_opt = ttk.OptionMenu(self.frame_opts, self._ffpiv_method, 'Fast', *['Fast', 'Detailed (OpenPIV)'],
+                                    command=lambda _: self.gather_vars())
+        method_opt.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+
+        row += 1
+        lab = ttk.Label(self.frame_opts, text='Integration Style:')
+        lab.grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        integ_opt = ttk.OptionMenu(self.frame_opts, self._ffpiv_integration, 'Mean',
+                                   *['Mean', 'Point-by-Point', 'Peak Histogram'], command=lambda _: self.gather_vars())
+        integ_opt.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+
+        preview_butt = ttk.Button(self.frame_opts, text='Run Preview', command=self.run_preview)
+        preview_butt.grid(row=row, column=0, columnspan=2, sticky='nsew', padx=5, pady=5)
+
+        self._build_fig()
+
+        if hasattr(self.pyplis_worker, 'piv_flow'):
+            self.update_plot()
+
+    def _build_fig(self):
+        """Builds the FF-PIV vector preview figure"""
+        self.frame_fig = ttk.Frame(self.frame, relief=tk.RAISED, borderwidth=3)
+        self.frame_fig.grid(row=0, column=1, rowspan=2, sticky='nsew', padx=5, pady=5)
+
+        self.fig = plt.Figure(figsize=(5, 4), dpi=self.dpi)
+        self.ax = self.fig.subplots(1, 1)
+        self.ax.set_aspect(1)
+        self.fig.subplots_adjust(left=0.05, right=0.95, top=0.9, bottom=0.1)
+
+        import pycam.gui.cfg as cfg
+        self.fig.set_facecolor(cfg.fig_face_colour)
+        for child in self.ax.get_children():
+            if isinstance(child, matplotlib.spines.Spine):
+                child.set_color(cfg.axes_colour)
+        self.ax.tick_params(axis='both', colors=cfg.axes_colour, direction='in', top='on', right='on')
+
+        self.ax.set_title('FF-PIV Vector Field', color=cfg.axes_colour)
+
+        import matplotlib.cm as cm
+        self.img_disp = self.ax.imshow(self.pyplis_worker.img_tau_prev.img, cmap=cm.gray, vmin=0, vmax=0.5)
+
+        self.fig_canvas = FigureCanvasTkAgg(self.fig, master=self.frame_fig)
+        self.fig_canvas.get_tk_widget().pack(side=tk.TOP)
+
+        from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
+        toolbar = NavigationToolbar2Tk(self.fig_canvas, self.frame_fig)
+        toolbar.update()
+        self.fig_canvas._tkcanvas.pack(side=tk.TOP)
+
+    def update_plot(self, draw=True):
+        """Updates the preview image and draws PIV quiver vectors"""
+        if not hasattr(self, 'ax'):
+            return
+
+        self.img_disp.set_data(self.pyplis_worker.img_tau_prev.img)
+
+        if hasattr(self.pyplis_worker, 'piv_flow') and self.pyplis_worker.piv_flow is not None:
+            if getattr(self, 'quiver', None):
+                self.quiver.remove()
+
+            u = self.pyplis_worker.piv_flow['u']
+            v = self.pyplis_worker.piv_flow['v']
+
+            win = self.ffpiv_window_size
+            step = win - self.ffpiv_overlap
+
+            y_dim, x_dim = u.shape
+            x = np.arange(win // 2, win // 2 + x_dim * step, step)
+            y = np.arange(win // 2, win // 2 + y_dim * step, step)
+            X, Y = np.meshgrid(x[:x_dim], y[:y_dim])
+
+            self.quiver = self.ax.quiver(X, Y, u, v, color='green', angles='xy', scale_units='xy', scale=0.5)
+
+        self.ax.set_xlim([0, self.cam_specs.pix_num_x])
+        self.ax.set_ylim([self.cam_specs.pix_num_y, 0])
+
+        if draw:
+            self.fig_canvas.draw()
+
 class PlumeVelocityFrame:
     """
     Class to hold all plume velocity settings within a single frame
     """
     def __init__(self, opti_flow=OptiFlowSettings(), cross_corr=CrossCorrelationSettings(),
-                 nadeau_flow=NadeauFlowSettings()):
+                 nadeau_flow=NadeauFlowSettings(), ffpiv_flow=FFPIVSettings()):
         self.opti_flow = opti_flow
         self.cross_corr = cross_corr
         self.nadeau_flow = nadeau_flow
+        self.ffpiv_flow = ffpiv_flow
         self.in_frame = False
 
     def generate_frame(self):
@@ -5743,10 +5987,12 @@ class PlumeVelocityFrame:
         self.opti_flow.generate_frame(self.windows)
         self.cross_corr.generate_frame(self.windows)
         self.nadeau_flow.generate_frame(self.windows)
+        self.ffpiv_flow.generate_frame(self.windows)
 
         self.windows.add(self.opti_flow.frame, text=self.opti_flow.name)
         self.windows.add(self.cross_corr.frame, text=self.cross_corr.name)
         self.windows.add(self.nadeau_flow.frame, text=self.nadeau_flow.name)
+        self.windows.add(self.ffpiv_flow.frame, text=self.ffpiv_flow.name)
 
     def close_frame(self):
         """Close frame handle"""
@@ -5754,12 +6000,12 @@ class PlumeVelocityFrame:
         self.opti_flow.in_frame = False
         self.cross_corr.in_frame = False
         self.nadeau_flow.in_frame = False
+        self.ffpiv_flow.in_frame = False
 
         self.cross_corr.update_variables()
         self.nadeau_flow.update_variables()
+        self.ffpiv_flow.update_variables()
         self.frame.destroy()
-
-
 
 class LightDilutionSettings(LoadSaveProcessingSettings):
     """
@@ -5985,9 +6231,7 @@ class LightDilutionSettings(LoadSaveProcessingSettings):
         self.frame.grid_rowconfigure(1, weight=1)
 
         # Notebook setup for toggling between camera and sectrometer light dilution settings
-        style = self.gui.style
-        style.configure('One.TNotebook.Tab', **self.gui.layout_old[0][1])
-        self.tabs = ttk.Notebook(self.frame, style='One.TNotebook.Tab')
+        self.tabs = ttk.Notebook(self.frame)
 
         self.frame_cam = ttk.Frame(self.tabs)
         self.frame_spec = ttk.Frame(self.tabs)
@@ -6009,7 +6253,7 @@ class LightDilutionSettings(LoadSaveProcessingSettings):
         spin.grid(row=0, column=1, sticky='nsew', padx=2, pady=2)
 
         # Line settings
-        line_frame = tk.Frame(frame_setts, borderwidth=2, relief=tk.RAISED)
+        line_frame = ttk.Frame(frame_setts, borderwidth=2, relief=tk.RAISED)
         line_frame.grid(row=1, column=0, columnspan=2, padx=2, pady=2, sticky='nsew')
 
         row = 0
@@ -6184,7 +6428,7 @@ class LightDilutionSettings(LoadSaveProcessingSettings):
         self.select_grid_1.grid(row=row, column=2, sticky='ew', padx=self.pdx, pady=self.pdy)
 
         # Figure frame
-        self.frame_grid = tk.LabelFrame(self.frame_spec, text='Light dilution grid', relief=tk.RAISED, borderwidth=5)
+        self.frame_grid = ttk.LabelFrame(self.frame_spec, text='Light dilution grid', relief=tk.RAISED, borderwidth=5)
         self.frame_grid.grid(row=2, column=0, columnspan=2, sticky='nw', padx=5, pady=5)
         self._build_fig_grid()
 
