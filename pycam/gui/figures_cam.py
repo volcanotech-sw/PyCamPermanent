@@ -15,7 +15,7 @@ import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import matplotlib.spines
 import matplotlib.cm as cm
 
@@ -222,6 +222,13 @@ class ImageFigure:
         with self.lock:
             self.img_canvas.draw()
         self.img_canvas.get_tk_widget().grid(row=1, column=0, columnspan=2, sticky='nsew')
+
+        # Add matplotlib toolbar
+        frame_toolbar = ttk.Frame(self.fig_frame)
+        frame_toolbar.grid(row=2, column=0, columnspan=2, sticky='nsew')
+        self.toolbar_A = NavigationToolbar2Tk(self.img_canvas, frame_toolbar)
+        self.toolbar_A.update()
+        self.toolbar_A.pack(side=tk.BOTTOM)
 
         # Control point selection binding for GUI start-up state
         self.cp_event_A = self.fig.canvas.mpl_connect('button_press_event', self.cp_select)
