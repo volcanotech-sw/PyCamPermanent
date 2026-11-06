@@ -563,8 +563,8 @@ class PyplisWorker:
         
         current_params = {key: getattr(self.doas_worker, value)
                           for key, value in doas_params.items()}
+        current_params = {k: str(v) if isinstance(v, Path) else v for k, v in current_params.items()}
         self.config.update(current_params)
-        self.config['spec_dir'] = str(doas_params['spec_dir'])
 
     def save_config_plus(self, file_path, file_name = None):
         """Save extra data associated with config file along with config"""
