@@ -599,6 +599,7 @@ class SpecSpecs(SpecsBase):
         self.default_filename = FileLocator.CONFIG_SPEC
 
         # Hidden variables
+        self.compatible_models = ["Flame-S", "Ocean-SR", "OceanHR4", "USB2000", "USB2000+"]
         self._bit_depth = 0  # Hidden bit depth holder
         self._max_DN = 0  # Maximum digital number of images (associated with bit depth)
         self._int_time = 6
@@ -704,7 +705,7 @@ class SpecSpecs(SpecsBase):
 
         # Acquisition settings
         # Set integration time (ALL IN MICROSECONDS)
-        self._int_limit_lower = 100       # Lower integration time limit (us)
+        self._int_limit_lower = 1000       # Lower integration time limit (us)
         self._int_limit_upper = 20000000  # Upper integration time limit (us)
         self.int_time = 1000              # Starting integration time (ms)
         self.file_int_units = 1e-3        # Shutter speed units relative to seconds

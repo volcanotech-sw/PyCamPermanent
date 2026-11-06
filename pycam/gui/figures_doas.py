@@ -70,7 +70,7 @@ class SpectraPlot:
         self.figsize = gui_setts.fig_spec
         self.dpi = gui_setts.dpi
 
-        self.max_DN = 2**16 - 1  # Maximum DN for spectrometer
+        self.max_DN = self.doas_worker.spec_specs._max_DN    # Maximum DN for spectrometer
 
         # Could use threads and queues to update plots, or just us simple functions which Acquisition frame calls
         self.q = queue.Queue()
