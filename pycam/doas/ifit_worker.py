@@ -756,7 +756,7 @@ class IFitWorker(SpecWorker):
             spec_type = self.get_spec_type(pathname)
 
             if spec_type == self.spec_specs.file_type['meas'] or spec_type == self.spec_specs.file_type['test'] or \
-                    self.spec_specs.file_type['cal'] in spec_type:
+                    spec_type == self.spec_specs.file_type['ILS'] or self.spec_specs.file_type['cal'] in spec_type:
                 #print('IFitWorker: processing spectrum: {}'.format(pathname))
                 # Extract filename and create datetime object of spectrum time
                 working_dir, filename = os.path.split(pathname)
@@ -791,8 +791,9 @@ class IFitWorker(SpecWorker):
                 ss_full_str = filename.split('_')[self.spec_specs.file_ss_loc]
                 ss = int(ss_full_str.replace(ss_str, ''))
 
-                # Find dark spectrum with same shutter speed
-                self.dark_spec = self.find_dark_spectrum(self.dark_dir, ss)
+                # Find dark spectrum with same shutter speed - ignore if doing ILS work so we don't overwrite dark
+                if spec_type != self.spec_specs.file_type['ILS']:
+                    self.dark_spec = self.find_dark_spectrum(self.dark_dir, ss)
 
                 # Load spectrum
                 self.wavelengths, self.plume_spec_raw = load_spectrum(pathname)
@@ -801,6 +802,11 @@ class IFitWorker(SpecWorker):
                 if self.fig_spec is not None:
                     self.fig_spec.update_dark()
                     self.fig_spec.update_plume()
+                    # If doing ILS work we just want to update the plot and then not try to process DOAS
+                    if self.spec_specs.file_type['ILS']:
+                        if self.fig_ils is not None:
+                            self.fig_ils.update_cal()
+                        continue
 
                 time_1 = time.time()
 
@@ -855,17 +861,24 @@ class IFitWorker(SpecWorker):
                 self.SpecLogger.debug(f'Got dark spectrum: {pathname}')
                 # If dark spectrum, we load it into
                 self.load_dark_spec(pathname)
-                self.fig_spec.update_dark()
+                if self.fig_spec is not None:
+                    self.fig_spec.update_dark()
+                if self.fig_ils is not None:
+                    self.fig_ils.update_dark()
             elif spec_type == self.spec_specs.file_type['clear']:
                 self.SpecLogger.debug(f'Got dark spectrum: {pathname}')
                 # If dark spectrum, we load it into
                 self.load_clear_spec(pathname)
-                self.fig_spec.update_clear()
+                if self.fig_spec is not None:
+                    self.fig_spec.update_clear()
             else:
                 self.SpecLogger.debug(f'Spectrum type not recognised: {pathname}')
             
             if self.watching:
-                mem_handler.flush()
+                try:
+                    mem_handler.flush()
+                except UnboundLocalError as e:
+                    self.SpecLogger.debug(f'Caught exception: {e}')
 
     def stop_sequence_processing(self):
         """Stops processing a sequence"""

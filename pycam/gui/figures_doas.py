@@ -15,6 +15,7 @@ from pycam.doas.doas_worker import DOASWorker
 from pycam.doas.ifit_worker import IFitWorker
 from pycam.doas.cfg import doas_worker, species
 from pycam.gui.cfg import gui_setts, fig_face_colour, axes_colour
+import pycam.gui.cfg as cfg
 # from acquisition_gui import AcquisitionFrame
 from pycam.cfg import pyplis_worker
 from pycam.setupclasses import SpecSpecs
@@ -993,6 +994,7 @@ class ILSFrame:
         self.parent = parent
         self.frame = None
         self.doas_worker = doas_work
+        self.doas_worker.fig_ils = self
         self.spec_specs = spec_specs
         self.save_path = save_path
         if 'ILS_path' in config.keys():
@@ -1058,9 +1060,9 @@ class ILSFrame:
 
         # Acquisition settings
         label = ttk.Label(self.frame_acq, text='Integration time (ms):').grid(row=0, column=0, sticky='w')
-        self.int_time = tk.DoubleVar()  # Integration time holder
-        self.int_time.set(self.start_int_time)
-        self.int_entry = ttk.Entry(self.frame_acq, textvariable=self.int_time, width=5).grid(row=0, column=1,
+        self._int_time = tk.DoubleVar()  # Integration time holder
+        self._int_time.set(self.start_int_time)
+        self.int_entry = ttk.Entry(self.frame_acq, textvariable=self._int_time, width=5).grid(row=0, column=1,
                                                                                              sticky='w')
 
         label = ttk.Label(self.frame_acq, text='Dark spectrum file:').grid(row=1, column=0, sticky='w')
@@ -1078,14 +1080,14 @@ class ILSFrame:
         self.frame_lines = ttk.Frame(self.frame_cal, relief=tk.GROOVE, borderwidth=5)
         self.frame_lines.pack(side=tk.TOP, anchor='w')
 
-        self.ILS_start = tk.DoubleVar()
-        self.ILS_start.set(self.doas_worker.start_fit_wave)
+        self._ILS_start = tk.DoubleVar()
+        self._ILS_start.set(301.2)
         self.ILS_box_start = tk.Spinbox(self.frame_lines, from_=0, to=400, increment=0.1, width=5,
-                                        textvariable=self.ILS_start, command=self.update_ILS_start)
-        self.ILS_end = tk.DoubleVar()
-        self.ILS_end.set(self.doas_worker.end_fit_wave)
+                                        textvariable=self._ILS_start, command=self.update_ILS_start)
+        self._ILS_end = tk.DoubleVar()
+        self._ILS_end.set(303.3)
         self.ILS_box_end = tk.Spinbox(self.frame_lines, from_=1, to=400, increment=0.1, width=5,
-                                      textvariable=self.ILS_end, command=self.update_ILS_end)
+                                      textvariable=self._ILS_end, command=self.update_ILS_end)
 
         label = tk.Label(self.frame_lines, text='Emission line start:').pack(side=tk.LEFT)
         self.ILS_box_start.pack(side=tk.LEFT)
@@ -1109,14 +1111,14 @@ class ILSFrame:
         self.ax.legend(('Dark', 'Calibration'), loc=1, framealpha=1)
         self.fig.tight_layout()
 
-        # Stray light
-        self.min_ILS_line = self.ax.plot([self.doas_worker.start_fit_wave, self.doas_worker.start_fit_wave],
+        # ILS frame extraction
+        self.min_ILS_line = self.ax.plot([self.ILS_start, self.ILS_start],
                                          [0, self.max_DN], 'y')
-        self.max_ILS_line = self.ax.plot([self.doas_worker.end_fit_wave, self.doas_worker.end_fit_wave],
+        self.max_ILS_line = self.ax.plot([self.ILS_end, self.ILS_end],
                                          [0, self.max_DN], 'y')
 
-        width = self.doas_worker.end_fit_wave - self.doas_worker.start_fit_wave
-        self.ILS_range = Rectangle((self.doas_worker.start_fit_wave, 0), width=width, height=self.max_DN,
+        width = self.ILS_end - self.ILS_start
+        self.ILS_range = Rectangle((self.ILS_start, 0), width=width, height=self.max_DN,
                                    fill=True, facecolor='y', alpha=0.2)
         self.ILS_range_patch = self.ax.add_patch(self.ILS_range)
 
@@ -1185,28 +1187,113 @@ class ILSFrame:
     def include_ils_fit(self, value):
         self._include_ils_fit.set(value)
 
+    @property
+    def ILS_start(self):
+        return self._ILS_start.get()
+
+    @ILS_start.setter
+    def ILS_start(self, value):
+        self._ILS_start.set(value)
+
+    @property
+    def ILS_end(self):
+        return self._ILS_end.get()
+
+    @ILS_end.setter
+    def ILS_end(self, value):
+        self._ILS_end.set(value)
+
+    @property
+    def int_time(self):
+        return self._int_time.get()
+
+    @int_time.setter
+    def int_time(self, value):
+        self._int_time.set(value)
+
     def dark_capture(self):
         """Implements dark capture fom spectrometer"""
-        pass
+        # Check we are connected to instrument, if not, return, if we are, set it up for acquisition.
+        if not self.prepare_connection():
+            return
+
+        # Setup empty command dictionary
+        cmd_dict = dict()
+
+        cmd_dict['SSS'] = self.int_time
+        cmd_dict['TPS'] = self.spec_specs.file_type['dark']
+        cfg.send_comms.q.put(cmd_dict)
 
     def cal_capture(self):
         """Implements calibration lamp capture fom spectrometer"""
-        pass
+        # Check we are connected to instrument, if not, return, if we are, set it up for acquisition.
+        if not self.prepare_connection():
+            return
+
+        # Setup empty command dictionary
+        cmd_dict = dict()
+
+        cmd_dict['SSS'] = self.int_time
+        cmd_dict['TPS'] = self.spec_specs.file_type['ILS']
+        cfg.send_comms.q.put(cmd_dict)
+
+    def prepare_connection(self):
+        """Checks connection to camera"""
+        # Check there is a connection
+        if not cfg.indicator.connected:
+            x = tk.messagebox.showwarning('No instrument connected',
+                                          'Acquisition will not be possible as no instrument is connected')
+            return False
+        else:
+            # Send commands to stop continuous capture of spectrometer and camera and stop auto SS
+            cfg.send_comms.q.put({'SPC': 1, 'SPS': 1, 'ATA': 0, 'ATB': 0, 'ATS': 0})
+
+            if not cfg.ftp_client.watching_dir:
+                try:
+                    cfg.ftp_client.watch_dir(new_only=True)
+                except ConnectionError:
+                    GuiLogger.warning('FTP client failed. Will not be able to transfer acquired data '
+                                      'back to host machine')
+                    return False
+            return True
+
+    def update_dark(self):
+        """Update dark plot with new data"""
+        self.ax.lines[0].set_data(self.doas_worker.wavelengths, self.doas_worker.dark_spec)
+        self.ax.set_xlim([self.doas_worker.wavelengths[0], self.doas_worker.wavelengths[-1]])
+        self.canv.draw()
+
+        # If we know we have a lamp spectrum (i.e. cal_spec_corr isn't None) we can create a new spectrum with this
+        # dark correction, then extract ILS
+        if self.cal_spec_corr is not None:
+            self.cal_spec_corr = self.doas_worker.plume_spec_raw - self.doas_worker.dark_spec
+            self.extract_ILS()
+
+    def update_cal(self):
+        """Update cal plot with new data"""
+        self.ax.lines[1].set_data(self.doas_worker.wavelengths, self.doas_worker.plume_spec_raw)
+        self.ax.set_xlim([self.doas_worker.wavelengths[0], self.doas_worker.wavelengths[-1]])
+        self.canv.draw()
+
+        # Create cal_spec_corr based on this spectrum, then extract ILS
+        self.cal_spec_corr = self.doas_worker.plume_spec_raw - self.doas_worker.dark_spec
+        if self.cal_spec_corr is not None:
+            self.extract_ILS()
 
     def update_ILS_start(self):
         """Updates location of ILS extraction line, and performs extraction of ILS if calibration spectrum is present"""
-        ILS_start = self.ILS_start.get()
+        ILS_start = self.ILS_start
 
         # Ensure the start of the stray range doesn't become less than the start
-        if ILS_start >= self.ILS_end.get():
-            ILS_start = self.ILS_end.get() - 0.1
-            self.ILS_start.set(ILS_start)
+        if ILS_start >= self.ILS_end:
+            ILS_start = self.ILS_end - 0.1
+            self.ILS_start = ILS_start
 
         # Update plot
         self.min_ILS_line[0].set_data([ILS_start, ILS_start],
                                       [0, self.max_DN])
         self.ILS_range.set_x(ILS_start)
-        self.ILS_range.set_width(self.ILS_end.get() - ILS_start)
+        self.ILS_range.set_width(self.ILS_end - ILS_start)
         self.canv.draw()
 
         if self.cal_spec_corr is not None:
@@ -1214,17 +1301,17 @@ class ILSFrame:
 
     def update_ILS_end(self):
         """Updates location of ILS extraction line, and performs extraction of ILS if calibration spectrum is present"""
-        ILS_end = self.ILS_end.get()
+        ILS_end = self.ILS_end
 
         # Ensure the end of the stray range doesn't become less than the start
-        if ILS_end <= self.ILS_start.get():
-            ILS_end = self.ILS_start.get() + 0.1
-            self.ILS_end.set(ILS_end)
+        if ILS_end <= self.ILS_start:
+            ILS_end = self.ILS_start + 0.1
+            self.ILS_end = ILS_end
 
         # Update plot
         self.max_ILS_line[0].set_data([ILS_end, ILS_end],
                                         [0, self.max_DN])
-        self.ILS_range.set_width(ILS_end - self.ILS_start.get())
+        self.ILS_range.set_width(ILS_end - self.ILS_start)
         self.canv.draw()
 
         if self.cal_spec_corr is not None:
@@ -1271,7 +1358,7 @@ class ILSFrame:
             GuiLogger.info('No instrument line shape data to save')
             return
 
-        time = datetime.now().strftime('%Y-%m-%dT%H%M%S')
+        time = datetime.datetime.now().strftime('%Y-%m-%dT%H%M%S')
         ILS_filename = '{}_ILS.txt'.format(time)
 
         # Save file to numpy array
@@ -1279,7 +1366,7 @@ class ILSFrame:
                    np.transpose([self.doas_worker.ILS_wavelengths, self.doas_worker.ILS]),
                    header='Instrument line shape\n'
                           'Line start [nm]: {}\tLine End [nm]: {}\n'
-                          'Wavelength [nm]\tIntensity [DN]'.format(self.ILS_start.get(), self.ILS_end.get()))
+                          'Wavelength [nm]\tIntensity [DN]'.format(self.ILS_start, self.ILS_end))
 
         # Update widget label
         self.ILS_save_label.configure(text=ILS_filename)
@@ -1287,18 +1374,18 @@ class ILSFrame:
     def extract_ILS(self):
         """Extracts instrument line shape from the calibration spectrum, then draws it"""
         # Determine indices for extraction of ILS
-        start_idx = np.argmin(np.absolute(self.doas_worker.wavelengths - self.ILS_start.get()))
-        end_idx = np.argmin(np.absolute(self.doas_worker.wavelengths - self.ILS_end.get())) + 1
+        start_idx = np.argmin(np.absolute(self.doas_worker.wavelengths - self.ILS_start))
+        end_idx = np.argmin(np.absolute(self.doas_worker.wavelengths - self.ILS_end)) + 1
 
         # Extract ILS and normalise it
         # Need to use copy() here, otherwise we end up modifying cal_spec_corr when modifying ILS
         ILS = np.copy(self.cal_spec_corr[start_idx:end_idx])
-        self.doas_worker.ILS /= np.amax(ILS)
+        self.doas_worker.ILS = ILS / np.amax(ILS)
 
         # Extract wavelengths then set to start at 0 nm
         self.doas_worker.ILS_wavelengths = self.doas_worker.wavelengths[start_idx:end_idx] - self.doas_worker.wavelengths[start_idx]
 
-        # Need to update the ifit analyser if we are using this
+        # # Need to update the ifit analyser if we are using this
         if isinstance(self.doas_worker, IFitWorker):
             self.doas_worker.update_ils()
 
@@ -1315,4 +1402,6 @@ class ILSFrame:
     def set_ILS_fit(self):
         self.doas_worker.include_ils_fit = self.include_ils_fit
         self.doas_worker.process_doas(plot=True)
+
+
         

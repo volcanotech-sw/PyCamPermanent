@@ -682,7 +682,8 @@ class SpecSpecs(SpecsBase):
         self.save_path = FileLocator.IMG_SPEC_PATH
         self.file_ext = '.npy'  # Spectra saved as numpy array
         self.file_ss = '{}ss'   # Shutter speed format spec
-        self.file_type = {'meas': 'Plume', 'dark': 'Dark', 'cal': 'ppmm', 'clear': 'Clear', 'test': 'Test'}
+        self.file_type = {'meas': 'Plume', 'dark': 'Dark', 'cal': 'ppmm', 'clear': 'Clear', 'test': 'Test',
+                          'ILS': 'ILS'}
         self.file_datestr = "%Y-%m-%dT%H%M%S"                   # Date/time format spec in filename
         self.file_coadd = 'coadd'   # Coadd string format
         # these are indexes of these details if you split the filename by _

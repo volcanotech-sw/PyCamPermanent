@@ -134,6 +134,7 @@ class SpecWorker:
         # Figures
         self.fig_spec = None            # pycam.doas.SpectraPlot object
         self.fig_doas = None            # pycam.doas.DOASPlot object
+        self.fig_ils = None             # pycam.doas.ILSFrame object
         self.dir_info = None
 
         self.corr_light_dilution = None
