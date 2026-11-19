@@ -50,7 +50,7 @@ class DirIndicator:
 
     def update_dir(self):
         """ Update widget with current spec_dir"""
-        self.img_dir_lab.configure(text=self.doas_worker.spec_dir)
+        self.img_dir_lab.configure(text=self.doas_worker.spec_dir or "")
 
 class SpectraPlot:
     """
@@ -196,6 +196,12 @@ class SpectraPlot:
         """Update clear plot with new data"""
         self.ax.lines[2].set_data(self.doas_worker.wavelengths, self.doas_worker.plume_spec_raw)
         self.ax.set_xlim([self.doas_worker.wavelengths[0], self.doas_worker.wavelengths[-1]])
+        self.q.put(1)
+
+    def clear_raw_plots(self):
+        """Clear the dark, clear, and plume traces while retaining the wavelength guides."""
+        for line in self.ax.lines[:3]:
+            line.set_data([], [])
         self.q.put(1)
 
     def update_stray_start(self, event = None, stray_start = None):

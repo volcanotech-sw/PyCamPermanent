@@ -777,10 +777,26 @@ class LoadFrame(LoadSaveProcessingSettings):
                                      error_msg)
                 return
 
-            self.reload_config()
+            raw_config = self.pyplis_worker.raw_configs["user"]
+            if "spec_dir" in raw_config:
+                clear_raw_spectra = raw_config["spec_dir"] is None
+            else:
+                # The directory picker changes the DOAS worker directly.
+                active_directory = self.doas_worker.spec_dir
+                self.pyplis_worker.config["spec_dir"] = (
+                    str(active_directory) if active_directory is not None else None
+                )
+                clear_raw_spectra = False
+            self.reload_config(clear_raw_spectra=clear_raw_spectra)
 
-    def reload_config(self):
+    def reload_config(self, clear_raw_spectra=False):
         """Update the GUI with the new config settings"""
+        if clear_raw_spectra:
+            self.doas_worker.clear_raw_spectra()
+            self.main_gui.spec_wind.spec_frame.clear_raw_plots()
+            if self.doas_worker.dir_info is not None:
+                self.doas_worker.dir_info.update_dir()
+
         self.load_defaults()
         self.pyplis_worker.fig_tau.load_defaults()
         self.pyplis_worker.fig_tau.reload_roi()
@@ -798,12 +814,15 @@ class LoadFrame(LoadSaveProcessingSettings):
         calibration_wind.ils_frame.load_ILS()
         self.pyplis_worker.apply_config()
         self.pyplis_worker.load_sequence(pyplis_worker.img_dir, plot_bg=False)
-        self.doas_worker.load_dir(self.pyplis_worker.spec_dir, prompt=False, plot=True)
+        spec_dir = self.pyplis_worker.spec_dir
+        if not clear_raw_spectra and spec_dir is not None:
+            self.doas_worker.load_dir(spec_dir, prompt=False, plot=True)
         self.main_gui.set_transfer_dir()
         self.doas_worker.get_wavelengths(pyplis_worker.config)
         self.doas_worker.get_shift(pyplis_worker.config)
         self.doas_worker.set_ils_fit(pyplis_worker.config)
-        self.main_gui.spec_wind.spec_frame.update_all()
+        if spec_dir is not None:
+            self.main_gui.spec_wind.spec_frame.update_all()
         self.main_gui.spec_wind.doas_frame.update_vals()
         self.doas_worker.species_info = self.pyplis_worker.species_paths
         calibration_wind.load_ref_species()
