@@ -1,6 +1,7 @@
 """Check explicit-blank cleanup and both factory paths with a valid directory."""
 from contextlib import nullcontext
 from pathlib import Path
+from queue import Queue
 import sys
 from types import ModuleType
 from unittest.mock import Mock, patch
@@ -49,6 +50,23 @@ def test_explicit_blank_clears_raw_state_and_plot_before_image_reload(session, i
             view.ax.plot([], [])
         marker, = view.ax.plot([308.0, 308.0], [0, 1])
         frame.main_gui.spec_wind.spec_frame = view
+        fit_view = menu.test_doas_plot.__new__(menu.test_doas_plot)
+        fit_view.doas_worker = spectra
+        fit_view.Q = Queue()
+        fit_view.vars = {"shift": int}
+        fit_view._shift = Mock(get=Mock(return_value=-1))
+        fit_view.shift_box = Mock()
+        fit_view.species_plots = {}
+        for name in ("Total", "SO2", "residual"):
+            fit = menu.test_doas_figure.__new__(menu.test_doas_figure)
+            fit.doas_worker = spectra
+            fit.species = name
+            fit.ax = Figure().subplots()
+            fit.ax.plot([310, 311], [1, 2])
+            fit.ax.plot([310, 311], [2, 1])
+            fit.ax.set_title("Previous fit result")
+            fit_view.species_plots[name] = fit
+        frame.main_gui.spec_wind.doas_frame = fit_view
         view.update_dark()
         view.update_clear()
         view.update_plume()
@@ -65,10 +83,114 @@ def test_explicit_blank_clears_raw_state_and_plot_before_image_reload(session, i
         assert all(not len(line.get_xdata()) and not len(line.get_ydata()) for line in view.ax.lines[:3])
         np.testing.assert_array_equal(marker.get_xdata(), [308.0, 308.0])
         assert view.q.get_nowait() == 1
+        assert fit_view.Q.get_nowait() == 1
+        for name, fit in fit_view.species_plots.items():
+            assert all(not len(line.get_xdata()) and not len(line.get_ydata()) for line in fit.ax.lines)
+            assert fit.ax.get_title() == name
+        fit_view.gather_vars()
+        assert spectra.shift == -1
         view.update_all()
     spectra.process_doas.assert_not_called()
     assert spectra.results is previous_results
     np.testing.assert_array_equal(spectra.results.to_numpy(), [100.0, 200.0])
+
+
+@pytest.mark.parametrize("absent", ["wavelengths", "plume_spec_raw"])
+def test_fit_shift_preserves_setting_when_one_input_is_missing(session, absent):
+    worker = session.new_worker()
+    spectra = session.spectrum_worker(session.spectra)
+    spectra.load_dir(prompt=False, plot=False, process_first=False)
+    assert spectra.wavelengths is not None and spectra.plume_spec_raw is not None
+    setattr(spectra, absent, None)
+    with session.gui_config_callbacks(worker, spectra) as menu:
+        view = menu.test_doas_plot.__new__(menu.test_doas_plot)
+        view.doas_worker = spectra
+        view.vars = {"shift": int}
+        view._shift = Mock(get=Mock(return_value=2))
+        view.update_plot = Mock()
+        with patch.object(spectra, "process_doas") as retrieve:
+            view.gather_vars()
+        assert spectra.shift == 2
+        retrieve.assert_not_called()
+        view.update_plot.assert_not_called()
+
+
+def test_residual_plot_restores_zero_reference_after_results_only(session):
+    worker = session.new_worker()
+    spectra = session.spectrum_worker(session.spectra)
+    with session.gui_config_callbacks(worker, spectra) as menu:
+        fit = menu.test_doas_figure.__new__(menu.test_doas_figure)
+        fit.doas_worker = spectra
+        fit.species = "residual"
+        fit.ax = Figure().subplots()
+        measured, = fit.ax.plot([], [])
+        reference, = fit.ax.plot([250, 400], [0, 0])
+        spectra.wavelengths_cut = np.array([308., 309., 310.])
+        spectra.abs_spec_species["residual"] = np.array([0.01, -0.02, 0.03])
+        spectra.processed_data = True
+        fit.update_plot()
+        np.testing.assert_array_equal(reference.get_ydata(), [0, 0])
+
+        spectra.processed_data = False
+        fit.update_plot()
+        assert not len(reference.get_ydata()) and not len(measured.get_ydata())
+
+        spectra.processed_data = True
+        fit.update_plot()
+        np.testing.assert_array_equal(measured.get_ydata(), spectra.abs_spec_species["residual"])
+        np.testing.assert_array_equal(reference.get_xdata(), [250, 400])
+        np.testing.assert_array_equal(reference.get_ydata(), [0, 0])
+
+
+@pytest.mark.parametrize("sign", [1, -1], ids=["positive", "negative"])
+def test_one_sided_ifit_residual_keeps_zero_reference_visible(session, sign):
+    assert_residual_zero_reference_visible(session, sign * np.array([0.01, 0.02, 0.03]))
+
+
+@pytest.mark.parametrize("samples", [
+    pytest.param([0.01, 0.02, np.inf], id="positive-infinity"),
+    pytest.param([-0.01, -0.02, -np.inf], id="negative-infinity"),
+    pytest.param([0.01, 0.02, np.nan], id="missing-sample"),
+])
+def test_ifit_residual_scales_using_drawable_samples(session, samples):
+    assert_residual_zero_reference_visible(session, np.array(samples))
+
+
+def assert_residual_zero_reference_visible(session, residual):
+    worker = session.new_worker()
+    spectra = session.spectrum_worker(session.spectra)
+    with session.gui_config_callbacks(worker, spectra) as menu:
+        fit = menu.test_doas_figure.__new__(menu.test_doas_figure)
+        fit.doas_worker = spectra
+        fit.species = "residual"
+        fit.ax = Figure().subplots()
+        measured, = fit.ax.plot([], [])
+        reference, = fit.ax.plot([250, 400], [0, 0])
+        spectra.wavelengths_cut = np.array([308., 309., 310.])
+
+        spectra.abs_spec_species["residual"] = np.array([-0.002, 0.0, 0.002])
+        spectra.processed_data = True
+        fit.update_plot()
+        previous_lower, previous_upper = fit.ax.get_ylim()
+        spectra.processed_data = False
+        fit.update_plot()
+        assert all(len(line.get_ydata()) == 0 for line in (measured, reference))
+
+        finite = residual[np.isfinite(residual)]
+        assert min(finite) < previous_lower or max(finite) > previous_upper
+        spectra.abs_spec_species["residual"] = residual
+        spectra.processed_data = True
+        fit.update_plot()
+        np.testing.assert_array_equal(measured.get_ydata(), residual)
+        np.testing.assert_array_equal(reference.get_xdata(), [250, 400])
+        np.testing.assert_array_equal(reference.get_ydata(), [0, 0])
+        lower, upper = fit.ax.get_ylim()
+        assert lower < 0 < upper
+        assert lower < min(finite) <= max(finite) < upper
+        if len(finite) != len(residual):
+            spectra.abs_spec_species["residual"] = np.where(np.isfinite(residual), residual, finite[0])
+            fit.update_plot()
+            assert fit.ax.get_ylim() == (lower, upper)
 
 
 @pytest.mark.parametrize("method,worker_class", [("ifit", "IFitWorker"), ("doas", "DOASWorker")])

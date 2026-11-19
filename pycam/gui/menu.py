@@ -794,6 +794,7 @@ class LoadFrame(LoadSaveProcessingSettings):
         if clear_raw_spectra:
             self.doas_worker.clear_raw_spectra()
             self.main_gui.spec_wind.spec_frame.clear_raw_plots()
+            self.main_gui.spec_wind.doas_frame.update_plot()
             if self.doas_worker.dir_info is not None:
                 self.doas_worker.dir_info.update_dir()
 

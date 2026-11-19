@@ -216,6 +216,8 @@ class TestProcessingConfig(unittest.TestCase):
             with working_directory(menu_path.parents[2]):
                 plot_spec.loader.exec_module(plots)
             menu.test_spectra_plot = plots.SpectraPlot
+            menu.test_doas_plot = plots.DOASPlot
+            menu.test_doas_figure = plots.DOASFigure
             yield menu
 
     def spectra_plot(self, plot_class, spectra):
