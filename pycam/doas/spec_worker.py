@@ -403,6 +403,19 @@ class SpecWorker:
         self._start_stray_pix = None
         self._end_stray_pix = None
 
+    def clear_raw_spectra(self):
+        """Detach the raw sequence while keeping the DOAS results."""
+        self.processed_data = False
+        self.spec_dir = None
+        self.spec_dict = {}
+        self.wavelengths = None
+        self.dark_spec = None
+        self.clear_spec_raw = None
+        self.plume_spec_raw = None
+        self.clear_spec_corr = None
+        self.plume_spec_corr = None
+        self.reset_stray_pix()
+
     def get_spec_list(self):
         """
         Gets list of spectra files from current spec_dir

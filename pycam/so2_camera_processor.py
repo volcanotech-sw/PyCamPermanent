@@ -390,6 +390,12 @@ class PyplisWorker:
 
             config_value = raw_config.get(path_param)
 
+            # A blank spectrum directory is valid for preprocessed results.
+            if (path_param == "spec_dir" and path_param in raw_config
+                    and config_value in (None, "")):
+                raw_config[path_param] = None
+                continue
+
             # If there is no value in the config for this parameter then record and skip
             # Unless it is when no other config file has been loaded, then throw an error.
             if config_value is None:
@@ -564,6 +570,8 @@ class PyplisWorker:
         current_params = {key: getattr(self.doas_worker, value)
                           for key, value in doas_params.items()}
         current_params = {k: str(v) if isinstance(v, Path) else v for k, v in current_params.items()}
+        if current_params["spec_dir"] == "":
+            current_params["spec_dir"] = None
         self.config.update(current_params)
 
     def save_config_plus(self, file_path, file_name = None):

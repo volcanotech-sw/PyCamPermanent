@@ -50,7 +50,7 @@ class DirIndicator:
 
     def update_dir(self):
         """ Update widget with current spec_dir"""
-        self.img_dir_lab.configure(text=self.doas_worker.spec_dir)
+        self.img_dir_lab.configure(text=self.doas_worker.spec_dir or "")
 
 class SpectraPlot:
     """
@@ -196,6 +196,12 @@ class SpectraPlot:
         """Update clear plot with new data"""
         self.ax.lines[2].set_data(self.doas_worker.wavelengths, self.doas_worker.plume_spec_raw)
         self.ax.set_xlim([self.doas_worker.wavelengths[0], self.doas_worker.wavelengths[-1]])
+        self.q.put(1)
+
+    def clear_raw_plots(self):
+        """Clear the dark, clear, and plume traces while retaining the wavelength guides."""
+        for line in self.ax.lines[:3]:
+            line.set_data([], [])
         self.q.put(1)
 
     def update_stray_start(self, event = None, stray_start = None):
@@ -426,7 +432,7 @@ class DOASPlot(LoadSaveProcessingSettings):
         style = self.gui.style
         style.configure('One.TNotebook.Tab', **self.gui.layout_old[0][1])
         self.tabs = ttk.Notebook(self.frame, style='One.TNotebook.Tab')
-        self.tabs.bind('<Button-1>', self.__update_tab__)
+        self.tabs.bind('<<NotebookTabChanged>>', self.__update_tab__)
         self.species_tabs = dict()
         self.species_tabs['Total'] = ttk.Frame(self.tabs, borderwidth=2)
         self.tabs.add(self.species_tabs['Total'], text='Total')
@@ -494,6 +500,9 @@ class DOASPlot(LoadSaveProcessingSettings):
         """Sets all current settings to the correct worker and reprocesses DOAS"""
         for key in self.vars:
             setattr(self.doas_worker, key, getattr(self, key))
+
+        if self.doas_worker.wavelengths is None or self.doas_worker.plume_spec_raw is None:
+            return
 
         self.doas_worker.process_doas()
         self.update_plot()
@@ -592,12 +601,20 @@ class DOASFigure:
 
     def update_plot(self):
         """Updates doas plot"""
+        if not self.doas_worker.processed_data:
+            for line in self.ax.lines[:2]:
+                line.set_data([], [])
+            self.ax.set_title(self.species)
+            return
+
         # Update plot lines with new data
         # self.ax.lines[0].set_data(self.doas_worker.wavelengths_cut, self.doas_worker.abs_spec_cut[self.species])
         self.ax.lines[0].set_data(self.doas_worker.wavelengths_cut, self.doas_worker.abs_spec_species[self.species])
 
         if self.species != 'residual':
             self.ax.lines[1].set_data(self.doas_worker.wavelengths_cut, self.doas_worker.ref_spec_fit[self.species])
+        else:
+            self.ax.lines[1].set_data([250, 400], [0, 0])
 
         # Set axis limits
         self.ax.set_xlim([self.doas_worker.wavelengths_cut[0], self.doas_worker.wavelengths_cut[-1]])
@@ -615,12 +632,21 @@ class DOASFigure:
                 ylim = 0.05
             ylims = [-ylim, ylim]
         elif isinstance(self.doas_worker, IFitWorker):
+            if self.species == 'residual':
+                residual_data = np.asarray(all_dat)
+                finite_residual = residual_data[np.isfinite(residual_data)]
+                if finite_residual.size:
+                    all_dat = finite_residual
             min_val = np.nanmin(all_dat)
+            max_val = np.nanmax(all_dat)
             if min_val >= 0:
                 min_lim = min_val * 0.95
             else:
                 min_lim = min_val * 1.05
-            ylims = [min_lim, np.nanmax(all_dat) * 1.05]
+            ylims = [min_lim, max_val * 1.05]
+            if self.species == 'residual' and np.isfinite(min_val) and np.isfinite(max_val):
+                padding = 0.05 * max(abs(min_val), abs(max_val)) or 0.05
+                ylims = [min(ylims[0], -padding), max(ylims[1], padding)]
         # Double check we don't have any infinities
         for i, val in enumerate(ylims):
             if val == -np.inf:

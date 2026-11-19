@@ -124,13 +124,17 @@ class PyCam(ttk.Frame):
         # Load in initial sequence directory
         pyplis_worker.doas_worker = doas_worker     # Set DOAS worker to pyplis attribute
         pyplis_worker.load_sequence(pyplis_worker.img_dir, plot_bg=False)
-        doas_worker.load_dir(prompt=False, plot=True)
+        has_spectrum_directory = doas_worker.spec_dir is not None
+        if has_spectrum_directory:
+            doas_worker.load_dir(prompt=False, plot=True)
         doas_worker.get_wavelengths(pyplis_worker.config)
         doas_worker.get_shift(pyplis_worker.config)
         doas_worker.set_ils_fit(pyplis_worker.config)
-        self.spec_wind.spec_frame.update_all()
+        if has_spectrum_directory:
+            self.spec_wind.spec_frame.update_all()
         self.spec_wind.doas_frame.update_vals()
-        doas_worker.process_doas(plot=True)
+        if has_spectrum_directory:
+            doas_worker.process_doas(plot=True)
         self.set_transfer_dir()
 
     def set_transfer_dir(self):
