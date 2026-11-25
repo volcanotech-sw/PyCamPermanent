@@ -807,11 +807,15 @@ class Spectrometer(SpecSpecs):
         Function to search for an attached spectrometer and then initialise it
         """
         sb = None
-        if self.model == "Flame-S" or self.model == "Ocean-SR":
+        if self.model in self.compatible_models:
             try:
                 import seabreeze
-
-                seabreeze.use("pyseabreeze")
+                if self.model in ["USB2000", "USB2000+"]: #TODO need to confirm if flame should be here or with pyseabreeze
+                    # The legacy USB2000 series requires the C-backend to prevent buffer overflow crashes
+                    seabreeze.use("cseabreeze")
+                else:
+                    # Newer models (HR4, SR, etc.) require pyseabreeze to resolve via USB-network routes
+                    seabreeze.use("pyseabreeze")
                 import seabreeze.spectrometers as sb
             except ModuleNotFoundError:
                 warnings.warn(
@@ -830,7 +834,7 @@ class Spectrometer(SpecSpecs):
                 print("No/unknown spectrometer model specified")
                 raise IndexError
             
-            if self.model == "Flame-S" or self.model == "Ocean-SR":
+            if self.model in ["Flame-S", "Ocean-SR", "OceanHR4"]:
                 # to keep pyseabreeze from trying to IPv4 and fail with an OSError 19
                 # we'll patch out the IPv4 list_devices function to return an empty list
                 # and hence skip that section of the code

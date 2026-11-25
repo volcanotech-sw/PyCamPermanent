@@ -36,3 +36,4 @@ elif process_settings['doas_method'] == 'ifit':
                              dark_dir=process_settings['dark_spec_dir'],
                              q_doas=pyplis_worker.q_doas,
                              species=pyplis_worker.species_paths)
+doas_worker.spec_specs.load_specs(FileLocator.CONFIG_SPEC_WIN)
