@@ -599,7 +599,7 @@ class SpecSpecs(SpecsBase):
         self.default_filename = FileLocator.CONFIG_SPEC
 
         # Hidden variables
-        self.compatible_models = ["Flame-S", "Ocean-SR", "OceanHR4", "USB2000", "USB2000+"]
+        self.compatible_models = ["Flame-S", "Ocean-SR", "OceanHR4", "USB2000", "USB2000+", 'Avantes']
         self._bit_depth = 0  # Hidden bit depth holder
         self._max_DN = 0  # Maximum digital number of images (associated with bit depth)
         self._int_time = 6
@@ -707,6 +707,13 @@ class SpecSpecs(SpecsBase):
         # Set integration time (ALL IN MICROSECONDS)
         self._int_limit_lower = 1000       # Lower integration time limit (us)
         self._int_limit_upper = 20000000  # Upper integration time limit (us)
+        self.int_limits = {'Flame-S': [1000, 10000000],
+                           'Ocean-SR': [3800, 10000000],
+                           'OceanHR4': [1000, 10000000],
+                           'USB2000': [3000, 10000000],
+                           'USB2000+': [1000, 10000000],
+                           'Avantes': [1000, 10000000]}   #TODO some of these values need checking
+
         self.int_time = 1000              # Starting integration time (ms)
         self.file_int_units = 1e-3        # Shutter speed units relative to seconds
         self.min_coadd = 1
@@ -750,16 +757,20 @@ class SpecSpecs(SpecsBase):
         int_time = int(int_time * 1000)
 
         # Check requested integration time is acceptable
-        if int_time < self._int_limit_lower:
-            raise ValueError(
+        if int_time < self.int_limits[self.model][0]:
+            pycamLogger.warning(
                 "Integration time below {}us is not possible. "
-                "Attempted {}us".format(self._int_limit_lower, int_time)
+                "Attempted {}us. Reverting to {}us".format(self.int_limits[self.model][0], int_time,
+                                                           self.int_limits[self.model][0])
             )
-        elif int_time > self._int_limit_upper:
-            raise ValueError(
+            int_time = self.int_limits[self.model][0]
+        elif int_time > self.int_limits[self.model][1]:
+            pycamLogger.warning(
                 "Integration time above {}us is not possible. "
-                "Attempted: {}us".format(self._int_limit_upper, int_time)
+                "Attempted: {}us. Reverting to {}us".format(self.int_limits[self.model][1], int_time,
+                                                            self.int_limits[self.model][1])
             )
+            int_time = self.int_limits[self.model][1]
 
         self._int_time = int_time
 

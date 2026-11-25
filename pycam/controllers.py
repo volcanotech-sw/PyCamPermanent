@@ -854,8 +854,6 @@ class Spectrometer(SpecSpecs):
             self.get_wavelengths()
 
             # Now that we have spectrometer we can update its integration time
-            if self.model == "USB2000":
-                self._int_limit_lower = 3000  # Minimum USB2000 int time is 3 ms, so set this here (in us)
             self.int_time = self.int_time
 
         except IndexError:
