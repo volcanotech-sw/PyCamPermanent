@@ -10,6 +10,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import numpy as np
 import queue
 import datetime
+from pathlib import Path
+import os
 
 from pycam.doas.doas_worker import DOASWorker
 from pycam.doas.ifit_worker import IFitWorker
@@ -989,14 +991,14 @@ class ILSFrame:
     Frame containing widgets for ILS extraction from a calibration spectrum
     """
     def __init__(self, parent=None, doas_work=doas_worker, spec_specs=SpecSpecs(), fig_setts=GUISettings(),
-                 config=pyplis_worker.config, save_path='C:/'):
+                 config=pyplis_worker.config, start_path=FileLocator.DAT_DIR_WINDOWS):
         # Setup some main variables
         self.parent = parent
         self.frame = None
         self.doas_worker = doas_work
         self.doas_worker.fig_ils = self
         self.spec_specs = spec_specs
-        self.save_path = save_path
+        self.start_path = start_path
         if 'ILS_path' in config.keys():
             self.ILS_path = config['ILS_path']
         else:
@@ -1320,7 +1322,7 @@ class ILSFrame:
     def choose_ILS(self):
         """Bring up filedialog to select ILS, then instigates loading"""
         # Bring up dialog to find file
-        self.ILS_path = filedialog.askopenfilename(initialdir=self.save_path,
+        self.ILS_path = filedialog.askopenfilename(initialdir=self.start_path,
                                                    title='Select ILS file',
                                                    filetypes=(("Text files", "*.txt"), ("All files", "*.*")))
         self.load_ILS()
@@ -1338,8 +1340,8 @@ class ILSFrame:
         if not self.ILS_path:
             return
 
-        # Extract save path for next filedialog
-        self.save_path = self.ILS_path.rsplit('\\', 1)[0].rsplit('/', 1)[0]
+        # Extract start path path for next filedialog
+        self.start_path = self.ILS_path.rsplit('\\', 1)[0].rsplit('/', 1)[0]
 
         # Extract data
         self.doas_worker.load_ils(self.ILS_path)
@@ -1359,14 +1361,19 @@ class ILSFrame:
             return
 
         time = datetime.datetime.now().strftime('%Y-%m-%dT%H%M%S')
+        date_str = datetime.datetime.now().strftime('%Y-%m-%d')
         ILS_filename = '{}_ILS.txt'.format(time)
 
-        # Save file to numpy array
-        np.savetxt(self.save_path + ILS_filename,
+        # Save file to text file array
+        save_dir = Path(FileLocator.DAT_DIR_WINDOWS, date_str, 'Calibration')
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = save_dir / ILS_filename
+        np.savetxt(save_path,
                    np.transpose([self.doas_worker.ILS_wavelengths, self.doas_worker.ILS]),
                    header='Instrument line shape\n'
                           'Line start [nm]: {}\tLine End [nm]: {}\n'
                           'Wavelength [nm]\tIntensity [DN]'.format(self.ILS_start, self.ILS_end))
+        GuiLogger.info(f'Saved ILS: {save_path}')
 
         # Update widget label
         self.ILS_save_label.configure(text=ILS_filename)
