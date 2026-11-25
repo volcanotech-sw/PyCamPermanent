@@ -766,7 +766,10 @@ class IFitWorker(SpecWorker):
 
                 if not self.first_spec and spec_time.day != self.spec_time.day:
                     self.SpecLogger.info(f"Day {self.spec_time.strftime('%Y-%m-%d')} finished")
-                    mem_handler.flush()
+                    try:
+                        mem_handler.flush()
+                    except UnboundLocalError as e:
+                        self.SpecLogger.debug(f'Caught exception: {e}')
 
                     self.reset_self()
 
@@ -812,7 +815,10 @@ class IFitWorker(SpecWorker):
                 except ValueError as e:
                     self.SpecLogger.warning(f'scipy least squares fit failed. spectrum not processed: {pathname}')
                     if self.watching:
-                        mem_handler.flush()
+                        try:
+                            mem_handler.flush()
+                        except UnboundLocalError as e:
+                            self.SpecLogger.debug(f'Caught exception: {e}')
                     continue
 
                 # Gather all relevant information and spectra and pass it to PyplisWorker
@@ -865,7 +871,10 @@ class IFitWorker(SpecWorker):
                 self.SpecLogger.debug(f'Spectrum type not recognised: {pathname}')
             
             if self.watching:
-                mem_handler.flush()
+                try:
+                    mem_handler.flush()
+                except UnboundLocalError as e:
+                    self.SpecLogger.debug(f'Caught exception: {e}')
 
     def stop_sequence_processing(self):
         """Stops processing a sequence"""
