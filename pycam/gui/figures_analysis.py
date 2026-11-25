@@ -4204,6 +4204,7 @@ class CellCalibFrame:
         self.process_setts.change_path("cell_cal_dir", set_config=True)
         self.frame.attributes('-topmost', 1)
         self.frame.attributes('-topmost', 0)
+        self.run_cal(load_dat=True)
 
     @property
     def cal_dir_short(self):
@@ -4283,14 +4284,14 @@ class CellCalibFrame:
         """Updates pyplis worker variables"""
         self.pyplis_worker.use_cell_bg = self.use_cell_bg
 
-    def run_cal(self):
+    def run_cal(self, load_dat=False):
         """Runs calibration with current settings"""
         self.pyplis_worker.use_cell_bg = self.use_cell_bg
         self.pyplis_worker.cal_crop = bool(self.cal_crop)
         self.pyplis_worker.crop_sens_mask = bool(self.sens_crop)
         self.pyplis_worker.cal_crop_region, self.pyplis_worker.cal_crop_line_mask = self.generate_cropped_region()
         self.pyplis_worker.cal_crop_rad = self.radius
-        self.pyplis_worker.perform_cell_calibration_pyplis(plot=True, load_dat=False)
+        self.pyplis_worker.perform_cell_calibration_pyplis(plot=True, load_dat=load_dat)
 
     def scale_imgs(self, draw=True):
         """
